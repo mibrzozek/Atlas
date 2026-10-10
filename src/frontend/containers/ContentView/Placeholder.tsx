@@ -32,6 +32,7 @@ export default Placeholder;
 import { IconSet, Button, ButtonGroup, SVG } from 'widgets';
 import { RendererMessenger } from 'src/ipc/renderer';
 import useMountState from 'src/frontend/hooks/useMountState';
+import AtlasWordmark from 'src/frontend/components/AtlasWordmark';
 
 const PreviewWindowPlaceholder = observer(() => {
   const { fileStore } = useStore();
@@ -63,11 +64,7 @@ const PreviewWindowPlaceholder = observer(() => {
 
       <div className="divider" />
 
-      <Button
-        styling="outlined"
-        text="Reload Allusion"
-        onClick={() => RendererMessenger.reload()}
-      />
+      <Button styling="outlined" text="Reload Atlas" onClick={() => RendererMessenger.reload()} />
     </ContentPlaceholder>
   );
 });
@@ -75,20 +72,22 @@ const PreviewWindowPlaceholder = observer(() => {
 const Welcome = () => {
   const { uiStore } = useStore();
   return (
-    <ContentPlaceholder title="Welcome to Allusion" icon={<SVG src={LOGO_FC} />}>
+    <div id="content-placeholder">
+      <AtlasWordmark />
+      <br />
       <p>
-        Allusion is a tool designed to help you organize your Visual Library, so you can easily find
+        Atlas is a tool designed to help you organize your Visual Library, so you can easily find
         what you need throughout your creative process.
       </p>
       <p>
-        Allusion needs to know where to find your images.
+        Atlas needs to know where to find your images.
         <br />
         Add a Location to get started.
       </p>
 
       <div className="divider" />
 
-      <p>New to Allusion?</p>
+      <p>New to Atlas?</p>
       <Button styling="outlined" text="Open Help Center" onClick={uiStore.toggleHelpCenter} />
 
       <br />
@@ -96,8 +95,8 @@ const Welcome = () => {
       <br />
 
       {/* Mention principles (?) */}
-      <small>Allusion is a read-only application. We&rsquo;ll never touch your files</small>
-    </ContentPlaceholder>
+      <small>Atlas is a read-only application. We&rsquo;ll never touch your files</small>
+    </div>
   );
 };
 

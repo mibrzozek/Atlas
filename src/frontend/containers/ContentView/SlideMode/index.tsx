@@ -2,7 +2,7 @@ import { shell } from 'electron';
 import { autorun, reaction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import SysPath from 'path';
-import React, { useEffect, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { encodeFilePath } from 'common/fs';
 import { Button, IconSet, Split } from 'widgets';
@@ -119,29 +119,18 @@ const SlideView = observer(({ width, height }: SlideViewProps) => {
   }, [decrImgIndex, incrImgIndex, uiStore]);
 
   // Preload next and previous image for better UX
-  useEffect(() => {
-    let isEffectRunning = true;
-    const dispose = autorun(() => {
-      if (!isLast.get() && uiStore.firstItem + 1 < fileStore.fileList.length) {
-        const nextImg = new Image();
-        const nextFile = fileStore.fileList[uiStore.firstItem + 1];
-        imageLoader
-          .getImageSrc(nextFile)
-          .then((src) => isEffectRunning && src && (nextImg.src = encodeFilePath(src)));
-      }
-      if (!isFirst.get() && fileStore.fileList.length > 0) {
-        const prevImg = new Image();
-        const prevFile = fileStore.fileList[uiStore.firstItem - 1];
-        imageLoader
-          .getImageSrc(prevFile)
-          .then((src) => isEffectRunning && src && (prevImg.src = encodeFilePath(src)));
-      }
-    });
-    return () => {
-      isEffectRunning = false;
-      dispose();
-    };
-  }, [fileStore, isFirst, isLast, uiStore, imageLoader]);
+  useEffect(
+    () =>
+      autorun(() => {
+        if (!isLast.get() && uiStore.firstItem + 1 < fileStore.fileList.length) {
+          imageLoader.preloadImage(fileStore.fileList[uiStore.firstItem + 1], true);
+        }
+        if (!isFirst.get() && fileStore.fileList.length > 0) {
+          imageLoader.preloadImage(fileStore.fileList[uiStore.firstItem - 1], true);
+        }
+      }),
+    [fileStore, isFirst, isLast, uiStore, imageLoader],
+  );
 
   const transitionStart: SlideTransform | undefined = useMemo(() => {
     if (!file) {
@@ -214,88 +203,117 @@ const ZoomableImage: React.FC<ZoomableImageProps> = ({
   upscaleMode,
 }: ZoomableImageProps) => {
   const { imageLoader } = useStore();
-  const { absolutePath, width: imgWidth, height: imgHeight } = file;
+  const { id: fileId, absolutePath, width: imgWidth, height: imgHeight } = file;
   // Image src can be set asynchronously: keep track of it in a state
   // Needed for image formats not natively supported by the browser (e.g. tiff): will be converted to another format
   const source = usePromise(file, thumbnailSrc, async (file, thumbnailPath) => {
     const src = await imageLoader.getImageSrc(file);
-    return src ?? thumbnailPath;
+    return { fileId: file.id, src: src ?? thumbnailPath };
   });
 
-  const image = usePromise(
-    source,
-    absolutePath,
-    thumbnailSrc,
-    imgWidth,
-    imgHeight,
-    async (source, absolutePath, thumbnailSrc, imgWidth, imgHeight) => {
-      if (source.tag === 'ready') {
-        if ('ok' in source.value) {
-          const src = source.value.ok;
-          const dimension = await new Promise<{ src: string; dimension: Vec2 }>(
-            (resolve, reject) => {
-              const img = new Image();
-              img.onload = function (this: any) {
-                // TODO: would be better to resolve once transition is complete: for large resolution images, the transition freezes for ~.4s bc of a re-paint task when the image changes
-                resolve({
-                  src,
-                  dimension: createDimension(this.naturalWidth, this.naturalHeight),
-                });
-              };
-              img.onerror = reject;
-              img.src = encodeFilePath(src);
-            },
-          );
-          return dimension;
-        } else {
-          throw source.value.err;
-        }
-      } else {
-        return {
-          src: thumbnailSrc || absolutePath,
-          dimension: createDimension(imgWidth, imgHeight),
-        };
-      }
-    },
-  );
+  // Decoding a large image makes the opening transition freeze for a moment.
+  // So the transition is done with just the thumbnail: the full image is put on top of it afterwards.
+  const [isOpened, setIsOpened] = useState(transitionStart === undefined);
+  const handleOpened = useCallback(() => setIsOpened(true), []);
+  // The decoding itself can already be done during the transition, as long as the image is not on screen yet.
+  // Once it has been decoded, it can be shown right away without freezing the transition.
+  const [predecodedFileId, setPredecodedFileId] = useState<string>();
+  useEffect(() => {
+    let isEffectRunning = true;
+    imageLoader
+      .preloadImage(file)
+      .then((isDecoded) => isEffectRunning && isDecoded && setPredecodedFileId(file.id));
+    return () => {
+      isEffectRunning = false;
+    };
+  }, [imageLoader, file]);
+  const [loaded, setLoaded] = useState<{ src: string; dimension: Vec2; isDecoded: boolean }>();
+  const [failedSrc, setFailedSrc] = useState<string>();
 
-  if (image.tag === 'ready' && 'err' in image.value) {
-    return <ImageFallback error={image.value.err} absolutePath={absolutePath} />;
-  } else {
-    const { src, dimension } =
-      image.tag === 'ready' && 'ok' in image.value
-        ? image.value.ok
-        : {
-            src: thumbnailSrc || absolutePath,
-            dimension: createDimension(imgWidth, imgHeight),
-          };
-    const minScale = Math.min(0.1, Math.min(width / dimension[0], height / dimension[1]));
-    return (
-      <ZoomPan
-        position="center"
-        initialScale="auto"
-        doubleTapBehavior="zoomOrReset"
-        imageDimension={dimension}
-        containerDimension={createDimension(width, height)}
-        minScale={minScale}
-        maxScale={5}
-        transitionStart={transitionStart}
-        transitionEnd={transitionEnd}
-        onClose={onClose}
-        upscaleMode={upscaleMode}
-      >
-        {(props) => (
-          <img
-            {...props}
-            src={encodeFilePath(src)}
-            width={dimension[0]}
-            height={dimension[1]}
-            alt=""
-          />
-        )}
-      </ZoomPan>
-    );
+  const previewSrc = thumbnailSrc || absolutePath;
+  const isSourceReady = source.tag === 'ready' && 'ok' in source.value;
+  // The source can still belong to the previously shown file for a moment
+  const fullSrc =
+    source.tag === 'ready' && 'ok' in source.value && source.value.ok.fileId === fileId
+      ? source.value.ok.src
+      : undefined;
+  const sourceError =
+    source.tag === 'ready' && 'err' in source.value ? source.value.err : undefined;
+  const hasFullLayer = fullSrc !== undefined && fullSrc !== previewSrc;
+
+  if (sourceError !== undefined || (isSourceReady && failedSrc === (fullSrc ?? previewSrc))) {
+    return <ImageFallback error={sourceError} absolutePath={absolutePath} />;
   }
+
+  const dimension =
+    loaded !== undefined && loaded.src === fullSrc
+      ? loaded.dimension
+      : createDimension(imgWidth, imgHeight);
+  const isFullImageShown = loaded !== undefined && loaded.src === fullSrc && loaded.isDecoded;
+  const minScale = Math.min(0.1, Math.min(width / dimension[0], height / dimension[1]));
+
+  const handleFullImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    const img = e.currentTarget;
+    const src = fullSrc;
+    if (src === undefined) {
+      return;
+    }
+    const dimension = createDimension(img.naturalWidth, img.naturalHeight);
+    setLoaded({ src, dimension, isDecoded: false });
+    // The thumbnail can only be hidden when the full image is ready to be painted: otherwise nothing is shown for a moment
+    img
+      .decode()
+      .then(() => setLoaded((l) => (l?.src === src ? { ...l, isDecoded: true } : l)))
+      .catch(() => undefined);
+  };
+
+  return (
+    <ZoomPan
+      position="center"
+      initialScale="auto"
+      doubleTapBehavior="zoomOrReset"
+      imageDimension={dimension}
+      containerDimension={createDimension(width, height)}
+      minScale={minScale}
+      maxScale={5}
+      transitionStart={transitionStart}
+      transitionEnd={transitionEnd}
+      onClose={onClose}
+      onOpened={handleOpened}
+      upscaleMode={upscaleMode}
+    >
+      {(layerProps) => (
+        <div
+          {...layerProps}
+          className="zoomable-image-layers"
+          style={{ ...layerProps.style, width: dimension[0], height: dimension[1] }}
+        >
+          <img
+            key={previewSrc}
+            src={encodeFilePath(previewSrc)}
+            alt=""
+            // Not kept underneath the full image: it would be visible through transparent images
+            style={isFullImageShown ? { visibility: 'hidden' } : undefined}
+            onError={(e) =>
+              hasFullLayer || !isSourceReady
+                ? (e.currentTarget.style.visibility = 'hidden')
+                : setFailedSrc(previewSrc)
+            }
+          />
+          {(isOpened || predecodedFileId === fileId) && hasFullLayer && (
+            <img
+              key={fullSrc}
+              src={encodeFilePath(fullSrc)}
+              alt=""
+              decoding="async"
+              onLoad={handleFullImageLoad}
+              onError={() => setFailedSrc(fullSrc)}
+            />
+          )}
+        </div>
+      )}
+    </ZoomPan>
+  );
 };
 
 export default SlideMode;

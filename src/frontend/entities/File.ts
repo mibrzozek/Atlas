@@ -25,7 +25,7 @@ interface IMetaData {
   size: number;
   width: number;
   height: number;
-  /** Date when this file was created (from the OS, not related to Allusion) */
+  /** Date when this file was created (from the OS, not related to Atlas) */
   dateCreated: Date;
 }
 
@@ -46,11 +46,13 @@ export class ClientFile {
   readonly absolutePath: string;
   readonly tags: ObservableSet<ClientTag>;
   readonly size: number;
-  readonly width: number;
-  readonly height: number;
+  /** As the image is displayed: swapped for photos that were taken with the camera held sideways */
+  width: number;
+  height: number;
   readonly dateAdded: Date;
   readonly dateCreated: Date;
-  readonly dateModified: Date;
+  /** When the file was last modified on disk */
+  dateModified: Date;
   readonly dateLastIndexed: Date;
   readonly name: string;
   readonly extension: IMG_EXTENSIONS_TYPE;
@@ -200,6 +202,6 @@ export function mergeMovedFile(oldFile: FileDTO, newFile: FileDTO): FileDTO {
     absolutePath: newFile.absolutePath,
     relativePath: newFile.relativePath,
     locationId: newFile.locationId,
-    dateModified: new Date(),
+    dateModified: newFile.dateModified,
   };
 }

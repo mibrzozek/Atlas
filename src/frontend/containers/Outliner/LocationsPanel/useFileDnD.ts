@@ -1,3 +1,4 @@
+import { READ_ONLY_MESSAGE, SOURCE_FILES_READ_ONLY } from 'common/config';
 import { humanFileSize } from 'common/fmt';
 import fse from 'fs-extra';
 import path from 'path';
@@ -34,9 +35,14 @@ const handleMove = async (
   loc: ClientLocation,
   dir: string,
 ) => {
+  // Moving a file can also replace, and with that delete, another file
+  if (SOURCE_FILES_READ_ONLY) {
+    AppToaster.show({ message: READ_ONLY_MESSAGE, timeout: 6000 }, 'read-only');
+    return;
+  }
   let isReplaceAllActive = false;
 
-  // If it's a file being dropped that's already in Allusion, move it
+  // If it's a file being dropped that's already in Atlas, move it
   for (const file of matches) {
     const src = path.normalize(file.absolutePath);
     const dst = path.normalize(path.join(dir, file.name));
@@ -155,7 +161,7 @@ export const useFileDropHandling = (
             await handleMove(fileStore, matches, loc, fullPath);
             setTimeout(() => fileStore.refetch(), 500);
           } else {
-            // Otherwise it's an external file (e.g. from the web or a folder not set up as a Location in Allusion)
+            // Otherwise it's an external file (e.g. from the web or a folder not set up as a Location in Atlas)
             // -> download it and "copy" it to the target folder
             await storeDroppedImage(dropData, fullPath);
           }

@@ -4,11 +4,12 @@ import StreamZip from 'node-stream-zip';
 
 import ExifIO from 'common/ExifIO';
 import { thumbnailMaxSize } from 'common/config';
+import { encodeFilePath } from 'common/fs';
 import { FileDTO, IMG_EXTENSIONS_TYPE } from '../../api/file';
 import { ClientFile } from '../entities/File';
 import ExrLoader from './ExrLoader';
 import PsdLoader from './PSDLoader';
-import { generateThumbnailUsingWorker } from './ThumbnailGeneration';
+import { ThumbnailTarget, generateThumbnailUsingWorker } from './ThumbnailGeneration';
 import TifLoader from './TifLoader';
 import { generateThumbnail, getBlob } from './util';
 
@@ -49,6 +50,11 @@ class ImageLoader {
 
   private srcBufferCache: WeakMap<ClientFile, ObjectURL> = new WeakMap();
   private bufferCacheTimer: WeakMap<ClientFile, number> = new WeakMap();
+  /** The files for which the thumbnail has already been checked or generated ahead of time during this session */
+  private pregeneratedIds = new Set<string>();
+  /** The images that were most recently decoded ahead of time: kept so that their decoded data is not thrown away */
+  private preloadedImages: { url: string; image: HTMLImageElement; decoded: Promise<boolean> }[] =
+    [];
 
   constructor(private exifIO: ExifIO) {
     this.tifLoader = new TifLoader();
@@ -61,7 +67,7 @@ class ImageLoader {
     await Promise.all([this.tifLoader.init(), this.exrLoader.init(), this.psdLoader.init()]);
   }
 
-  needsThumbnail(file: FileDTO) {
+  needsThumbnail(file: Pick<FileDTO, 'extension' | 'width' | 'height'>) {
     // Not using thumbnails for gifs, since they're mostly used for animations, which doesn't get preserved in thumbnails
     if (file.extension === 'gif') {
       return false;
@@ -77,16 +83,22 @@ class ImageLoader {
   /**
    * Ensures a thumbnail exists, will return instantly if already exists.
    * @param file The file to generate a thumbnail for
+   * @param background Whether generating it can wait until no other thumbnails are requested
    * @returns Whether a thumbnail had to be generated
    * @throws When a thumbnail does not exist and cannot be generated
    */
-  async ensureThumbnail(file: ClientFile): Promise<boolean> {
+  async ensureThumbnail(file: ThumbnailTarget, background = false): Promise<boolean> {
     const { extension, absolutePath, thumbnailPath } = {
       extension: file.extension,
       absolutePath: file.absolutePath,
       // remove ?v=1 that might have been added after the thumbnail was generated earlier
       thumbnailPath: file.thumbnailPath.split('?v=1')[0],
     };
+
+    // The image is its own thumbnail: there is nothing to generate, and it may never be written to
+    if (thumbnailPath === absolutePath) {
+      return false;
+    }
 
     if (await fse.pathExists(thumbnailPath)) {
       // Files like PSDs have a tendency to change: Check if thumbnail needs an update
@@ -100,11 +112,12 @@ class ImageLoader {
     const handlerType = FormatHandlers[extension];
     switch (handlerType) {
       case 'web':
-        await generateThumbnailUsingWorker(file, thumbnailPath);
+        await generateThumbnailUsingWorker(file, thumbnailPath, background);
         updateThumbnailPath(file, thumbnailPath);
         break;
       case 'tifLoader':
-        await generateThumbnail(this.tifLoader, absolutePath, thumbnailPath, thumbnailMaxSize);
+        // Also done in the workers: decoding them here would freeze the interface
+        await generateThumbnailUsingWorker(file, thumbnailPath, background);
         updateThumbnailPath(file, thumbnailPath);
         break;
       case 'exrLoader':
@@ -142,6 +155,32 @@ class ImageLoader {
     return true;
   }
 
+  /**
+   * Generates the missing thumbnails of the given files ahead of time, at a low priority,
+   * so they are ready by the time they are scrolled into view.
+   * Only for formats that are processed in the thumbnail workers: the others would make the UI stutter.
+   */
+  async pregenerateThumbnails(files: ThumbnailTarget[], isCancelled: () => boolean): Promise<void> {
+    const MAX_PENDING = 4;
+    let nextIndex = 0;
+    const processNext = async () => {
+      while (nextIndex < files.length && !isCancelled()) {
+        const file = files[nextIndex++];
+        if (
+          !this.pregeneratedIds.has(file.id) &&
+          (FormatHandlers[file.extension] === 'web' ||
+            FormatHandlers[file.extension] === 'tifLoader') &&
+          this.needsThumbnail(file)
+        ) {
+          // Failures are dealt with when the image is actually shown
+          await this.ensureThumbnail(file, true).catch(() => undefined);
+          this.pregeneratedIds.add(file.id);
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: MAX_PENDING }, processNext));
+  }
+
   async getImageSrc(file: ClientFile): Promise<string | undefined> {
     const handlerType = FormatHandlers[file.extension];
     switch (handlerType) {
@@ -174,6 +213,37 @@ class ImageLoader {
         console.warn('Unsupported extension', file.absolutePath, file.extension);
         return undefined;
     }
+  }
+
+  /**
+   * Loads and decodes the full image in the background, so it can be shown without delay when it is opened.
+   * @param anyFormat Whether to include formats that have to be converted first, which is slow
+   * @returns Whether the image has been decoded
+   */
+  async preloadImage(file: ClientFile, anyFormat = false): Promise<boolean> {
+    if (!anyFormat && FormatHandlers[file.extension] !== 'web') {
+      return false;
+    }
+    const src = await this.getImageSrc(file);
+    if (src === undefined) {
+      return false;
+    }
+    const url = encodeFilePath(src);
+    const preloaded = this.preloadedImages.find((preloaded) => preloaded.url === url);
+    if (preloaded !== undefined) {
+      return preloaded.decoded;
+    }
+    const image = new Image();
+    image.src = url;
+    const decoded = image.decode().then(
+      () => true,
+      () => false,
+    );
+    this.preloadedImages.push({ url, image, decoded });
+    if (this.preloadedImages.length > 4) {
+      this.preloadedImages.shift();
+    }
+    return decoded;
   }
 
   /** Returns 0 for width and height if they can't be determined */
@@ -230,6 +300,6 @@ class ImageLoader {
 export default ImageLoader;
 
 // Update the thumbnail path to re-render the image where ever it is used in React
-const updateThumbnailPath = action((file: ClientFile, thumbnailPath: string) => {
+const updateThumbnailPath = action((file: ThumbnailTarget, thumbnailPath: string) => {
   file.thumbnailPath = `${thumbnailPath}?v=1`;
 });

@@ -21,11 +21,7 @@ export class MasonryWorkerAdapter implements Layouter {
   private worker?: MasonryWorker;
   private memory?: WebAssembly.Memory;
 
-  private prevNumImgs: number = 0;
-
   async initialize(numItems: number) {
-    this.prevNumImgs = numItems;
-
     if (this.memory !== undefined && this.worker !== undefined) {
       return;
     }
@@ -52,11 +48,8 @@ export class MasonryWorkerAdapter implements Layouter {
       return Promise.reject('Worker is uninitialized.');
     }
 
-    if (this.prevNumImgs !== numImgs) {
-      worker.resize(numImgs);
-    }
-
-    this.prevNumImgs = numImgs;
+    // Always: the item count can also have changed while the gallery was not mounted
+    worker.resize(numImgs);
     runInAction(() => {
       for (let i = 0; i < imgs.length; i++) {
         worker.set_dimension(i, imgs[i].width, imgs[i].height);

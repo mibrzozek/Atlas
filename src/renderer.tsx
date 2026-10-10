@@ -12,7 +12,6 @@ import { autorun, reaction, runInAction } from 'mobx';
 import React from 'react';
 import { Root, createRoot } from 'react-dom/client';
 
-import { IS_DEV } from 'common/process';
 import { promiseRetry } from 'common/timeout';
 import { IS_PREVIEW_WINDOW, WINDOW_STORAGE_KEY } from 'common/window';
 import { RendererMessenger } from 'src/ipc/renderer';
@@ -235,13 +234,10 @@ async function runPreviewApp(db: Dexie, root: Root): Promise<void> {
 }
 
 main()
-  .then(() => console.info('Successfully initialized Allusion!'))
+  .then(() => console.info('Successfully initialized Atlas!'))
   .catch((err) => {
-    console.error('Could not initialize Allusion!', err);
+    console.error('Could not initialize Atlas!', err);
     window.alert('An error has occurred, check the console for more details');
 
-    // In dev mode, the console is already automatically opened: only open in non-dev mode here
-    if (!IS_DEV) {
-      RendererMessenger.toggleDevTools();
-    }
+    RendererMessenger.toggleDevTools();
   });

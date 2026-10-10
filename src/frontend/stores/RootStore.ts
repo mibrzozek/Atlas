@@ -62,9 +62,9 @@ class RootStore {
     const rootStore = new RootStore(backend, backup, (fileStore, uiStore) => {
       if (uiStore.isSlideMode && fileStore.fileList.length > 0) {
         const activeFile = fileStore.fileList[uiStore.firstItem];
-        return `${activeFile.filename}.${activeFile.extension} - Allusion`;
+        return `${activeFile.filename}.${activeFile.extension} - Atlas`;
       } else {
-        return 'Allusion';
+        return 'Atlas';
       }
     });
 
@@ -111,18 +111,19 @@ class RootStore {
     });
 
     // Then, look for any new or removed images, and refetch if necessary
-    rootStore.locationStore.watchLocations().then((foundNewFiles) => {
-      if (foundNewFiles) {
-        rootStore.fileStore.refetch();
-      }
-    });
+    rootStore.locationStore
+      .watchLocations()
+      .then((foundNewFiles) => (foundNewFiles ? rootStore.fileStore.refetch() : undefined))
+      .catch(console.error)
+      // Only after that is finished: both update files in the database, they would overwrite each other's changes
+      .then(() => rootStore.fileStore.fixRotatedImageDimensions());
 
     return rootStore;
   }
 
   static async preview(backend: DataStorage, backup: DataBackup): Promise<RootStore> {
     const rootStore = new RootStore(backend, backup, (fileStore, uiStore) => {
-      const PREVIEW_WINDOW_BASENAME = 'Allusion Quick View';
+      const PREVIEW_WINDOW_BASENAME = 'Atlas Quick View';
       const index = uiStore.firstItem;
       if (index >= 0 && index < fileStore.fileList.length) {
         const file = fileStore.fileList[index];
@@ -161,7 +162,9 @@ class RootStore {
   }
 
   async restoreDatabaseFromFile(path: string): Promise<void> {
-    return this.#backup.restoreFromFile(path);
+    await this.#backup.restoreFromFile(path);
+    // The restored files might still have their dimensions stored the wrong way around: check them again
+    FileStore.resetRotatedDimensionsFix();
   }
 
   async peekDatabaseFile(path: string): Promise<[numTags: number, numFiles: number]> {

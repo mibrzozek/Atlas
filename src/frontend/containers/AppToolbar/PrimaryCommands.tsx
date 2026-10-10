@@ -32,6 +32,7 @@ const PrimaryCommands = observer(() => {
     <>
       <OutlinerToggle />
       <FileSelectionCommand />
+      <TagOverlayToggle />
 
       <Searchbar />
 
@@ -100,6 +101,21 @@ const FileSelectionCommand = observer(() => {
       text={selectionCount}
       tooltip="Selects or deselects all images"
       disabled={fileCount === 0}
+    />
+  );
+});
+
+const TagOverlayToggle = observer(() => {
+  const { uiStore } = useStore();
+  const isEnabled = uiStore.isThumbnailTagOverlayEnabled;
+
+  return (
+    <ToolbarButton
+      icon={isEnabled ? IconSet.TAG : IconSet.TAG_BLANCO}
+      onClick={uiStore.toggleThumbnailTagOverlay}
+      pressed={isEnabled}
+      text="Tags on images"
+      tooltip="Shows or hides the tags on the images"
     />
   );
 });

@@ -95,11 +95,12 @@ class LocationStore {
   @action async watchLocations(): Promise<boolean> {
     const progressToastKey = 'progress';
     let foundNewFiles = false;
+    let foundChangedFiles = false;
     const len = this.locationList.length;
     const getLocation = action((index: number) => this.locationList[index]);
 
     // Get all files in the DB, set up data structures for quick lookups
-    // Doing it for all locations, so files moved to another Location on disk, it's properly re-assigned in Allusion too
+    // Doing it for all locations, so files moved to another Location on disk, it's properly re-assigned in Atlas too
     // TODO: Could be optimized, at startup we already fetch all files, don't need to fetch them again here
     const dbFiles: FileDTO[] = await this.backend.fetchFiles('id', OrderDirection.Asc);
     const dbFilesPathSet = new Set(dbFiles.map((f) => f.absolutePath));
@@ -215,7 +216,7 @@ class LocationStore {
       const foundCreatedMatches = createdMatches.filter((m) => m !== undefined) as FileDTO[];
       if (foundCreatedMatches.length > 0) {
         console.debug(
-          `Found ${foundCreatedMatches.length} renamed/moved files in location ${location.name}. These are detected as new files, but will instead replace their original entry in the DB of Allusion`,
+          `Found ${foundCreatedMatches.length} renamed/moved files in location ${location.name}. These are detected as new files, but will instead replace their original entry in the DB of Atlas`,
           foundCreatedMatches,
         );
         // TODO: remove thumbnail as well (clean-up needed, since the path changed)
@@ -283,6 +284,7 @@ class LocationStore {
             ...dbFile,
             // Recreate metadata which checks the resolution of the image
             ...(await getMetaData(diskFile, this.rootStore.imageLoader)),
+            dateModified: diskFile.dateModified,
             dateLastIndexed: new Date(),
           };
 
@@ -291,11 +293,15 @@ class LocationStore {
           fse.remove(thumbPath).catch(console.error);
 
           updatedFiles.push(newFile);
+        } else if (diskFile && dbFile.dateModified.getTime() !== diskFile.dateModified.getTime()) {
+          // Keep the modified date in sync with the file on disk, so sorting on it follows the actual files
+          updatedFiles.push({ ...dbFile, dateModified: diskFile.dateModified });
         }
       }
       if (updatedFiles.length > 0) {
-        console.debug('Re-indexed files changed on disk', updatedFiles);
+        console.debug('Updated files that were changed on disk', updatedFiles.length);
         await this.backend.saveFiles(updatedFiles);
+        foundChangedFiles = true;
       }
 
       console.groupEnd();
@@ -308,7 +314,7 @@ class LocationStore {
     } else {
       AppToaster.dismiss(progressToastKey);
     }
-    return foundNewFiles;
+    return foundNewFiles || foundChangedFiles;
   }
 
   @action get(locationId: ID): ClientLocation | undefined {
@@ -562,7 +568,7 @@ export async function pathToIFile(
     locationId: loc.id,
     tags: [],
     dateAdded: now,
-    dateModified: now,
+    dateModified: stats.dateModified,
     dateLastIndexed: now,
     ...(await getMetaData(stats, imageLoader)),
   };

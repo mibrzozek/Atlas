@@ -3,6 +3,7 @@ import { observer } from 'mobx-react-lite';
 import SysPath from 'path';
 import React from 'react';
 
+import { SOURCE_FILES_READ_ONLY } from 'common/config';
 import { IconSet } from 'widgets';
 import { MenuItem, MenuRadioItem, MenuSubItem } from 'widgets/menus';
 import { useStore } from '../../contexts/StoreContext';
@@ -194,7 +195,7 @@ export const SlideFileViewerMenuItems = observer(({ file }: { file: ClientFile }
 });
 
 export const ExternalAppMenuItems = observer(({ file }: { file: ClientFile }) => {
-  const { uiStore } = useStore();
+  const { uiStore, fileStore } = useStore();
   return (
     <>
       <MenuItem
@@ -216,10 +217,23 @@ export const ExternalAppMenuItems = observer(({ file }: { file: ClientFile }) =>
         icon={IconSet.FOLDER_CLOSE}
       />
       <MenuItem
-        onClick={uiStore.openMoveFilesToTrash}
-        text={`Delete file${uiStore.fileSelection.size > 1 ? 's' : ''}`}
-        icon={IconSet.DELETE}
+        onClick={() =>
+          fileStore.exportFilesToFolder(Array.from(uiStore.fileSelection, (f) => f.absolutePath))
+        }
+        text={
+          uiStore.fileSelection.size > 1
+            ? `Export ${uiStore.fileSelection.size} images to Folder...`
+            : 'Export image to Folder...'
+        }
+        icon={IconSet.FOLDER_OPEN}
       />
+      {!SOURCE_FILES_READ_ONLY && (
+        <MenuItem
+          onClick={uiStore.openMoveFilesToTrash}
+          text={`Delete file${uiStore.fileSelection.size > 1 ? 's' : ''}`}
+          icon={IconSet.DELETE}
+        />
+      )}
     </>
   );
 });

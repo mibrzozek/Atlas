@@ -84,7 +84,7 @@ interface IContextMenuProps {
 
 export const TagItemContextMenu = observer((props: IContextMenuProps) => {
   const { tag, dispatch, pos } = props;
-  const { tagStore, uiStore } = useStore();
+  const { tagStore, uiStore, fileStore } = useStore();
   const ctxTags = uiStore.getTagContextItems(tag.id);
 
   return (
@@ -140,6 +140,11 @@ export const TagItemContextMenu = observer((props: IContextMenuProps) => {
         }
         text="Replace Search"
         icon={IconSet.REPLACE}
+      />
+      <MenuItem
+        onClick={() => fileStore.exportTaggedFilesToFolder(ctxTags)}
+        text="Export Tagged Images to Folder..."
+        icon={IconSet.FOLDER_OPEN}
       />
       <MenuDivider />
       <MenuItem

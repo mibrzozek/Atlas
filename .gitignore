@@ -16,3 +16,10 @@ dist/
 ._*
 
 target/
+
+# Local Claude Code settings (machine-specific)
+.claude/settings.local.json
+
+# Temporary scripts and scratch folders
+tmp-*
+scratch-*/

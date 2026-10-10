@@ -32,15 +32,34 @@ export const MasonryCell = observer(
     forceNoThumbnail,
     transform: [width, height, top, left],
   }: MasonryItemProps) => {
-    const { uiStore, fileStore } = useStore();
+    const { uiStore, fileStore, imageLoader } = useStore();
     const style = { height, width, transform: `translate(${left}px,${top}px)` };
     const eventManager = useMemo(() => new CommandDispatcher(file), [file]);
+    // Get a head start on decoding the full image when it looks like it is going to be opened:
+    // when the pointer rests on it, or on the first click of a double click
+    const hoverTimer = useRef<number>();
+    const handlePointerEnter = useCallback(() => {
+      hoverTimer.current = window.setTimeout(() => imageLoader.preloadImage(file), 150);
+    }, [file, imageLoader]);
+    const handlePointerLeave = useCallback(() => window.clearTimeout(hoverTimer.current), []);
+    useEffect(() => () => window.clearTimeout(hoverTimer.current), []);
+    const handleClick = useCallback(
+      (e: MousePointerEvent) => {
+        if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+          imageLoader.preloadImage(file);
+        }
+        eventManager.select(e);
+      },
+      [eventManager, file, imageLoader],
+    );
 
     return (
       <div data-masonrycell aria-selected={uiStore.fileSelection.has(file)} style={style}>
         <div
           className={`thumbnail${file.isBroken ? ' thumbnail-broken' : ''}`}
-          onClick={eventManager.select}
+          onClick={handleClick}
+          onPointerEnter={handlePointerEnter}
+          onPointerLeave={handlePointerLeave}
           onDoubleClick={eventManager.preview}
           onContextMenu={eventManager.showContextMenu}
           onDragStart={eventManager.dragStart}
@@ -74,8 +93,7 @@ export const MasonryCell = observer(
           />
         )}
 
-        {/* Show tags when the option is enabled, or when the file is selected */}
-        {(uiStore.isThumbnailTagOverlayEnabled || uiStore.fileSelection.has(file)) &&
+        {uiStore.isThumbnailTagOverlayEnabled &&
           (!mounted ? (
             <span className="thumbnail-tags" />
           ) : (

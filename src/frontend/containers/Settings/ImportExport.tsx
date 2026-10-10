@@ -1,3 +1,4 @@
+import { READ_ONLY_MESSAGE, SOURCE_FILES_READ_ONLY } from 'common/config';
 import { getFilenameFriendlyFormattedDateTime } from 'common/fmt';
 import { shell } from 'electron';
 import { observer } from 'mobx-react-lite';
@@ -101,6 +102,8 @@ export const ImportExport = observer(() => {
             text="Export tags to file metadata"
             onClick={() => setConfirmingMetadataExport(true)}
             styling="outlined"
+            disabled={SOURCE_FILES_READ_ONLY}
+            tooltip={SOURCE_FILES_READ_ONLY ? READ_ONLY_MESSAGE : undefined}
           />
           <Alert
             open={isConfirmingMetadataExport}
@@ -115,7 +118,7 @@ export const ImportExport = observer(() => {
           >
             <p>
               This will overwrite any existing tags (a.k.a. keywords) in those files with
-              Allusion&#39;s tags. It is recommended to import all tags before writing new tags.
+              Atlas&#39;s tags. It is recommended to import all tags before writing new tags.
             </p>
           </Alert>
         </ButtonGroup>
@@ -153,7 +156,7 @@ export const ImportExport = observer(() => {
           onClick={async (button) => {
             if (isConfirmingFileImport && button === DialogButton.PrimaryButton) {
               AppToaster.show({
-                message: 'Restoring database... Allusion will restart',
+                message: 'Restoring database... Atlas will restart',
                 timeout: 5000,
               });
               try {

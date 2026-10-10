@@ -42,9 +42,13 @@
 // finds:
 // - automatically update Subject/Keywords when updating HierarchicalSubject: https://exiftool.org/forum/index.php?topic=9208.0
 // Update: only doing an export/import for all images for now, not real-time updates
+import { execFile } from 'child_process';
 import fse from 'fs-extra';
 import { action, makeObservable, observable, runInAction } from 'mobx';
 import exiftool from 'node-exiftool';
+import os from 'os';
+import path from 'path';
+import { READ_ONLY_MESSAGE, SOURCE_FILES_READ_ONLY } from './config';
 import { IS_WIN } from './process';
 import { getExtraResourcePath } from './fs';
 
@@ -61,6 +65,29 @@ const defaultWriteArgs = [
   'codedcharacterset=utf8', // needed for adobe products: https://www.npmjs.com/package/node-exiftool#writing-tags-for-adobe-in-utf8
   'P', // for preserving the modified date of files
 ];
+
+/** Whether an Exif orientation means the camera was held sideways: the image is shown rotated by a quarter turn */
+function isSidewaysOrientation(orientation: unknown): boolean {
+  if (typeof orientation === 'number') {
+    return orientation >= 5 && orientation <= 8;
+  }
+  return typeof orientation === 'string' && /90|270|transpose|transverse/i.test(orientation);
+}
+
+/** The formats for which the orientation is applied when they are displayed */
+function isShownWithOrientation(filepath: string): boolean {
+  return /[.](jpe?g|jfif|png|webp)$/i.test(filepath);
+}
+
+let argFileCounter = 0;
+
+export interface RawDimensions {
+  /** The stored width, before any rotation is applied */
+  width: number;
+  height: number;
+  /** Whether the image is shown rotated by a quarter turn, so with its width and height swapped */
+  isSideways: boolean;
+}
 
 class ExifIO {
   @observable hierarchicalSeparator: string;
@@ -187,6 +214,9 @@ class ExifIO {
 
   /** Overwrites the tags of a specific file */
   @action.bound async writeTags(filepath: string, tagNameHierarchy: string[][]): Promise<void> {
+    if (SOURCE_FILES_READ_ONLY) {
+      throw new Error(READ_ONLY_MESSAGE);
+    }
     // TODO: Could also write the meta-metadata, e.g.:
     // History Action                  : saved
     // History Instance ID             : xmp.iid:14020DA03863EB11B2D999D21045C35B
@@ -232,6 +262,9 @@ class ExifIO {
       onlyIfUndefined?: boolean;
     },
   ): Promise<void> {
+    if (SOURCE_FILES_READ_ONLY) {
+      throw new Error(READ_ONLY_MESSAGE);
+    }
     console.debug('Writing', data, 'to', filepath);
 
     const args = [...defaultWriteArgs, ...this.extraArgs];
@@ -305,7 +338,8 @@ class ExifIO {
   // }
 
   /**
-   * Extracts the width and height resolution of an image file from its exif data.
+   * Extracts the width and height resolution of an image file from its exif data, as it is displayed:
+   * for a photo taken with the camera held sideways, the stored width and height are swapped.
    * @param filepath The file to read the resolution from
    * @returns The width and height of the image, or width and height as 0 if the resolution could not be determined.
    */
@@ -316,18 +350,68 @@ class ExifIO {
         's3',
         'ImageWidth',
         'ImageHeight',
+        'Orientation',
         ...this.extraArgs,
       ]);
       if (metadata.error || !metadata.data?.[0]) {
         throw new Error(metadata.error || 'No metadata entry');
       }
       const entry = metadata.data[0];
-      const { ImageWidth, ImageHeight } = entry;
+      const { ImageWidth, ImageHeight, Orientation } = entry;
+      if (isShownWithOrientation(filepath) && isSidewaysOrientation(Orientation)) {
+        return { width: ImageHeight, height: ImageWidth };
+      }
       return { width: ImageWidth, height: ImageHeight };
     } catch (e) {
       console.error('Could not read image dimensions from ', filepath, e, metadata);
       return { width: 0, height: 0 };
     }
+  }
+
+  /**
+   * Reads the stored dimensions and orientation of many files at once, which is a lot faster than one by one.
+   * Files that cannot be read, or for which the orientation is not applied when shown, are left out.
+   */
+  async readRawDimensions(filepaths: string[]): Promise<Map<string, RawDimensions>> {
+    const result = new Map<string, RawDimensions>();
+    const candidates = filepaths.filter(isShownWithOrientation);
+    if (candidates.length === 0) {
+      return result;
+    }
+    // Passed in a file: there is a limit to the length of a command
+    // This can be called several times at once: every call needs its own file
+    const argFile = path.join(
+      os.tmpdir(),
+      `atlas-exiftool-args-${process.pid}-${Date.now()}-${argFileCounter++}.txt`,
+    );
+    await fse.writeFile(argFile, candidates.join(os.EOL), 'utf8');
+    try {
+      const output = await new Promise<string>((resolve, reject) =>
+        execFile(
+          EXIF_TOOL_PATH,
+          // prettier-ignore
+          ['-charset', 'filename=utf8', '-json', '-n', '-fast2', '-Orientation', '-ImageWidth', '-ImageHeight', '-@', argFile],
+          { maxBuffer: 256 * 1024 * 1024, windowsHide: true },
+          // It exits with an error code when any of the files could not be read: the others are still in the output
+          (error, stdout) => (stdout ? resolve(stdout) : reject(error)),
+        ),
+      );
+      const normalize = (p: string) => path.normalize(p).toLowerCase();
+      const originalPaths = new Map(candidates.map((p) => [normalize(p), p]));
+      for (const entry of JSON.parse(output)) {
+        const filepath = originalPaths.get(normalize(entry.SourceFile));
+        if (filepath !== undefined && entry.ImageWidth > 0 && entry.ImageHeight > 0) {
+          result.set(filepath, {
+            width: entry.ImageWidth,
+            height: entry.ImageHeight,
+            isSideways: isSidewaysOrientation(entry.Orientation),
+          });
+        }
+      }
+    } finally {
+      fse.remove(argFile).catch(console.error);
+    }
+    return result;
   }
 
   /**

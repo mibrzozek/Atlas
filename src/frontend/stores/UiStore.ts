@@ -2,11 +2,16 @@ import { shell } from 'electron';
 import fse from 'fs-extra';
 import { action, computed, makeObservable, observable } from 'mobx';
 
-import { maxNumberOfExternalFilesBeforeWarning } from 'common/config';
+import {
+  READ_ONLY_MESSAGE,
+  SOURCE_FILES_READ_ONLY,
+  maxNumberOfExternalFilesBeforeWarning,
+} from 'common/config';
 import { clamp, notEmpty } from 'common/core';
 import { ID } from '../../api/id';
 import { SearchCriteria } from '../../api/search-criteria';
 import { RendererMessenger } from '../../ipc/renderer';
+import { AppToaster } from '../components/Toaster';
 import { ClientFile } from '../entities/File';
 import { ClientFileSearchCriteria, ClientTagSearchCriteria } from '../entities/SearchCriteria';
 import { ClientTag } from '../entities/Tag';
@@ -154,9 +159,9 @@ class UiStore {
   @observable upscaleMode: UpscaleMode = 'smooth';
 
   @observable isToolbarTagPopoverOpen: boolean = false;
-  /** Dialog for removing unlinked files from Allusion's database */
+  /** Dialog for removing unlinked files from Atlas's database */
   @observable isToolbarFileRemoverOpen: boolean = false;
-  /** Dialog for moving files to the system's trash bin, and removing from Allusion's database */
+  /** Dialog for moving files to the system's trash bin, and removing from Atlas's database */
   @observable isMoveFilesToTrashOpen: boolean = false;
   /** Dialog to warn the user when he tries to open too many files externally */
   @observable isManyExternalFilesOpen: boolean = false;
@@ -377,6 +382,10 @@ class UiStore {
   }
 
   @action.bound openMoveFilesToTrash(): void {
+    if (SOURCE_FILES_READ_ONLY) {
+      AppToaster.show({ message: READ_ONLY_MESSAGE, timeout: 6000 }, 'read-only');
+      return;
+    }
     this.isMoveFilesToTrashOpen = true;
   }
 
@@ -831,7 +840,7 @@ class UiStore {
           );
           this.searchCriteriaList.push(...newCrits);
 
-          // and other content-related options. So it's just like you never closed Allusion!
+          // and other content-related options. So it's just like you never closed Atlas!
           this.firstItem = prefs.firstItem;
           this.searchMatchAny = prefs.searchMatchAny;
           this.isSlideMode = prefs.isSlideMode;

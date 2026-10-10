@@ -11,7 +11,7 @@ export type FileDTO = {
   tags: ID[];
   /** When the file was imported into Allusion */
   dateAdded: Date;
-  /** When the file was modified in Allusion, not related to OS modified date */
+  /** When the file was last modified on disk */
   dateModified: Date;
   /**
    * When the file was last indexed in Allusion: concerning the metadata and thumbnail.
@@ -54,4 +54,4 @@ export const IMG_EXTENSIONS = [
   // 'heic', // not supported by Sharp out of the box https://github.com/lovell/sharp/issues/2871
   // TODO: 'blend', raw, etc.?
 ] as const;
-export type IMG_EXTENSIONS_TYPE = typeof IMG_EXTENSIONS[number];
+export type IMG_EXTENSIONS_TYPE = (typeof IMG_EXTENSIONS)[number];

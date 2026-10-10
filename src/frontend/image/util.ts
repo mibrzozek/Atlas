@@ -1,5 +1,6 @@
 import { clamp } from 'common/core';
 import fse from 'fs-extra';
+import path from 'path';
 import { thumbnailFormat } from 'common/config';
 
 export interface Loader extends Decoder {
@@ -30,6 +31,10 @@ export async function generateThumbnail(
   outputPath: string,
   thumbnailSize: number,
 ): Promise<void> {
+  // Never write over the image itself
+  if (path.resolve(inputPath).toLowerCase() === path.resolve(outputPath).toLowerCase()) {
+    throw new Error('The thumbnail of an image cannot be stored as the image itself');
+  }
   // TODO: merge this functionality with the thumbnail worker: it's basically duplicate code
   const buffer = await fse.readFile(inputPath);
   const data = await decoder.decode(buffer);

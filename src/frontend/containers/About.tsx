@@ -21,10 +21,11 @@ const About = observer(() => {
           Version <strong>{RendererMessenger.getVersion()}</strong>
         </small>
         <p>
-          This application was made by a small team of individuals who gathered due to common
-          interest in art, design and software.
+          Atlas is a fork of <b>Allusion</b>, which was made by a small team of individuals who
+          gathered due to common interest in art, design and software.
           <br />
-          It&apos;s completely <b>free and open source</b>! Find out more at
+          It&apos;s completely <b>free and open source</b> (GPL-3.0)! Find out more about the
+          original project at
         </p>
         <span>
           <ExternalLink url="https://allusion-app.github.io/">allusion-app.github.io</ExternalLink>.

@@ -18,6 +18,15 @@ export const MAX_TAG_DEPTH = 32;
 
 export const thumbnailFormat = 'webp';
 
+/**
+ * The image files in the user's locations are never modified, moved, renamed or deleted by this application:
+ * it only reads them. Everything that would change an existing image file is switched off by this.
+ * Do not add new code paths that write to a location without checking it.
+ */
+export const SOURCE_FILES_READ_ONLY = true;
+
+export const READ_ONLY_MESSAGE = 'Atlas is read-only: it never changes or deletes your image files';
+
 const isRenderer = process.type === 'renderer';
 
 // Use higher thumbnail resolution for HiDPI screens
@@ -51,7 +60,7 @@ ${error || 'No error message available'}
 
 <b>Runtime info</b>
 <ul>
-<li>Allusion version: v${version}</li>
+<li>Atlas version: v${version}</li>
 <li>Operating system: ${os.type()} ${os.release()}, ${process.platform} ${process.arch}</li>
 <li>Node version: ${process.version}</li>
 </ul>

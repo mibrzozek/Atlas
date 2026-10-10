@@ -1,6 +1,8 @@
+import { shell } from 'electron';
 import fse from 'fs-extra';
 import { action, computed, makeObservable, observable, runInAction } from 'mobx';
 
+import { exportFilesToDirectory } from 'common/export';
 import { getThumbnailPath } from 'common/fs';
 import { promiseAllLimit } from 'common/promise';
 import { debounce } from 'common/timeout';
@@ -8,7 +10,9 @@ import { DataStorage } from '../../api/data-storage';
 import { ConditionDTO, OrderBy, OrderDirection } from '../../api/data-storage-search';
 import { FileDTO, IMG_EXTENSIONS_TYPE } from '../../api/file';
 import { ID } from '../../api/id';
+import { RendererMessenger } from '../../ipc/renderer';
 import { AppToaster } from '../components/Toaster';
+import { ThumbnailTarget } from '../image/ThumbnailGeneration';
 import { ClientFile, mergeMovedFile } from '../entities/File';
 import { ClientLocation } from '../entities/Location';
 import { ClientStringSearchCriteria, ClientTagSearchCriteria } from '../entities/SearchCriteria';
@@ -16,6 +20,8 @@ import { ClientTag } from '../entities/Tag';
 import RootStore from './RootStore';
 
 export const FILE_STORAGE_KEY = 'Allusion_File';
+const ROTATED_DIMENSIONS_FIXED_KEY = 'Atlas_RotatedDimensionsFixed';
+const ROTATED_DIMENSIONS_PROGRESS_KEY = 'Atlas_RotatedDimensionsProgress';
 
 /** These fields are stored and recovered when the application opens up */
 type PersistentPreferenceFields = 'orderDirection' | 'orderBy';
@@ -81,7 +87,7 @@ class FileStore {
         try {
           const tagsNameHierarchies = await this.rootStore.exifTool.readTags(absolutePath);
 
-          // Now that we know the tag names in file metadata, add them to the files in Allusion
+          // Now that we know the tag names in file metadata, add them to the files in Atlas
           // Main idea: Find matching tag with same name, otherwise, insert new
           //   for now, just match by the name at the bottom of the hierarchy
 
@@ -307,6 +313,205 @@ class FileStore {
     }
   }
 
+  /** Asks for a folder and copies the given files into it. The originals are left untouched */
+  async exportFilesToFolder(absolutePaths: string[]): Promise<void> {
+    const toastKey = 'export-files';
+    if (absolutePaths.length === 0) {
+      AppToaster.show({ message: 'There are no images to export', timeout: 5000 }, toastKey);
+      return;
+    }
+    const numFiles = absolutePaths.length;
+    const { filePaths } = await RendererMessenger.showOpenDialog({
+      title: `Choose a folder to export ${numFiles} image${numFiles === 1 ? '' : 's'} to`,
+      buttonLabel: 'Export here',
+      properties: ['openDirectory', 'createDirectory'],
+    });
+    if (filePaths.length === 0) {
+      return;
+    }
+    const targetDir = filePaths[0];
+
+    try {
+      let lastProgressUpdate = 0;
+      const { copied, skipped, failed } = await exportFilesToDirectory(
+        absolutePaths,
+        targetDir,
+        (numProcessed, total) => {
+          if (Date.now() - lastProgressUpdate > 250) {
+            lastProgressUpdate = Date.now();
+            AppToaster.show(
+              { message: `Exporting images... [${numProcessed} / ${total}]`, timeout: 0 },
+              toastKey,
+            );
+          }
+        },
+      );
+      const details = [
+        skipped > 0 ? `${skipped} already in that folder` : '',
+        failed.length > 0 ? `${failed.length} could not be copied` : '',
+      ].filter(Boolean);
+      AppToaster.show(
+        {
+          message: `Exported ${copied} image${copied === 1 ? '' : 's'}${
+            details.length > 0 ? ` (${details.join(', ')})` : ''
+          }`,
+          timeout: failed.length > 0 ? 0 : 10000,
+          clickAction: { label: 'Open folder', onClick: () => shell.openPath(targetDir) },
+        },
+        toastKey,
+      );
+    } catch (err) {
+      console.error('Could not export files', err);
+      AppToaster.show({ message: 'Could not export to that folder', timeout: 0 }, toastKey);
+    }
+  }
+
+  /** Makes the dimensions of all files get checked again, e.g. after files were restored from a backup */
+  static resetRotatedDimensionsFix(): void {
+    localStorage.removeItem(ROTATED_DIMENSIONS_FIXED_KEY);
+    localStorage.removeItem(ROTATED_DIMENSIONS_PROGRESS_KEY);
+  }
+
+  /**
+   * Photos taken with the camera held sideways used to be stored with their width and height the wrong way around,
+   * which made them show up cropped. This corrects the files that are already in the database, once.
+   */
+  async fixRotatedImageDimensions(): Promise<void> {
+    const storageKey = ROTATED_DIMENSIONS_FIXED_KEY;
+    if (localStorage.getItem(storageKey) !== null) {
+      return;
+    }
+    // Where it left off, in case the application was closed before it was finished
+    const progressKey = ROTATED_DIMENSIONS_PROGRESS_KEY;
+    const toastKey = 'fix-rotated-dimensions';
+    const CHUNK_SIZE = 500;
+    const NUM_PARALLEL_CHUNKS = 4;
+    const { exifTool } = this.rootStore;
+    try {
+      const progress: { lastId?: ID; numFixed: number } = JSON.parse(
+        localStorage.getItem(progressKey) ?? '{"numFixed":0}',
+      );
+      const allFiles = await this.backend.fetchFiles('id', OrderDirection.Asc);
+      const { lastId } = progress;
+      const files = lastId === undefined ? allFiles : allFiles.filter((f) => f.id > lastId);
+      const numDoneBefore = allFiles.length - files.length;
+      let numFixed = progress.numFixed;
+
+      const fixChunk = async (chunk: FileDTO[]): Promise<number> => {
+        const dimensions = await exifTool.readRawDimensions(chunk.map((f) => f.absolutePath));
+        const fixedFiles: FileDTO[] = [];
+        for (const file of chunk) {
+          const raw = dimensions.get(file.absolutePath);
+          // Only when the stored dimensions have not been swapped yet
+          if (
+            raw !== undefined &&
+            raw.isSideways &&
+            raw.width !== raw.height &&
+            file.width === raw.width &&
+            file.height === raw.height
+          ) {
+            fixedFiles.push({ ...file, width: raw.height, height: raw.width });
+          }
+        }
+        if (fixedFiles.length > 0) {
+          await this.backend.saveFiles(fixedFiles);
+          // Also the files that are loaded: otherwise they write their old dimensions back when they are saved
+          for (const fixedFile of fixedFiles) {
+            const clientFile = this.get(fixedFile.id);
+            if (clientFile !== undefined) {
+              clientFile.width = fixedFile.width;
+              clientFile.height = fixedFile.height;
+            }
+          }
+        }
+        return fixedFiles.length;
+      };
+
+      const groupSize = CHUNK_SIZE * NUM_PARALLEL_CHUNKS;
+      for (let i = 0; i < files.length; i += groupSize) {
+        if (allFiles.length > CHUNK_SIZE) {
+          AppToaster.show(
+            {
+              message: `Checking the orientation of your photos... [${numDoneBefore + i} / ${
+                allFiles.length
+              }]`,
+              timeout: 0,
+            },
+            toastKey,
+          );
+        }
+        const group = files.slice(i, i + groupSize);
+        const chunks: FileDTO[][] = [];
+        for (let j = 0; j < group.length; j += CHUNK_SIZE) {
+          chunks.push(group.slice(j, j + CHUNK_SIZE));
+        }
+        const counts = await Promise.all(chunks.map(fixChunk));
+        numFixed += counts.reduce((a, b) => a + b, 0);
+        localStorage.setItem(
+          progressKey,
+          JSON.stringify({ lastId: group[group.length - 1].id, numFixed }),
+        );
+      }
+      localStorage.setItem(storageKey, new Date().toISOString());
+      localStorage.removeItem(progressKey);
+
+      if (numFixed > 0) {
+        // Lay out the shown images again with their corrected dimensions
+        await this.refetch();
+        AppToaster.show(
+          {
+            message: `Corrected ${numFixed} photos that were taken sideways: they are no longer cropped`,
+            timeout: 10000,
+          },
+          toastKey,
+        );
+      } else {
+        AppToaster.dismiss(toastKey);
+      }
+    } catch (err) {
+      console.error('Could not correct the dimensions of rotated images', err);
+      AppToaster.dismiss(toastKey);
+    }
+  }
+
+  /**
+   * All files in the library that have a thumbnail, as light-weight objects for generating those thumbnails
+   * without having to load the files into the view.
+   */
+  async fetchThumbnailTargets(): Promise<ThumbnailTarget[]> {
+    const files = await this.backend.fetchFiles('id', OrderDirection.Asc);
+    const { imageLoader, uiStore } = this.rootStore;
+    const thumbnailDirectory = runInAction(() => uiStore.thumbnailDirectory);
+    const targets: ThumbnailTarget[] = [];
+    for (const file of files) {
+      if (imageLoader.needsThumbnail(file)) {
+        targets.push({
+          id: file.id,
+          extension: file.extension,
+          absolutePath: file.absolutePath,
+          width: file.width,
+          height: file.height,
+          thumbnailPath: getThumbnailPath(file.absolutePath, thumbnailDirectory),
+          setThumbnailPath: () => undefined,
+        });
+      }
+    }
+    return targets;
+  }
+
+  /** Exports all files that have any of the given tags or their sub-tags, regardless of what is currently shown */
+  async exportTaggedFilesToFolder(tags: ClientTag[]): Promise<void> {
+    try {
+      const conditions = tags.map((tag) =>
+        new ClientTagSearchCriteria('tags', tag.id).toCondition(this.rootStore),
+      ) as [ConditionDTO<FileDTO>, ...ConditionDTO<FileDTO>[]];
+      const files = await this.backend.searchFiles(conditions, 'id', OrderDirection.Asc, true);
+      return this.exportFilesToFolder(files.map((file) => file.absolutePath));
+    } catch (err) {
+      console.error('Could not find the tagged files to export', err);
+    }
+  }
+
   @action.bound async refetch(): Promise<void> {
     if (this.showsAllContent) {
       return this.fetchAllFiles();
@@ -402,7 +607,7 @@ class FileStore {
       AppToaster.show(
         {
           message:
-            'Some files can no longer be found. Either move them back to their location, or delete them from Allusion',
+            'Some files can no longer be found. Either move them back to their location, or delete them from Atlas',
           timeout: 12000,
         },
         'recovery-view',
@@ -482,8 +687,6 @@ class FileStore {
   }
 
   save(file: FileDTO): void {
-    file.dateModified = new Date();
-
     // Save files in bulk so saving many files at once is faster.
     // Each file will call this save() method individually after detecting a change on its observable fields,
     // these can be batched by collecting the changes and debouncing the save operation
@@ -610,6 +813,8 @@ class FileStore {
       const existingFile = this.get(f.id);
       if (existingFile !== undefined) {
         reusedStatus.add(existingFile.id);
+        // Otherwise it would write its outdated date back to the database the next time it is saved
+        existingFile.dateModified = f.dateModified;
         // Update tags (might have changes, e.g. removed/merged)
         const newTags = f.tags
           .map((t) => this.rootStore.tagStore.get(t))

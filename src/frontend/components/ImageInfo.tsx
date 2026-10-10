@@ -1,6 +1,7 @@
 import fse from 'fs-extra';
 import React, { ReactNode, useCallback, useEffect, useState } from 'react';
 
+import { SOURCE_FILES_READ_ONLY } from 'common/config';
 import { formatDateTime, humanFileSize } from 'common/fmt';
 import { IconSet } from 'widgets/icons';
 import { Toolbar, ToolbarButton } from 'widgets/toolbar';
@@ -178,14 +179,16 @@ const ImageInfo = ({ file }: ImageInfoProps) => {
               />
             </>
           ) : (
-            <ToolbarButton
-              key="edit"
-              icon={IconSet.EDIT}
-              text="Edit"
-              onClick={() => setIsEditing(true)}
-              tooltip="Edit Exif data"
-              type="button"
-            />
+            !SOURCE_FILES_READ_ONLY && (
+              <ToolbarButton
+                key="edit"
+                icon={IconSet.EDIT}
+                text="Edit"
+                onClick={() => setIsEditing(true)}
+                tooltip="Edit Exif data"
+                type="button"
+              />
+            )
           )}
         </Toolbar>
       </header>

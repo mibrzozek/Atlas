@@ -31,9 +31,7 @@ const ANIMATION_SPEED = 0.1;
 export type SlideTransform = Transform;
 
 export interface ZoomPanProps {
-  children: (
-    props: React.ImgHTMLAttributes<HTMLImageElement>,
-  ) => React.ReactElement<HTMLImageElement>;
+  children: (props: React.HTMLAttributes<HTMLElement>) => React.ReactElement;
   initialScale: number | 'auto';
   minScale: number;
   maxScale: number;
@@ -42,6 +40,8 @@ export interface ZoomPanProps {
   imageDimension: Dimension;
   containerDimension: Dimension;
   onClose?: () => void;
+  /** Called when the transition from `transitionStart` has finished or was interrupted */
+  onOpened?: () => void;
   upscaleMode: UpscaleMode;
 
   transitionStart?: Transform;
@@ -307,9 +307,12 @@ export default class ZoomPan extends React.Component<ZoomPanProps, ZoomPanState>
   componentDidMount() {
     const transform = getTransform(this.props);
     if (this.props.transitionStart !== undefined) {
-      this.startAnimation(animateTransform(transform, ANIMATION_SPEED * 2, this.setState));
+      this.startAnimation(
+        animateTransform(transform, ANIMATION_SPEED * 2, this.setState, this.props.onOpened),
+      );
     } else {
       this.setState(transform);
+      this.props.onOpened?.();
     }
   }
 
@@ -447,8 +450,20 @@ function resetTransform(props: Readonly<ZoomPanProps>, setState: Updater) {
   return animateTransform(transform, ANIMATION_SPEED, setState);
 }
 
-function animateTransform(transform: Transform, speed: number, setState: Updater) {
+function animateTransform(
+  transform: Transform,
+  speed: number,
+  setState: Updater,
+  onEnd?: () => void,
+) {
   let animationHandle: number | undefined = undefined;
+  let hasEnded = false;
+  const end = () => {
+    if (!hasEnded) {
+      hasEnded = true;
+      onEnd?.();
+    }
+  };
   const frame = () => {
     setState((state) => {
       const translateY = transform.top - state.top;
@@ -465,6 +480,8 @@ function animateTransform(transform: Transform, speed: number, setState: Updater
         return nextTransform;
       }
       animationHandle = undefined;
+      // Not called directly: this is a state updater function
+      requestAnimationFrame(end);
       return transform;
     });
   };
@@ -475,6 +492,7 @@ function animateTransform(transform: Transform, speed: number, setState: Updater
       cancelAnimationFrame(animationHandle);
       animationHandle = undefined;
     }
+    end();
   };
 }
 

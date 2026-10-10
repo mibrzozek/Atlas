@@ -2,6 +2,7 @@ import React from 'react';
 
 import PreloadIcon from 'resources/icons/preload.svg';
 import { SVG } from 'widgets/icons';
+import AtlasWordmark from '../components/AtlasWordmark';
 
 const SplashScreen = () => {
   // Using inline style since css file might not have been loaded
@@ -20,9 +21,7 @@ const SplashScreen = () => {
   };
 
   const textStyles: React.CSSProperties = {
-    margin: '0',
-    fontSize: '18px',
-    fontWeight: 700,
+    margin: '24px 0 0 0',
     fontFamily:
       '-apple-system, "BlinkMacSystemFont", "Segoe UI", "Roboto", "Oxygen", "Ubuntu", "Cantarell", \
     "Open Sans", "Helvetica Neue", "Icons16", sans-serif',
@@ -66,7 +65,9 @@ const SplashScreen = () => {
           style={{ fill: '#fff', width: '42px', height: '36px' }}
         />
 
-        <p style={textStyles}>Allusion</p>
+        <div style={textStyles}>
+          <AtlasWordmark />
+        </div>
       </div>
     </div>
   );

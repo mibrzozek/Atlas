@@ -19,7 +19,12 @@ import TrayIcon from '../resources/logo/png/full-color/allusion-logomark-fc-256x
 import AppIcon from '../resources/logo/png/full-color/allusion-logomark-fc-512x512.png';
 import TrayIconMac from '../resources/logo/png/black/allusionTemplate@2x.png'; // filename convention: https://www.electronjs.org/docs/api/native-image#template-image
 import ClipServer, { IImportItem } from './clipper/server';
-import { createBugReport, githubUrl } from '../common/config';
+import {
+  READ_ONLY_MESSAGE,
+  SOURCE_FILES_READ_ONLY,
+  createBugReport,
+  githubUrl,
+} from '../common/config';
 import { IS_DEV, IS_MAC } from '../common/process';
 import { TagDTO, ROOT_TAG_ID } from './api/tag';
 import { MainMessenger } from './ipc/main';
@@ -101,7 +106,7 @@ function createWindow() {
     icon: `${__dirname}/${AppIcon}`,
     // Should be same as body background: Only for split second before css is loaded
     backgroundColor: '#1c1e23',
-    title: 'Allusion',
+    title: 'Atlas',
     show: false, // only show once initial loading is finished
     ...previousWindowState,
   };
@@ -141,7 +146,7 @@ function createWindow() {
         // Should be same as body background: Only for split second before css is loaded
         backgroundColor: '#1c1e23',
         parent: mainWindow,
-        title: `${WINDOW_TITLES[frameName]} • Allusion`,
+        title: `${WINDOW_TITLES[frameName]} • Atlas`,
         frame: true,
         titleBarStyle: 'default',
       },
@@ -155,10 +160,6 @@ function createWindow() {
 
     childWindow.center(); // "center" in additionalOptions doesn't work :/
     childWindow.setMenu(null); // no toolbar needed
-
-    if (IS_DEV) {
-      childWindow.webContents.openDevTools();
-    }
 
     mainWindow.webContents.once('will-navigate', () => {
       if (!childWindow.isDestroyed()) {
@@ -193,7 +194,7 @@ function createWindow() {
   const menuBar: Electron.MenuItemConstructorOptions[] = [];
 
   menuBar.push({
-    label: 'Allusion',
+    label: 'Atlas',
     submenu: [
       { role: 'about' },
       { type: 'separator' },
@@ -280,11 +281,6 @@ function createWindow() {
     mainWindow.maximize();
   }
 
-  // Open the DevTools if in dev mode.
-  if (IS_DEV) {
-    mainWindow.webContents.openDevTools();
-  }
-
   // Emitted when the window is closed.
   mainWindow.on('closed', () => {
     // Dereference the window object, usually you would store windows
@@ -363,7 +359,7 @@ function createPreviewWindow() {
     icon: `${__dirname}/${AppIcon}`,
     // Should be same as body background: Only for split second before css is loaded
     backgroundColor: '#14181a',
-    title: 'Allusion Quick View',
+    title: 'Atlas Quick View',
     show: false, // invis by default
   });
   previewWindow.setMenuBarVisibility(false);
@@ -400,7 +396,7 @@ function createTrayMenu() {
       },
     ]);
     tray.setContextMenu(trayMenu);
-    tray.setToolTip('Allusion - Your Visual Library');
+    tray.setToolTip('Atlas - Your Visual Library');
     tray.on('click', onTrayClick);
   }
 }
@@ -416,11 +412,11 @@ app.on('window-all-closed', () => {
   }
 });
 
-// Ensure only a single instance of Allusion can be open
+// Ensure only a single instance of Atlas can be open
 // https://www.electronjs.org/docs/api/app#apprequestsingleinstancelock
 const HAS_INSTANCE_LOCK = app.requestSingleInstanceLock();
 if (!HAS_INSTANCE_LOCK) {
-  console.log('Another instance of Allusion is already running');
+  console.log('Another instance of Atlas is already running');
   app.quit();
 } else {
   app.on('second-instance', () => {
@@ -527,7 +523,7 @@ autoUpdater.on('update-downloaded', async () => {
   }
   await dialog.showMessageBox({
     title: 'Install Updates',
-    message: 'Updates downloaded, Allusion will restart...',
+    message: 'Updates downloaded, Atlas will restart...',
   });
   setImmediate(() => autoUpdater.quitAndInstall());
 });
@@ -538,7 +534,7 @@ autoUpdater.on('download-progress', (progressObj: { percent: number }) => {
     return;
   }
   if (tray && !tray.isDestroyed()) {
-    tray.setToolTip(`Allusion - Downloading update ${progressObj.percent.toFixed(0)}%`);
+    tray.setToolTip(`Atlas - Downloading update ${progressObj.percent.toFixed(0)}%`);
   }
   // TODO: could also do this for other tasks (e.g. importing folders)
   mainWindow.setProgressBar(progressObj.percent / 100);
@@ -559,7 +555,7 @@ process.on('uncaughtException', async (error) => {
         type: 'error',
         title: 'Unexpected error',
         message: errorMessage,
-        buttons: ['Try to keep running', 'File bug report', 'Restart Allusion', 'Quit Allusion'],
+        buttons: ['Try to keep running', 'File bug report', 'Restart Atlas', 'Quit Atlas'],
       });
       if (dialogResult.response === 0) {
         // Keep running
@@ -690,7 +686,11 @@ MainMessenger.onMessageBoxSync(dialog);
 
 MainMessenger.onGetPath((path) => app.getPath(path));
 
-MainMessenger.onTrashFile((absolutePath) => shell.trashItem(absolutePath));
+MainMessenger.onTrashFile((absolutePath) =>
+  SOURCE_FILES_READ_ONLY
+    ? Promise.reject(new Error(READ_ONLY_MESSAGE))
+    : shell.trashItem(absolutePath),
+);
 
 MainMessenger.onIsFullScreen(() => mainWindow?.isFullScreen() ?? false);
 

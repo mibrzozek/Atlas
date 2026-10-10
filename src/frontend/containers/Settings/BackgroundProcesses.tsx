@@ -46,12 +46,12 @@ export const BackgroundProcesses = observer(() => {
         <ExternalLink url={firefoxExtensionUrl}>Firefox Browser Add-Ons</ExternalLink>.
       </Callout>
       <Callout icon={IconSet.INFO}>
-        To keep the browser extension working even when Allusion is closed, you must enable the Run
-        in background option.
+        To keep the browser extension working even when Atlas is closed, you must enable the Run in
+        background option.
       </Callout>
       <Callout icon={IconSet.INFO}>
         For the browser extension to work, choose a download folder that is in one of your locations
-        already added to Allusion.
+        already added to Atlas.
       </Callout>
       <Toggle
         checked={isClipEnabled}

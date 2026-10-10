@@ -1,6 +1,6 @@
 {
-  "name": "allusion",
-  "productName": "Allusion",
+  "name": "atlas",
+  "productName": "Atlas",
   "version": "1.0.0-rc.10",
   "description": "A tool for managing your visual library",
   "main": "build/main.bundle.js",
@@ -19,8 +19,8 @@
     "build:exr": "cd wasm/wasm-build && cargo run exr-decoder exr"
   },
   "build": {
-    "appId": "com.allusion-app.allusion",
-    "productName": "Allusion",
+    "appId": "com.atlas-app.atlas",
+    "productName": "Atlas",
     "mac": {
       "category": "public.app-category.graphics-design",
       "extraResources": [

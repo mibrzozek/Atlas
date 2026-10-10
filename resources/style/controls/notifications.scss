@@ -25,7 +25,10 @@
 .toast {
   background: var(--accent-color);
   color: white;
-  width: 22.5rem;
+  // Grows with its message, so that a single sentence does not wrap
+  width: max-content;
+  min-width: 22.5rem;
+  max-width: min(44rem, calc(100vw - 2rem));
   margin-bottom: 1rem;
   padding: 0.25rem 0.5rem;
   z-index: 1;
