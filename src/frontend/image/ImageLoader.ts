@@ -1,3 +1,4 @@
+import { Remote, wrap } from 'comlink';
 import fse from 'fs-extra';
 import { action } from 'mobx';
 import StreamZip from 'node-stream-zip';
@@ -10,7 +11,7 @@ import { ClientFile } from '../entities/File';
 import ExrLoader from './ExrLoader';
 import PsdLoader from './PSDLoader';
 import { ThumbnailTarget, generateThumbnailUsingWorker } from './ThumbnailGeneration';
-import TifLoader from './TifLoader';
+import { TifConverterWorker } from '../workers/tifConverter.worker';
 import { generateThumbnail, getBlob } from './util';
 
 type FormatHandlerType =
@@ -44,7 +45,8 @@ const FormatHandlers: Record<IMG_EXTENSIONS_TYPE, FormatHandlerType> = {
 type ObjectURL = string;
 
 class ImageLoader {
-  private tifLoader: TifLoader;
+  private tifConverter?: Promise<Remote<TifConverterWorker>>;
+  private pendingTifConversions = new Map<ClientFile, Promise<ObjectURL>>();
   private exrLoader: ExrLoader;
   private psdLoader: PsdLoader;
 
@@ -57,14 +59,13 @@ class ImageLoader {
     [];
 
   constructor(private exifIO: ExifIO) {
-    this.tifLoader = new TifLoader();
     this.exrLoader = new ExrLoader();
     this.psdLoader = new PsdLoader();
     this.ensureThumbnail = action(this.ensureThumbnail.bind(this));
   }
 
   async init(): Promise<void> {
-    await Promise.all([this.tifLoader.init(), this.exrLoader.init(), this.psdLoader.init()]);
+    await Promise.all([this.exrLoader.init(), this.psdLoader.init()]);
   }
 
   needsThumbnail(file: Pick<FileDTO, 'extension' | 'width' | 'height'>) {
@@ -187,8 +188,7 @@ class ImageLoader {
       case 'web':
         return file.absolutePath;
       case 'tifLoader': {
-        const src =
-          this.srcBufferCache.get(file) ?? (await getBlob(this.tifLoader, file.absolutePath));
+        const src = this.srcBufferCache.get(file) ?? (await this.convertTif(file));
         // Store in cache for a while, so it loads quicker when going back and forth
         this.updateCache(file, src);
         return src;
@@ -216,12 +216,39 @@ class ImageLoader {
   }
 
   /**
+   * Converts a TIFF file in a worker, so the interface does not freeze.
+   * The viewer and the preloading can ask for the same file at the same time: it is only converted once.
+   */
+  private convertTif(file: ClientFile): Promise<ObjectURL> {
+    let pending = this.pendingTifConversions.get(file);
+    if (pending === undefined) {
+      pending = (async () => {
+        if (this.tifConverter === undefined) {
+          const worker = new Worker(
+            new URL('src/frontend/workers/tifConverter.worker', import.meta.url),
+          );
+          // Stored as a promise right away: several files can be requested before it is ready
+          this.tifConverter = new (wrap<typeof TifConverterWorker>(worker))();
+        }
+        const converter = await this.tifConverter;
+        const { data, type } = await converter.convert(file.absolutePath);
+        return URL.createObjectURL(new Blob([data], { type }));
+      })();
+      this.pendingTifConversions.set(file, pending);
+      const forget = () => this.pendingTifConversions.delete(file);
+      pending.then(forget, forget);
+    }
+    return pending;
+  }
+
+  /**
    * Loads and decodes the full image in the background, so it can be shown without delay when it is opened.
-   * @param anyFormat Whether to include formats that have to be converted first, which is slow
+   * @param anyFormat Whether to include formats that are converted on the main thread, which makes it stutter
    * @returns Whether the image has been decoded
    */
   async preloadImage(file: ClientFile, anyFormat = false): Promise<boolean> {
-    if (!anyFormat && FormatHandlers[file.extension] !== 'web') {
+    const handlerType = FormatHandlers[file.extension];
+    if (!anyFormat && handlerType !== 'web' && handlerType !== 'tifLoader') {
       return false;
     }
     const src = await this.getImageSrc(file);

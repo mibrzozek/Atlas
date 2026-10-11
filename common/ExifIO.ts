@@ -81,6 +81,9 @@ function isShownWithOrientation(filepath: string): boolean {
 
 let argFileCounter = 0;
 
+/** Set while the ExifTool process is starting or running: shared, since there is only one process */
+let opening: Promise<void> | undefined;
+
 export interface RawDimensions {
   /** The stored width, before any rotation is applied */
   width: number;
@@ -91,8 +94,6 @@ export interface RawDimensions {
 
 class ExifIO {
   @observable hierarchicalSeparator: string;
-
-  private isOpening = false;
 
   // For accented characters and foreign alphabets, an extra arg is needed on Windows
   // https://www.npmjs.com/package/node-exiftool#reading-utf8-encoded-filename-on-windows
@@ -108,22 +109,23 @@ class ExifIO {
     return ep._open || false;
   }
 
+  /**
+   * Starts the ExifTool process if it is not running yet. This can take several seconds the first time,
+   * so the application does not wait for it when starting up: every method that needs it does.
+   */
   async initialize(): Promise<ExifIO> {
-    if (ep._open) {
-      return this;
-    }
-    if (!this.isOpening) {
-      this.isOpening = true;
-      const pid = await ep.open();
-      console.log('Started exiftool process %s', pid);
-    } else {
-      await new Promise<void>((resolve) =>
-        setInterval(() => {
-          if (ep._open) {
-            resolve();
-          }
-        }, 50),
-      );
+    if (!ep._open) {
+      if (opening === undefined) {
+        opening = ep.open().then(
+          (pid) => console.log('Started exiftool process %s', pid),
+          (e) => {
+            // So that it is tried again the next time it is needed
+            opening = undefined;
+            throw e;
+          },
+        );
+      }
+      await opening;
     }
     return this;
   }
@@ -134,6 +136,7 @@ class ExifIO {
       await ep.close();
       console.log('Closed Exiftool');
     }
+    opening = undefined;
   }
 
   @action.bound setHierarchicalSeparator(val: string): void {
@@ -169,6 +172,7 @@ class ExifIO {
     return [...splitHierarchy, ...filteredTags.map((t) => [t])];
   }
   async readTags(filepath: string): Promise<string[][]> {
+    await this.initialize();
     const metadata = await ep.readMetadata(filepath, [
       'HierarchicalSubject',
       'Subject',
@@ -186,6 +190,7 @@ class ExifIO {
   }
 
   async readExifTags(filepath: string, tags: string[]): Promise<(string | undefined)[]> {
+    await this.initialize();
     const metadata = await ep.readMetadata(filepath, [...tags, ...this.extraArgs]);
     if (metadata.error || !metadata.data?.[0]) {
       throw new Error(metadata.error || 'No metadata entry');
@@ -346,6 +351,7 @@ class ExifIO {
   async getDimensions(filepath: string): Promise<{ width: number; height: number }> {
     let metadata: Awaited<ReturnType<typeof ep.readMetadata>> | undefined = undefined;
     try {
+      await this.initialize();
       metadata = await ep.readMetadata(filepath, [
         's3',
         'ImageWidth',
@@ -429,9 +435,7 @@ class ExifIO {
 
     // TODO: can also extract preview from RAW https://exiftool.org/forum/index.php?topic=7408.0
 
-    if (!this.isOpen()) {
-      return false;
-    }
+    await this.initialize();
 
     const res = await ep.readMetadata(input, ['ThumbnailImage', 'PhotoshopThumbnail', 'b']);
 

@@ -68,6 +68,9 @@ class RootStore {
       }
     });
 
+    // Not waited for: starting ExifTool can take seconds, and nothing on screen needs it yet
+    rootStore.exifTool.initialize().catch((e) => console.error('Could not start ExifTool', e));
+
     await Promise.all([
       // The location store must be initiated because the file entity constructor
       // uses the location reference to set values.
@@ -75,7 +78,6 @@ class RootStore {
       // The tag store needs to be awaited because file entities have references
       // to tag entities.
       rootStore.tagStore.init(),
-      rootStore.exifTool.initialize(),
       rootStore.imageLoader.init(),
       rootStore.searchStore.init(),
     ]);
