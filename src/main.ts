@@ -6,6 +6,7 @@ import {
   Menu,
   nativeImage,
   nativeTheme,
+  powerMonitor,
   screen,
   session,
   shell,
@@ -693,6 +694,59 @@ MainMessenger.onTrashFile((absolutePath) =>
 );
 
 MainMessenger.onIsFullScreen(() => mainWindow?.isFullScreen() ?? false);
+
+// The screensaver covers the whole screen. Plain full-screen can leave the taskbar of Windows in front,
+// so the window is also put above it for as long as the screensaver runs.
+let windowStateBeforeScreensaver: { isFullScreen: boolean; isAlwaysOnTop: boolean } | undefined;
+MainMessenger.onSetScreensaverMode((isActive) => {
+  if (mainWindow === null || mainWindow.isDestroyed()) {
+    return;
+  }
+  if (isActive) {
+    if (windowStateBeforeScreensaver === undefined) {
+      windowStateBeforeScreensaver = {
+        isFullScreen: mainWindow.isFullScreen(),
+        isAlwaysOnTop: mainWindow.isAlwaysOnTop(),
+      };
+    }
+    mainWindow.setAlwaysOnTop(true, 'screen-saver');
+    mainWindow.setFullScreen(true);
+    // When another window of ours closes at the same moment (the settings, with its "Start it now" button),
+    // Windows puts the taskbar back in front. Claim the top again once that has settled
+    const bringToFront = () => {
+      if (
+        windowStateBeforeScreensaver !== undefined &&
+        mainWindow !== null &&
+        !mainWindow.isDestroyed()
+      ) {
+        mainWindow.setAlwaysOnTop(false);
+        mainWindow.setAlwaysOnTop(true, 'screen-saver');
+        mainWindow.moveTop();
+        mainWindow.focus();
+      }
+    };
+    setTimeout(bringToFront, 250);
+    setTimeout(bringToFront, 1000);
+  } else if (windowStateBeforeScreensaver !== undefined) {
+    const { isFullScreen, isAlwaysOnTop } = windowStateBeforeScreensaver;
+    windowStateBeforeScreensaver = undefined;
+    mainWindow.setAlwaysOnTop(isAlwaysOnTop);
+    if (!isFullScreen) {
+      mainWindow.setFullScreen(false);
+    }
+  }
+});
+
+// For the screensaver: it starts when the whole system is idle while this window is the one in front
+MainMessenger.onGetIdleState(() => ({
+  systemIdleSeconds: powerMonitor.getSystemIdleTime(),
+  isWindowActive:
+    mainWindow !== null &&
+    !mainWindow.isDestroyed() &&
+    mainWindow.isVisible() &&
+    !mainWindow.isMinimized() &&
+    mainWindow.isFocused(),
+}));
 
 MainMessenger.onSetFullScreen((isFullScreen) => mainWindow?.setFullScreen(isFullScreen));
 

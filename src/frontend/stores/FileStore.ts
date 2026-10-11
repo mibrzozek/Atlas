@@ -4,6 +4,7 @@ import { action, computed, makeObservable, observable, runInAction } from 'mobx'
 
 import { exportFilesToDirectory } from 'common/export';
 import { getThumbnailPath } from 'common/fs';
+import { ScreensaverImage } from 'common/screensaver';
 import { promiseAllLimit } from 'common/promise';
 import { debounce } from 'common/timeout';
 import { DataStorage } from '../../api/data-storage';
@@ -20,6 +21,17 @@ import { ClientTag } from '../entities/Tag';
 import RootStore from './RootStore';
 
 export const FILE_STORAGE_KEY = 'Allusion_File';
+/** The formats the browser shows without converting them first */
+const WEB_EXTENSIONS = new Set<string>([
+  'jpg',
+  'jpeg',
+  'jfif',
+  'png',
+  'apng',
+  'webp',
+  'gif',
+  'bmp',
+]);
 const ROTATED_DIMENSIONS_FIXED_KEY = 'Atlas_RotatedDimensionsFixed';
 const ROTATED_DIMENSIONS_PROGRESS_KEY = 'Atlas_RotatedDimensionsProgress';
 
@@ -497,6 +509,39 @@ class FileStore {
       }
     }
     return targets;
+  }
+
+  /**
+   * The images of the home gallery for the screensaver, regardless of what is currently shown,
+   * and without loading them into the view.
+   * Many are shown at once, so their thumbnails are used: full-size photos would take far too much memory.
+   */
+  async fetchHomeGalleryImages(): Promise<ScreensaverImage[]> {
+    const homeTag = runInAction(() => this.rootStore.tagStore.homeTag);
+    if (homeTag === undefined) {
+      return [];
+    }
+    const { imageLoader, uiStore } = this.rootStore;
+    const thumbnailDirectory = runInAction(() => uiStore.thumbnailDirectory);
+    const condition = new ClientTagSearchCriteria('tags', homeTag.id).toCondition(this.rootStore);
+    const files = await this.backend.searchFiles(condition, 'id', OrderDirection.Asc);
+    const images: ScreensaverImage[] = [];
+    for (const file of files) {
+      const isShownAsIs = WEB_EXTENSIONS.has(file.extension);
+      const hasThumbnail = imageLoader.needsThumbnail(file);
+      // Without a thumbnail, and without a format the browser can show, there is nothing to show
+      if (isShownAsIs || hasThumbnail) {
+        images.push({
+          id: file.id,
+          src: hasThumbnail
+            ? getThumbnailPath(file.absolutePath, thumbnailDirectory)
+            : file.absolutePath,
+          fallbackSrc: isShownAsIs ? file.absolutePath : undefined,
+          aspectRatio: file.width > 0 && file.height > 0 ? file.width / file.height : 1.5,
+        });
+      }
+    }
+    return images;
   }
 
   /** Exports all files that have any of the given tags or their sub-tags, regardless of what is currently shown */

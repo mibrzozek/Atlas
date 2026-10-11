@@ -8,6 +8,12 @@ import {
   maxNumberOfExternalFilesBeforeWarning,
 } from 'common/config';
 import { clamp, notEmpty } from 'common/core';
+import {
+  DEFAULT_SCREENSAVER_SETTINGS,
+  ScreensaverSettings,
+  clampIdleMinutes,
+  clampSecondsPerImage,
+} from 'common/screensaver';
 import { ID } from '../../api/id';
 import { SearchCriteria } from '../../api/search-criteria';
 import { RendererMessenger } from '../../ipc/renderer';
@@ -115,6 +121,9 @@ type PersistentPreferenceFields =
   | 'outlinerWidth'
   | 'inspectorWidth'
   | 'isRememberSearchEnabled'
+  | 'isScreensaverEnabled'
+  | 'screensaverIdleMinutes'
+  | 'screensaverSecondsPerImage'
   // the following are only restored when isRememberSearchEnabled is enabled
   | 'isSlideMode'
   | 'firstItem'
@@ -140,6 +149,11 @@ class UiStore {
   @observable isPreviewOpen: boolean = false;
   @observable isAdvancedSearchOpen: boolean = false;
   @observable isFolderCreatorOpen: boolean = false;
+  /** Whether the screensaver is being shown right now */
+  @observable isScreensaverActive: boolean = false;
+  @observable isScreensaverEnabled: boolean = DEFAULT_SCREENSAVER_SETTINGS.isEnabled;
+  @observable screensaverIdleMinutes: number = DEFAULT_SCREENSAVER_SETTINGS.idleMinutes;
+  @observable screensaverSecondsPerImage: number = DEFAULT_SCREENSAVER_SETTINGS.secondsPerImage;
   /** Goes up whenever the panels of the outliner should collapse. The outliner keeps their state itself */
   @observable outlinerCollapseRequest: number = 0;
   @observable searchMatchAny = false;
@@ -379,6 +393,34 @@ class UiStore {
 
   @action.bound closeFolderCreator(): void {
     this.isFolderCreatorOpen = false;
+  }
+
+  @computed get screensaverSettings(): ScreensaverSettings {
+    return {
+      isEnabled: this.isScreensaverEnabled,
+      idleMinutes: this.screensaverIdleMinutes,
+      secondsPerImage: this.screensaverSecondsPerImage,
+    };
+  }
+
+  @action.bound startScreensaver(): void {
+    this.isScreensaverActive = true;
+  }
+
+  @action.bound stopScreensaver(): void {
+    this.isScreensaverActive = false;
+  }
+
+  @action.bound toggleScreensaver(): void {
+    this.isScreensaverEnabled = !this.isScreensaverEnabled;
+  }
+
+  @action.bound setScreensaverIdleMinutes(minutes: number): void {
+    this.screensaverIdleMinutes = clampIdleMinutes(minutes);
+  }
+
+  @action.bound setScreensaverSecondsPerImage(seconds: number): void {
+    this.screensaverSecondsPerImage = clampSecondsPerImage(seconds);
   }
 
   /** Whether the images with the home tag, and nothing else, are being shown */
@@ -864,6 +906,12 @@ class UiStore {
           ([k, v]) => k in defaultHotkeyMap && (this.hotkeyMap[k as keyof IHotkeyMap] = v),
         );
 
+        this.isScreensaverEnabled = Boolean(
+          prefs.isScreensaverEnabled ?? DEFAULT_SCREENSAVER_SETTINGS.isEnabled,
+        );
+        this.screensaverIdleMinutes = clampIdleMinutes(prefs.screensaverIdleMinutes);
+        this.screensaverSecondsPerImage = clampSecondsPerImage(prefs.screensaverSecondsPerImage);
+
         this.isRememberSearchEnabled = Boolean(prefs.isRememberSearchEnabled);
         if (this.isRememberSearchEnabled) {
           // If remember search criteria, restore the search criteria list...
@@ -917,6 +965,9 @@ class UiStore {
       outlinerWidth: this.outlinerWidth,
       inspectorWidth: this.inspectorWidth,
       isRememberSearchEnabled: this.isRememberSearchEnabled,
+      isScreensaverEnabled: this.isScreensaverEnabled,
+      screensaverIdleMinutes: this.screensaverIdleMinutes,
+      screensaverSecondsPerImage: this.screensaverSecondsPerImage,
       isSlideMode: this.isSlideMode,
       firstItem: this.firstItem,
       searchMatchAny: this.searchMatchAny,

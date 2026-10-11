@@ -8,6 +8,7 @@ import { Appearance } from './Appearance';
 import { BackgroundProcesses } from './BackgroundProcesses';
 import { ImageFormatPicker } from './ImageFormatPicker';
 import { ImportExport } from './ImportExport';
+import { Screensaver } from './Screensaver';
 import { Shortcuts } from './Shortcuts';
 import { StartupBehavior } from './StartupBehavior';
 
@@ -52,6 +53,10 @@ const Tabs = () => {
     {
       label: 'Startup Behavior',
       content: StartupBehavior,
+    },
+    {
+      label: 'Screensaver',
+      content: Screensaver,
     },
     {
       label: 'Image Formats',
