@@ -1,6 +1,6 @@
 import React from 'react';
 
-import PreloadIcon from 'resources/icons/preload.svg';
+import AtlasMark from 'resources/logo/atlas/atlas-mark.svg';
 import { SVG } from 'widgets/icons';
 import AtlasWordmark from '../components/AtlasWordmark';
 
@@ -59,11 +59,7 @@ const SplashScreen = () => {
           </defs> */}
         </svg>
 
-        <SVG
-          src={PreloadIcon}
-          // style={{ fill: 'url(#yellow-blue)', width: '48px', height: '36px' }}
-          style={{ fill: '#fff', width: '42px', height: '36px' }}
-        />
+        <SVG src={AtlasMark} style={{ width: '144px', height: '144px' }} />
 
         <div style={textStyles}>
           <AtlasWordmark />

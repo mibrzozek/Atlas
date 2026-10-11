@@ -8,10 +8,11 @@
     "dev": "webpack --watch --config ./webpack.dev.js --progress --color",
     "production": "webpack --config ./webpack.prod.js",
     "start": "electron ./build/main.bundle.js",
+    "oobe": "node scripts/oobe.js",
     "lint": "eslint src/**/*{ts,tsx} widgets/**/*{ts,tsx} --fix",
     "test": "jest",
     "package": "yarn build && electron-builder",
-    "logo": "ncp ./resources/logo/icns/allusion-logomark-fc.icns ./build/icon.icns && ncp ./resources/logo/ico/allusion-logomark-fc-256x256.ico ./build/icon.ico",
+    "logo": "ncp ./resources/logo/atlas/atlas.icns ./build/icon.icns && ncp ./resources/logo/atlas/atlas.ico ./build/icon.ico",
     "build": "rimraf dist && yarn production && yarn logo",
     "pack": "electron-builder --dir",
     "dist": "electron-builder",
@@ -72,14 +73,14 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/allusion-app/Allusion.git"
+    "url": "git+https://github.com/mibrzozek/Atlas.git"
   },
   "author": "Allusion-App",
-  "license": "ISC",
+  "license": "GPL-3.0",
   "bugs": {
-    "url": "https://github.com/allusion-app/Allusion/issues"
+    "url": "https://github.com/mibrzozek/Atlas/issues"
   },
-  "homepage": "https://github.com/allusion-app/Allusion#readme",
+  "homepage": "https://github.com/mibrzozek/Atlas#readme",
   "devDependencies": {
     "@svgr/webpack": "^6.5.1",
     "@types/chrome": "^0.0.195",

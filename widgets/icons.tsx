@@ -59,7 +59,7 @@ import INFO from 'resources/icons/info.svg';
 import ITEM_MOVE_DOWN from 'resources/icons/item-move-down.svg';
 import ITEM_MOVE_UP from 'resources/icons/item-move-up.svg';
 import LOADING from 'resources/icons/loading.svg';
-import LOGO from 'resources/logo/svg/white/allusion-logomark-white.svg';
+import LOGO from 'resources/logo/atlas/atlas-mark.svg';
 // import LOGOMARK_BLACK from 'resources/logo/svg/full-color/allusion-logo-ver-fc-black.svg';
 // import LOGOMARK_WHITE from 'resources/logo/svg/full-color/allusion-logo-ver-fc-white.svg';
 import MEDIA from 'resources/icons/media.svg';

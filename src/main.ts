@@ -15,9 +15,9 @@ import {
 import path from 'path';
 import fse from 'fs-extra';
 import { autoUpdater, UpdateInfo } from 'electron-updater';
-import TrayIcon from '../resources/logo/png/full-color/allusion-logomark-fc-256x256.png';
-import AppIcon from '../resources/logo/png/full-color/allusion-logomark-fc-512x512.png';
-import TrayIconMac from '../resources/logo/png/black/allusionTemplate@2x.png'; // filename convention: https://www.electronjs.org/docs/api/native-image#template-image
+import TrayIcon from '../resources/logo/atlas/png/atlas-mark-256.png';
+import AppIcon from '../resources/logo/atlas/png/atlas-mark-512.png';
+import TrayIconMac from '../resources/logo/atlas/png/atlasTemplate@2x.png'; // filename convention: https://www.electronjs.org/docs/api/native-image#template-image
 import ClipServer, { IImportItem } from './clipper/server';
 import {
   READ_ONLY_MESSAGE,

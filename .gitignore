@@ -23,3 +23,6 @@ target/
 # Temporary scripts and scratch folders
 tmp-*
 scratch-*/
+
+# Throwaway profile of "yarn oobe"
+.oobe-profile/

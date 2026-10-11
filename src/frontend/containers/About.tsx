@@ -3,7 +3,7 @@ import React from 'react';
 import PopupWindow from '../components/PopupWindow';
 import { useStore } from '../contexts/StoreContext';
 
-import Logo_About from 'resources/images/helpcenter/logo-about-helpcenter-dark.jpg';
+import Logo_About from 'resources/logo/atlas/atlas-about-dark.jpg';
 import { RendererMessenger } from 'src/ipc/renderer';
 import ExternalLink from '../components/ExternalLink';
 
