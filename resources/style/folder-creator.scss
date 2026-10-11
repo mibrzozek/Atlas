@@ -1,0 +1,253 @@
+#folder-creator {
+  // One height for everything that is typed in or picked from, relative to the text size
+  --field-height: 2em;
+
+  display: flex;
+  flex-direction: column;
+  gap: 0.75em;
+  width: min(46rem, 80vw);
+
+  p {
+    margin: 0;
+  }
+
+  .folder-creator-path {
+    display: flex;
+    align-items: stretch;
+    gap: 0.5em;
+
+    button {
+      white-space: nowrap;
+    }
+  }
+
+  .folder-creator-directory {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    min-height: var(--field-height);
+    padding: 0 0.5em;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.25rem;
+    background: var(--input-color);
+    overflow: hidden;
+    white-space: nowrap;
+  }
+
+  .folder-creator-locations {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25em;
+
+    > span {
+      color: var(--text-color-muted);
+      margin-inline-end: 0.25em;
+    }
+
+    button[aria-pressed='true'] {
+      color: var(--text-color-strong);
+      background: var(--hover-color);
+    }
+  }
+
+  // The folders already in here: one per line
+  .folder-creator-list {
+    margin: 0;
+    padding: 0.25em 0;
+    list-style: none;
+    height: min(13em, 28vh);
+    overflow: hidden auto;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.25rem;
+    background: var(--background-color-alt);
+
+    li {
+      display: block;
+    }
+
+    button {
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+      width: 100%;
+      min-height: 1.75em;
+      padding: 0 0.75em;
+      border: none;
+      border-radius: 0;
+      background: none;
+      color: inherit;
+      font: inherit;
+      text-align: left;
+      cursor: pointer;
+
+      &:hover,
+      &:focus-visible {
+        background: var(--hover-color);
+        color: var(--text-color-strong);
+      }
+
+      .custom-icon {
+        flex: none;
+        color: var(--text-color-muted);
+      }
+
+      span {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+    }
+  }
+
+  .folder-creator-empty {
+    padding: 0.25em 0.75em;
+    color: var(--text-color-muted);
+  }
+
+  // A two-way switch: a track with a thumb that slides under the chosen option
+  .folder-creator-mode {
+    --inset: 0.1875em;
+
+    position: relative;
+    align-self: flex-start;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    padding: var(--inset);
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 999px;
+    background: var(--input-color);
+
+    &::before {
+      content: '';
+      position: absolute;
+      top: var(--inset);
+      bottom: var(--inset);
+      left: var(--inset);
+      width: calc(50% - var(--inset));
+      border-radius: 999px;
+      background: var(--accent-color);
+      transition: transform 0.15s ease-out;
+    }
+
+    &[data-mode='date']::before {
+      transform: translateX(100%);
+    }
+
+    button {
+      position: relative;
+      min-width: 7.5em;
+      min-height: 1.75em;
+      padding: 0 1.25em;
+      border: none;
+      border-radius: 999px;
+      background: none;
+      color: var(--text-color-muted);
+      font: inherit;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: color 0.15s ease-out;
+
+      &:hover {
+        color: var(--text-color-strong);
+      }
+
+      &[aria-checked='true'] {
+        color: white;
+        font-weight: 600;
+      }
+
+      &:focus-visible {
+        outline: 0.125rem solid var(--accent-color);
+        outline-offset: 0.125rem;
+      }
+    }
+  }
+
+  // Every field is a label above a control. The rows of the grid are shared, so the controls of a row
+  // start and end on the same line whatever the labels do
+  .folder-creator-fields {
+    display: grid;
+    gap: 0.75em 0.75em;
+    align-items: end;
+
+    &[data-mode='pattern'] {
+      grid-template-columns: 2fr 1fr 1.5fr 2fr 1fr;
+    }
+
+    &[data-mode='date'] {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+    }
+  }
+
+  .folder-creator-field {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.25em;
+    min-width: 0;
+    margin: 0;
+
+    > span {
+      color: var(--text-color-muted);
+      font-size: 0.85em;
+      line-height: 1.2;
+      // A label never wraps: that would push its control down
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    > input,
+    > select {
+      box-sizing: border-box;
+      width: 100%;
+      min-width: 0;
+      height: var(--field-height);
+      min-height: 0;
+      margin: 0;
+      padding: 0 0.5em;
+      font: inherit;
+      line-height: normal;
+    }
+
+    > input[type='date']::-webkit-calendar-picker-indicator {
+      filter: invert(0.6);
+      cursor: pointer;
+    }
+
+    > .folder-creator-count {
+      border-color: var(--accent-color);
+    }
+  }
+
+  .folder-creator-hint {
+    color: var(--text-color-muted);
+  }
+
+  .folder-creator-preview b {
+    color: var(--text-color-strong);
+    overflow-wrap: anywhere;
+  }
+
+  .folder-creator-error {
+    color: var(--warning-color, #e0a030);
+  }
+
+  .folder-creator-result {
+    color: var(--accent-color);
+  }
+
+  .dialog-actions {
+    margin-top: 0.25em;
+
+    // Not a dialog action like the others: keep it apart on the left
+    button:first-child {
+      margin-inline-start: 0;
+      margin-inline-end: auto;
+    }
+  }
+}

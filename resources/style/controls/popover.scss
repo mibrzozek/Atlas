@@ -43,6 +43,15 @@ dialog {
   > :first-child {
     margin-right: 0.5rem;
   }
+
+  // A dialog that can be dragged around by its header
+  &[data-movable] {
+    cursor: move;
+    user-select: none;
+    // The whole top edge of the dialog is the handle, not just the row of text
+    margin: -1rem -1rem 0;
+    padding: 1rem 1rem 0.5rem;
+  }
 }
 
 .dialog-title {

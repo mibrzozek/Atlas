@@ -6,16 +6,19 @@ import { IS_PREVIEW_WINDOW } from 'common/window';
 import { useStore } from '../../contexts/StoreContext';
 
 const Placeholder = observer(() => {
-  const { fileStore, tagStore } = useStore();
+  const { fileStore, locationStore, uiStore } = useStore();
 
   if (IS_PREVIEW_WINDOW) {
     return <PreviewWindowPlaceholder />;
   }
-  if (fileStore.showsAllContent && tagStore.isEmpty) {
-    // No tags exist, and no images added: Assuming it's a new user -> Show a welcome screen
+  if (fileStore.showsAllContent && locationStore.locationList.length === 0) {
+    // No locations, and no images added: Assuming it's a new user -> Show a welcome screen
+    // (not judged by the tags: a new user already has the Home tag)
     return <Welcome />;
   } else if (fileStore.showsAllContent) {
     return <NoContentFound />;
+  } else if (uiStore.isHomeGallery) {
+    return <NoHomeContent />;
   } else if (fileStore.showsQueryContent) {
     return <NoQueryContent />;
   } else if (fileStore.showsUntaggedContent) {
@@ -109,6 +112,23 @@ const NoContentFound = () => {
     </ContentPlaceholder>
   );
 };
+
+const NoHomeContent = observer(() => {
+  const { fileStore, tagStore } = useStore();
+  return (
+    <ContentPlaceholder title="Your home gallery is empty" icon={IconSet.HOME}>
+      <p>
+        Images tagged with <b>{tagStore.homeTag?.name ?? 'Home'}</b> show up here.
+      </p>
+      <Button
+        text="All images"
+        icon={IconSet.MEDIA}
+        onClick={fileStore.fetchAllFiles}
+        styling="outlined"
+      />
+    </ContentPlaceholder>
+  );
+});
 
 const NoQueryContent = () => {
   const { fileStore } = useStore();

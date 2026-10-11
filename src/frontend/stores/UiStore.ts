@@ -1,6 +1,6 @@
 import { shell } from 'electron';
 import fse from 'fs-extra';
-import { action, computed, makeObservable, observable } from 'mobx';
+import { action, computed, makeObservable, observable, runInAction } from 'mobx';
 
 import {
   READ_ONLY_MESSAGE,
@@ -139,6 +139,9 @@ class UiStore {
   @observable isLocationRecoveryOpen: ID | null = null;
   @observable isPreviewOpen: boolean = false;
   @observable isAdvancedSearchOpen: boolean = false;
+  @observable isFolderCreatorOpen: boolean = false;
+  /** Goes up whenever the panels of the outliner should collapse. The outliner keeps their state itself */
+  @observable outlinerCollapseRequest: number = 0;
   @observable searchMatchAny = false;
   @observable method: ViewMethod = ViewMethod.Grid;
   @observable isSlideMode: boolean = false;
@@ -368,6 +371,40 @@ class UiStore {
 
   @action.bound closeAbout(): void {
     this.isAboutOpen = false;
+  }
+
+  @action.bound openFolderCreator(): void {
+    this.isFolderCreatorOpen = true;
+  }
+
+  @action.bound closeFolderCreator(): void {
+    this.isFolderCreatorOpen = false;
+  }
+
+  /** Whether the images with the home tag, and nothing else, are being shown */
+  @computed get isHomeGallery(): boolean {
+    const { fileStore, tagStore } = this.rootStore;
+    const [crit] = this.searchCriteriaList;
+    return (
+      fileStore.showsQueryContent &&
+      this.searchCriteriaList.length === 1 &&
+      crit instanceof ClientTagSearchCriteria &&
+      crit.value !== undefined &&
+      crit.value === tagStore.homeTag?.id
+    );
+  }
+
+  /** Shows the images with the home tag, with the panels of the outliner collapsed */
+  @action.bound async viewHomeGallery(): Promise<void> {
+    try {
+      const homeTag = await this.rootStore.tagStore.getOrCreateHomeTag();
+      runInAction(() => {
+        this.outlinerCollapseRequest += 1;
+        this.replaceSearchCriteria(new ClientTagSearchCriteria('tags', homeTag.id));
+      });
+    } catch (e) {
+      console.error('Could not open the home gallery', e);
+    }
   }
 
   @action.bound openToolbarFileRemover(): void {

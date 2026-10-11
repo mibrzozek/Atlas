@@ -15,6 +15,8 @@ import { ThumbnailTarget, useWorkerListener } from './image/ThumbnailGeneration'
 import WindowTitlebar from './containers/WindowTitlebar';
 import { DropContextProvider } from './contexts/DropContext';
 import Main from './containers/Main';
+import TopBar from './containers/TopBar';
+import FolderCreator from './containers/FolderCreator';
 import About from './containers/About';
 import { CustomThemeProvider } from './hooks/useCustomTheme';
 import { useClipboardImporter } from './hooks/useClipboardImporter';
@@ -95,7 +97,11 @@ const App = observer(() => {
           {!uiStore.isFullScreen && <WindowTitlebar />}
 
           <ErrorBoundary>
+            <TopBar />
+
             <Main />
+
+            <FolderCreator />
 
             <Settings />
 

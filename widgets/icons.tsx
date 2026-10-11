@@ -16,6 +16,7 @@ const SVG = (props: ISVG) => {
 // import ADD_TAG_FILL from 'resources/icons/add-tag-fill.svg';
 // import ADD_TAG_OUTLINE from 'resources/icons/add-tag-outline.svg';
 // import ADD_TAG_TRANS from 'resources/icons/add-tag-trans.svg';
+import ADD_BOLD from 'resources/icons/add-bold.svg';
 import ADD from 'resources/icons/add.svg';
 import ARROW_DOWN from 'resources/icons/arrow-down.svg';
 import ARROW_LEFT from 'resources/icons/arrow-left.svg';
@@ -47,6 +48,7 @@ import FILTER_NAME_UP from 'resources/icons/filter-name-up.svg';
 // import FOLDER_CLOSE_IMPORT from 'resources/icons/folder-close-import.svg';
 import FOLDER_CLOSE from 'resources/icons/folder-close.svg';
 import FOLDER_OPEN from 'resources/icons/folder-open.svg';
+import HOME from 'resources/icons/home.svg';
 // import FOLDER_STRUCTURE from 'resources/icons/folder-structure.svg';
 // import FORM_DROP from 'resources/icons/form-drop.svg';
 import GITHUB from 'resources/icons/github.svg';
@@ -121,6 +123,7 @@ const IconSet = {
   // ADD_TAG_OUTLINE: toSvg(ADD_TAG_OUTLINE),
   // ADD_TAG_TRANS: toSvg(ADD_TAG_TRANS),
   ADD: toSvg(ADD),
+  ADD_BOLD: toSvg(ADD_BOLD),
   ARROW_DOWN: toSvg(ARROW_DOWN),
   ARROW_LEFT: toSvg(ARROW_LEFT),
   ARROW_RIGHT: toSvg(ARROW_RIGHT),
@@ -151,6 +154,7 @@ const IconSet = {
   // FOLDER_CLOSE_IMPORT: toSvg(FOLDER_CLOSE_IMPORT),
   FOLDER_CLOSE: toSvg(FOLDER_CLOSE),
   FOLDER_OPEN: toSvg(FOLDER_OPEN),
+  HOME: toSvg(HOME),
   // FOLDER_STRUCTURE: toSvg(FOLDER_STRUCTURE),
   // FORM_DROP: toSvg(FORM_DROP),
   GITHUB: toSvg(GITHUB),

@@ -8,6 +8,9 @@ import { ClientTagSearchCriteria } from '../entities/SearchCriteria';
 import { ClientTag } from '../entities/Tag';
 import RootStore from './RootStore';
 
+const HOME_TAG_NAME = 'Home';
+const HOME_TAG_STORAGE_KEY = 'atlas-home-tag-id';
+
 /**
  * Based on https://mobx.js.org/best/store.html
  */
@@ -17,6 +20,9 @@ class TagStore {
 
   /** A lookup map to speedup finding entities */
   private readonly tagGraph = observable(new Map<ID, ClientTag>());
+
+  @observable private homeTagId: ID | null =
+    typeof localStorage !== 'undefined' ? localStorage.getItem(HOME_TAG_STORAGE_KEY) : null;
 
   constructor(backend: DataStorage, rootStore: RootStore) {
     this.backend = backend;
@@ -98,6 +104,29 @@ class TagStore {
 
   @action findByName(name: string): ClientTag | undefined {
     return this.tagList.find((t) => t.name === name);
+  }
+
+  /** The tag whose images make up the home gallery. It may have been renamed, or deleted */
+  @computed get homeTag(): ClientTag | undefined {
+    return this.homeTagId !== null ? this.tagGraph.get(this.homeTagId) : undefined;
+  }
+
+  /**
+   * Returns the tag of the home gallery. Without one (new library, deleted tag, restored backup)
+   * the tag named "Home" takes that role, and is created when it does not exist.
+   */
+  @action.bound async getOrCreateHomeTag(): Promise<ClientTag> {
+    const tag =
+      this.homeTag ??
+      this.findByName(HOME_TAG_NAME) ??
+      (await this.create(this.root, HOME_TAG_NAME));
+    this.setHomeTagId(tag.id);
+    return tag;
+  }
+
+  @action private setHomeTagId(id: ID) {
+    this.homeTagId = id;
+    localStorage.setItem(HOME_TAG_STORAGE_KEY, id);
   }
 
   @action.bound async delete(tag: ClientTag): Promise<void> {

@@ -82,6 +82,14 @@ class RootStore {
       rootStore.searchStore.init(),
     ]);
 
+    // A new user starts out with the tag of the home gallery, which the home button opens
+    const isNewUser = runInAction(
+      () => rootStore.tagStore.isEmpty && rootStore.locationStore.locationList.length === 0,
+    );
+    if (isNewUser) {
+      await rootStore.tagStore.getOrCreateHomeTag().catch(console.error);
+    }
+
     // Restore preferences, which affects how the file store initializes
     // It depends on tag store being initialized for reconstructing search criteria
     rootStore.uiStore.recoverPersistentPreferences();
