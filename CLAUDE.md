@@ -94,6 +94,12 @@ Ways to check things, from least to most intrusive:
    and `TEMP`/`TMP` pointing inside that profile. It paints, so `Page.captureScreenshot` and CSS transitions
    work. Generate numbered sample images into the profile, add them as a location through the stores, tag them.
    It has no real screen: window bounds, focus and the taskbar are fake there.
+   Windows the page opens itself (settings, screensaver) are not made through that class: also wrap
+   `webContents.setWindowOpenHandler` to add `show: false` and `offscreen: true` to what the app's handler
+   returns, and no-op `show`/`showInactive`/`center` on `did-create-window`. Each such window is its own
+   DevTools target, so real clicks can be sent to it with `Input.dispatchMouseEvent`.
+   Frame times there do not show image decoding (it is off the main thread): measure megapixels decoded
+   per screen and the time until images can be painted instead.
 4. **Transparent real windows** (`opacity: 0`, `skipTaskbar`) for real window geometry on the real monitors.
 5. **The real app on the real screen** (ask first): relaunch with the debugging port and take a picture of the
    monitors with PowerShell (`System.Drawing` `CopyFromScreen`). Delete the pictures afterwards: they show
@@ -106,7 +112,8 @@ Probe pitfalls that cost time:
   with fixed sleeps: samples that drift into the next step look like layout bugs.
 - When stopping a test instance, match `electron.exe`/`exiftool.exe` by name AND by the profile path. A filter
   on the command line alone also kills the shell that is running the test. `exiftool.exe` outlives a killed
-  Electron and locks the profile folder.
+  Electron and locks the profile folder; its command line does not name the profile, so find it by the path
+  of its executable (`Get-Process | Where-Object { $_.Path -like "<profile>*" }`).
 - Restore whatever you changed in the user's running app (view, sort, criteria).
 - Never give evaluate calls an open end: race them against a timeout.
 
@@ -124,18 +131,85 @@ Probe pitfalls that cost time:
   workers.
 - `src/frontend/containers/ContentView/`: gallery (`Masonry/`), full-size viewer (`SlideMode/`), context menus.
 - `common/`: shared helpers (`ExifIO.ts` wraps the bundled ExifTool, `export.ts` copies files out).
-- Screensaver: `containers/Screensaver.tsx` (idle check every 5 s, a full-screen wall of the home gallery's
-  thumbnails that moves one image at a time, wake on input), layout and rules in `common/screensaver.ts`
-  (tested), settings tab in `containers/Settings/Screensaver.tsx`. The wall is laid out like the gallery:
-  always 3 justified rows (or columns for vertical masonry) that reach every edge, 8 px gaps. To fill the
-  screen exactly the tiles are up to `MAX_TILE_TRIM` (6%) off the shape of their image, shown with
-  `object-fit: cover`; the user accepted that over black bands.
-  System idle time comes from the main process (`GET_IDLE_STATE`, Electron's `powerMonitor`). It only starts
-  when the Atlas window is the focused one. `SET_SCREENSAVER_MODE` makes the window full-screen on the
-  `screen-saver` always-on-top level, and claims the top again after 250 ms and 1 s: when the settings window
-  closes at the same moment ("Start it now"), Windows otherwise puts the taskbar back in front.
-  Keep the tiles in a stable order in the array: React moving an element cancels its CSS transition, which
-  made the fade an instant jump. The durations in the `.tsx` and in `screensaver.scss` must match.
+- Screensaver: `containers/Screensaver.tsx` only decides when (idle check every 5 s through `GET_IDLE_STATE`,
+  Electron's `powerMonitor`; only when the Atlas window is the focused one) and wakes on input. The rest is in
+  `src/frontend/screensaver/`, with the rules and layout maths in `common/screensaver.ts` (tested):
+  - `screens.ts`: it draws **nothing in the main window**. Every monitor gets a window of its own
+    (`window.open` named `screensaver-<display id>`; the open handler in `main.ts` makes it frameless, not
+    focusable, on the `screen-saver` always-on-top level, exactly over that monitor, and claims the top again
+    after 250 ms and 1 s because Windows otherwise puts the taskbar back when the settings window closes at
+    the same moment). The main window is never resized or made full-screen, so ending it is closing those
+    windows. Do not go back to `setFullScreen`: leaving it left the user's maximized window full-screen.
+    Keys go to the main window (still focused), the mouse to the screensaver windows: listen in both.
+  - **The covered main window is throttled** (`visibilityState` hidden, timers once a second, later once a
+    minute). Everything that runs while the screensaver is up uses the timers of a screensaver window
+    (`surface.win.setTimeout`), never `window.setTimeout`. Test probes too.
+  - `director.ts`: one `ImagePool` for all monitors (an image is never on two at once; the next one is
+    picked from those not shown for the longest time, so nothing comes back early), `planScreens` picks what
+    each monitor shows, and the monitors change in turn, never two at once.
+  - `wall.ts`: with plenty of images, the wall like the gallery: 3 justified rows (or columns for vertical
+    masonry) that reach every edge, 8 px gaps, moving one image at a time like a snake. To fill the screen
+    exactly the tiles are up to `MAX_TILE_TRIM` (6%) off the shape of their image; the user accepted that over
+    black bands. With fewer images than 1.5 times what fits (`WALL_SPARE_FACTOR`) it uses 2 rows.
+  - `showcase.ts`: with only several images, one to three whole images per monitor, as large as fits, over a
+    blurred glow of their colours, fading over to the next ones. With as many images as monitors they swap;
+    with fewer, monitors show the same.
+  - `tile.ts` and `workers/screensaverImage.worker.ts`: **sharpness**. The worker decodes the image file
+    itself (not the thumbnail) and draws it at exactly the device pixels it covers; the frame and the canvas
+    are snapped to whole device pixels, and at rest nothing is scaled. Every time a tile changes size it is
+    drawn again at the new size. **Only `transform` and `opacity` are animated** (Web Animations API): a
+    change of size is the frame scaled back to its old size with the canvas scaled the opposite way.
+    Animating `width`/`height` laid out and repainted every frame, which was the stutter.
+  - The screensaver windows do not get the zoom of the app, they are 1:1 with the monitor. A monitor that
+    Windows scales (125%, 150%) was tested by zooming those windows.
+- Tags and collections: the outliner only shows and opens them. A click on a tag opens it in the gallery
+  (ctrl-click adds it to, or takes it out of, what is shown); there is no renaming, deleting or creating
+  there. All editing is in `containers/TagManager.tsx` (the tag button in the top bar, the pencil in the
+  panel headers). Both panels can be sorted by hand (drag; that is the stored order) or by name (display
+  only, dragging is then ignored).
+  A collection is a named group of tags; a tag can be in several. `stores/CollectionStore.ts` keeps them in
+  the **saved-searches table** as rows marked `isCollection` ("any of these tags"), converted in
+  `common/collections.ts` (tested). That avoids a schema change, puts them in backups, and Allusion shows
+  them as working saved searches. `SearchStore` skips those rows. The store's `getTags`, `getCollectionsOf`
+  and `isViewed` are deliberately not MobX actions: inside an action nothing is tracked, and the panels
+  stopped updating.
+  Per-tag image counts come from the database index (`countFilesByTag`), because the loaded files are only
+  the ones shown, which at start-up is the home gallery.
+  The tag list in the editing page is a tree like the side panel used to be (`TagManagerTree.tsx`): click,
+  ctrl-click and shift-click select, dragging reorders and nests, double click or F2 renames, and the bar
+  above it acts on the selection. It has a drag holder of its own (`TagDnDProvider`); the one in `Main.tsx`
+  does not reach a dialog. The tree widget does not watch the selection: whoever renders it has to read it.
+- All outliner panels are exactly as tall as their content (`fitContent` on `MultiSplitPane`); the outliner
+  scrolls as a whole. The image counters live at the foot of the Locations panel (`FolderCounts.tsx`): all
+  images and tagged images with a percentage, for the open folder (counted in the database with
+  `countFilesInFolders`) or the whole library. "Tagged" is the search `tags notContains []`.
+- Collage mode (`FileStore.isCollageMode`, toolbar button): the gallery shows the order made by hand for the
+  current view instead of the sort order. The order is a list of image ids in `localStorage` under
+  `Atlas_CollageOrder:<view>`, one per tag/folder/search, for views of up to 5,000 images; logic in
+  `common/collage.ts` (tested), drag and drop in `ContentView/collageDnD.ts`. Not in the database, so not
+  in backups. Outside collage mode, dragging an image still starts an export drag out of the window.
+  The gallery cells have `contain: strict`, which clips anything drawn outside them: the marker for where a
+  dragged image lands is an element of its own, appended to the gallery and positioned by measuring.
+  While collage mode is on the gallery uses the grid layout whatever the view is set to, with every image
+  shown whole inside a slot of the same size: a move or a switch then changes nothing but the images
+  involved (measured: 34 other images did not move a pixel, scroll position unchanged). After a reorder the
+  renderer must not run its usual "scroll the first image to the top" (`FileStore.lastCollageReorder`).
+  The cells are drawn in a fixed DOM order (sorted by id) because React moving an element cancels its
+  transition, and for about a second after switching the mode the images that were on screen stay mounted
+  (`lingeringFiles` in `VirtualizedRenderer.tsx`) so they glide out instead of vanishing.
+- Tooltips of buttons in `#toolbar` and `#top-bar` are always placed underneath the whole bar
+  (`widgets/popovers/Tooltip.tsx`), so they never cover neighbouring buttons. Keep tooltip texts short.
+- The arrow next to the gear hides the whole bar above the gallery (`UiStore.isSearchBarVisible`); it stays
+  visible while one image is open, because the back button is in it. While it is hidden, the top bar
+  takes over the side panel button (left) and Collage, Shuffle, Sort and View (right, before the arrow). Shuffle (Alt+R) and switching two
+  collage images (Alt+S) are in `hotkeyMap`, so they show up under Settings, Shortcuts.
+  Shortcuts are matched on `event.which`: a synthetic key event in a test needs `keyCode`.
+- **"Locations" are called "Sources" in everything the user reads** (panel title, dialogs, messages, help).
+  The code keeps `location` in names, ids and the database (`locations` table, `locationId`): do not rename those.
+- The screensaver settings pick tags and collections with the same type-to-search `TagSelector` as the inspector
+  (it takes `extraSelection` and `renderExtraOptions` for the collections; `screensaverCollectionIds`).
+- The screensaver shows the tags picked in its settings (`UiStore.screensaverTagIds`); none picked means
+  the home tag.
 - `wasm/`: Rust sources and prebuilt packages for the masonry layout and EXR decoding.
 
 ## Things that are easy to break
@@ -167,6 +241,19 @@ Probe pitfalls that cost time:
 - **The Bash tool mangles backslashes and some quotes in heredocs.** Write scripts with the Write tool and build
   Windows paths with `path.sep`. Several source files use CRLF line endings; preserve them.
 
+- **Never use `instanceof HTMLElement` / `Element` on an event target in shared widgets.** The settings, help
+  and about windows are separate windows drawn by the main window's React: their elements are made by the
+  other window and fail that check. It made the screensaver's tag picker close before a click could land.
+  Check `typeof target.matches === 'function'` instead.
+- **Large gallery cells** (`image/SharpImages.ts`, rule in `common/sharp-size.ts`, tested): when a cell needs
+  more device pixels than the thumbnail has (600 at most; a square grid cell needs them on the short side,
+  and the zoom of the app counts), the thumbnail is shown first and replaced by the image drawn at exactly
+  that size in the image worker of the screensaver. Do not go back to putting the original file in the
+  `<img>`: at the largest size that decoded about 86 megapixels per screen while scrolling.
+- Collage mode: a click selects for switching, at most two images (`LayoutSwitcher.tsx`); the selection
+  ring is a rule of its own in `content.scss`, because the collage gives every cell a background that
+  covers the usual one.
+
 ## Deliberately not rebranded
 
 The web clipper extension (`src/clipper/web-extension`, upstream's published extension), upstream links,
@@ -186,7 +273,8 @@ small "of my mind" underneath, which is what the user asked for.
   being viewed is the biggest remaining performance win.
 - The start-up scan of all locations runs in the renderer (about 20 s for four locations, 1.4 s of stalls) and
   competes with first-screen loading.
-- The screensaver skips nothing, but uses thumbnails; PSD/EXR/Krita images without a thumbnail are left out.
+- The screensaver decodes the image files themselves; TIFF, PSD, EXR and Krita images are shown from their
+  thumbnail (less sharp), and are left out when they have none.
 - The crash "File bug report" link (`githubUrl` in `common/config.ts`), the update dialog's release page link
   (`src/main.ts`) and `dev-app-update.yml` still point at the original project.
 - Electron 21 no longer receives security updates, and the renderer runs with Node integration and without
