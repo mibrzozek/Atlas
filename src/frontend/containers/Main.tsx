@@ -15,6 +15,9 @@ import Outliner from './Outliner';
 const Main = () => {
   const { uiStore } = useStore();
   const data = useRef(observable({ source: undefined, target: undefined }));
+  // The bar above the gallery can be hidden from the top bar. Not while one image is open:
+  // that is where the button to go back is
+  const isToolbarShown = uiStore.isSearchBarVisible || uiStore.isSlideMode;
 
   useEffect(() => {
     const handleDragEnd = action((event: DragEvent) => {
@@ -69,8 +72,8 @@ const Main = () => {
           id="window-splitter"
           primary={<Outliner />}
           secondary={
-            <main id="main" onKeyDown={handleShortcuts}>
-              <AppToolbar />
+            <main id="main" onKeyDown={handleShortcuts} data-toolbar-hidden={!isToolbarShown}>
+              {isToolbarShown && <AppToolbar />}
               <ContentView />
             </main>
           }

@@ -43,7 +43,15 @@ const MultiSplit: React.FC<MultiSplitProps> = ({
     [heights, setHeights],
   );
 
-  const lastExpandedPanelIndex = expansion.lastIndexOf(true);
+  // The space that is left goes to the last expanded panel, except to one that is as tall as its content
+  const canGrow = React.Children.map(
+    children,
+    (child) => !(child as React.ReactElement<MultiSplitPaneProps>).props.fitContent,
+  ) as boolean[];
+  const lastExpandedPanelIndex = expansion.reduce(
+    (last, isExpanded, i) => (isExpanded && canGrow[i] ? i : last),
+    -1,
+  );
 
   return (
     <div className="multi-split">
@@ -51,7 +59,8 @@ const MultiSplit: React.FC<MultiSplitProps> = ({
         const typedChild = child as React.ReactElement<
           React.PropsWithChildren<MultiSplitPaneProps>
         >;
-        const isOnlyExpanded = expansion.every((e, i) => e === (i === index ? true : false));
+        const isOnlyExpanded =
+          canGrow[index] && expansion.every((e, i) => e === (i === index ? true : false));
         const paneProps: Partial<MultiSplitPaneProps> = {
           setCollapsed: (isCollapsed: boolean) => handleToggleExpansion(index, !isCollapsed),
           isCollapsed: !expansion[index],

@@ -85,7 +85,7 @@ const Welcome = () => {
       <p>
         Atlas needs to know where to find your images.
         <br />
-        Add a Location to get started.
+        Add a Source to get started.
       </p>
 
       <div className="divider" />

@@ -42,5 +42,9 @@ export interface DataStorage {
   removeLocation(location: ID): Promise<void>;
   removeSearch(search: ID): Promise<void>;
   countFiles(): Promise<[fileCount: number, untaggedFileCount: number]>;
+  /** How many files have each of the given tags, in the same order */
+  countFilesByTag(tags: ID[]): Promise<number[]>;
+  /** How many files are in any of the given folders (paths ending in a separator), and how many of those have a tag */
+  countFilesInFolders(paths: string[]): Promise<[fileCount: number, taggedFileCount: number]>;
   clear(): Promise<void>;
 }

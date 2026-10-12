@@ -10,9 +10,9 @@ const SecondaryCommands = observer(() => {
   const { uiStore } = useStore();
   return (
     <MenuButton
-      icon={IconSet.MORE}
-      text="More"
-      tooltip="See more"
+      icon={IconSet.SETTINGS}
+      text="Menu"
+      tooltip="Settings and more"
       id="__secondary-menu"
       menuID="__secondary-menu-options"
     >

@@ -6,6 +6,7 @@ import React, { useCallback, useContext, useEffect, useMemo, useState } from 're
 
 import { IconSet, Tree } from 'widgets';
 import MultiSplitPane, { MultiSplitPaneProps } from 'widgets/MultiSplit/MultiSplitPane';
+import FolderCounts from './FolderCounts';
 import { Menu, MenuDivider, MenuItem, useContextMenu } from 'widgets/menus';
 import { Callout } from 'widgets/notifications';
 import { Toolbar, ToolbarButton } from 'widgets/toolbar';
@@ -74,7 +75,7 @@ export class LocationTreeItemRevealer extends TreeItemRevealer {
 
 // Tooltip info
 const enum Tooltip {
-  Location = 'Add new Location',
+  Location = 'Add new Source',
   Refresh = 'Refresh directories',
 }
 
@@ -529,7 +530,7 @@ const LocationsPanel = observer((props: Partial<MultiSplitPaneProps>) => {
     const existingDir = locationStore.exists((dir) => path === dir.path);
     if (existingDir) {
       AppToaster.show({
-        message: 'This folder has already been added as a location.',
+        message: 'This folder has already been added as a source.',
         timeout: 5000,
       });
       return;
@@ -542,7 +543,7 @@ const LocationsPanel = observer((props: Partial<MultiSplitPaneProps>) => {
     const parentDir = locationStore.exists((dir) => path.includes(addSeparator(dir.path)));
     if (parentDir) {
       AppToaster.show({
-        message: 'You cannot add a location that is a sub-folder of an existing location.',
+        message: 'You cannot add a source that is a sub-folder of an existing source.',
         timeout: 5000,
       });
       return;
@@ -556,7 +557,7 @@ const LocationsPanel = observer((props: Partial<MultiSplitPaneProps>) => {
     const childDir = locationStore.exists((dir) => dir.path.includes(pathWithSeparator));
     if (childDir) {
       AppToaster.show({
-        message: 'You cannot add a location that is a parent-folder of an existing location.',
+        message: 'You cannot add a source that is a parent-folder of an existing source.',
         timeout: 5000,
       });
       return;
@@ -573,7 +574,7 @@ const LocationsPanel = observer((props: Partial<MultiSplitPaneProps>) => {
   return (
     <MultiSplitPane
       id="locations"
-      title="Locations"
+      title="Sources"
       className={`${isEmpty ? 'attention' : ''} ${isDropping ? 'info' : ''}`}
       headerToolbar={
         <Toolbar controls="location-list" isCompact>
@@ -591,7 +592,7 @@ const LocationsPanel = observer((props: Partial<MultiSplitPaneProps>) => {
           )}
           <ToolbarButton
             icon={IconSet.PLUS}
-            text="New Location"
+            text="New Source"
             onClick={handleChooseWatchedDir}
             tooltip={Tooltip.Location}
           />
@@ -600,7 +601,8 @@ const LocationsPanel = observer((props: Partial<MultiSplitPaneProps>) => {
       {...props}
     >
       <LocationsTree onDelete={setDeletableLocation} onExclude={setExcludableSubLocation} />
-      {isEmpty && <Callout icon={IconSet.INFO}>Click + to choose a location.</Callout>}
+      {isEmpty && <Callout icon={IconSet.INFO}>Click + to choose a source.</Callout>}
+      {!isEmpty && <FolderCounts />}
 
       <LocationRecoveryDialog />
 

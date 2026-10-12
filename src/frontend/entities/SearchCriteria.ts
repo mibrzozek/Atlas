@@ -29,7 +29,7 @@ export type SearchKeyDict = Partial<Record<keyof FileDTO, string>>;
 
 export const CustomKeyDict: SearchKeyDict = {
   absolutePath: 'Path',
-  locationId: 'Location',
+  locationId: 'Source',
 };
 
 export const NumberOperatorSymbols: Record<NumberOperatorType, string> = {
@@ -126,7 +126,8 @@ export class ClientTagSearchCriteria extends ClientFileSearchCriteria {
    * (this makes is so that "Untagged images" can be italicized)
    **/
   @action.bound isSystemTag = (): boolean => {
-    return !this.value && !this.operator.toLowerCase().includes('not');
+    // "Untagged images" and "Tagged images"
+    return !this.value;
   };
 
   @action.bound getLabel: (dict: SearchKeyDict, rootStore: RootStore) => string = (
@@ -135,6 +136,9 @@ export class ClientTagSearchCriteria extends ClientFileSearchCriteria {
   ) => {
     if (!this.value && !this.operator.toLowerCase().includes('not')) {
       return 'Untagged images';
+    }
+    if (!this.value) {
+      return 'Tagged images';
     }
     return `${dict[this.key] || camelCaseToSpaced(this.key as string)} ${camelCaseToSpaced(
       this.operator,

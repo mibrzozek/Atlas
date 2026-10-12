@@ -13,6 +13,8 @@ export type MultiSplitPaneProps = React.HTMLAttributes<HTMLDivElement> & {
   setCollapsed?: (isCollapsed: boolean) => void;
   height?: number;
   setHeight?: (height: number) => void;
+  /** Always exactly as tall as its content: it cannot be resized, and does not fill the space that is left */
+  fitContent?: boolean;
   headerProps?: React.HTMLAttributes<HTMLDivElement>;
   headerToolbar?: ReactNode;
   className?: string;
@@ -77,6 +79,7 @@ const MultiSplitPane: React.FC<MultiSplitPaneProps> = ({
   setCollapsed,
   height,
   setHeight,
+  fitContent,
   children,
   className,
   headerToolbar,
@@ -85,7 +88,11 @@ const MultiSplitPane: React.FC<MultiSplitPaneProps> = ({
 }) => {
   const ref = useRef<HTMLDivElement>(null);
   return (
-    <div className={`section ${className || ''}`} {...props} ref={ref}>
+    <div
+      className={`section ${fitContent ? 'fit-content' : ''} ${className || ''}`}
+      {...props}
+      ref={ref}
+    >
       <header {...(headerProps || {})}>
         <h2
           onClick={() => setCollapsed?.(!isCollapsed)}
@@ -96,7 +103,7 @@ const MultiSplitPane: React.FC<MultiSplitPaneProps> = ({
         </h2>
         {headerToolbar}
       </header>
-      {setHeight ? (
+      {setHeight && !fitContent ? (
         <ResizableCollapse isCollapsed={isCollapsed} setHeight={setHeight} height={height}>
           {children}
         </ResizableCollapse>

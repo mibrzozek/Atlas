@@ -109,7 +109,7 @@ export const FileViewerMenuItems = ({ file }: { file: ClientFile }) => {
               ),
             )
           }
-          text="Same Location"
+          text="Same Source"
         />
         <MenuItem
           onClick={(e) =>
@@ -208,7 +208,7 @@ export const ExternalAppMenuItems = observer(({ file }: { file: ClientFile }) =>
         onClick={() =>
           LocationTreeItemRevealer.instance.revealSubLocation(file.locationId, file.absolutePath)
         }
-        text="Reveal in Locations Panel"
+        text="Reveal in Sources Panel"
         icon={IconSet.TREE_LIST}
       />
       <MenuItem

@@ -69,6 +69,29 @@ input {
   line-height: 1.5rem;
 }
 
+// Number fields follow the theme, like select below: the system draws them white otherwise
+input[type='number'] {
+  background: var(--input-color);
+  color: var(--text-color);
+  border: 0.0625rem solid var(--border-color);
+  outline: none;
+  border-radius: 0.25rem;
+  min-height: 1.5rem;
+
+  &:hover:not(:disabled) {
+    background: var(--input-color-hover);
+  }
+
+  &:focus {
+    background: var(--input-color);
+    box-shadow: 0 0 0 0.125rem var(--accent-color);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
 table {
   color: inherit;
   font-size: inherit;

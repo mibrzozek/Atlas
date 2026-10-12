@@ -1,7 +1,8 @@
 import { action, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
 
+import { OutlinerSort, sortedByName } from 'common/collections';
 import { formatTagCountText } from 'common/fmt';
 import { IconSet, Tree } from 'widgets';
 import MultiSplitPane, { MultiSplitPaneProps } from 'widgets/MultiSplit/MultiSplitPane';
@@ -9,13 +10,12 @@ import { useContextMenu } from 'widgets/menus';
 import { Toolbar, ToolbarButton } from 'widgets/toolbar';
 import { ITreeItem, TreeLabel, createBranchOnKeyDown, createLeafOnKeyDown } from 'widgets/tree';
 import { ROOT_TAG_ID } from '../../../../api/tag';
-import { TagRemoval } from '../../../components/RemovalAlert';
-import { TagMerge } from '../../../containers/Outliner/TagsPanel/TagMerge';
 import { useStore } from '../../../contexts/StoreContext';
 import { DnDTagType, useTagDnD } from '../../../contexts/TagDnDContext';
 import { ClientTagSearchCriteria } from '../../../entities/SearchCriteria';
 import { ClientTag } from '../../../entities/Tag';
 import { useAction } from '../../../hooks/mobx';
+import useLocalStorage from '../../../hooks/useLocalStorage';
 import TagStore from '../../../stores/TagStore';
 import UiStore from '../../../stores/UiStore';
 import { IExpansionState } from '../../types';
@@ -23,7 +23,6 @@ import { HOVER_TIME_TO_EXPAND } from '../LocationsPanel/useFileDnD';
 import { createDragReorderHelper } from '../TreeItemDnD';
 import TreeItemRevealer from '../TreeItemRevealer';
 import { TagItemContextMenu } from './ContextMenu';
-import SearchButton from './SearchButton';
 import { Action, Factory, State, reducer } from './state';
 
 export class TagsTreeItemRevealer extends TreeItemRevealer {
@@ -44,78 +43,28 @@ export class TagsTreeItemRevealer extends TreeItemRevealer {
   }
 }
 
-interface ILabelProps {
-  text: string;
-  setText: (value: string) => void;
-  isEditing: boolean;
-  onSubmit: (target: EventTarget & HTMLInputElement) => void;
-  tooltip?: string;
-}
-
-const Label = (props: ILabelProps) =>
-  props.isEditing ? (
-    <input
-      className="input"
-      autoFocus
-      type="text"
-      defaultValue={props.text}
-      onBlur={(e) => {
-        const value = e.currentTarget.value.trim();
-        if (value.length > 0) {
-          props.setText(value);
-        }
-        props.onSubmit(e.currentTarget);
-      }}
-      onKeyDown={(e) => {
-        e.stopPropagation();
-        const value = e.currentTarget.value.trim();
-        if (e.key === 'Enter' && value.length > 0) {
-          props.setText(value);
-          props.onSubmit(e.currentTarget);
-        } else if (e.key === 'Escape') {
-          props.onSubmit(e.currentTarget); // cancel with escape
-        }
-      }}
-      onFocus={(e) => e.target.select()}
-      // Stop propagation so that the parent Tag element doesn't toggle selection status
-      onClick={(e) => e.stopPropagation()}
-      // TODO: Visualizing errors...
-      // Only show red outline when input field is in focus and text is invalid
-    />
-  ) : (
-    <div className="label-text" data-tooltip={props.tooltip}>
-      {props.text}
-    </div>
-  );
-
 interface ITagItemProps {
   nodeData: ClientTag;
   dispatch: React.Dispatch<Action>;
-  isEditing: boolean;
-  submit: (target: EventTarget & HTMLInputElement) => void;
-  select: (event: React.MouseEvent, nodeData: ClientTag) => void;
   pos: number;
   expansion: IExpansionState;
+  /** Tags can only be dragged to another place while they are sorted by hand */
+  isManualSort: boolean;
 }
 
 /**
- * Toggles Query
- *
- * All it does is remove the query if it already searched, otherwise adds a
- * query. Handling filter mode or replacing the search criteria list is up to
- * the component.
+ * Opens the tag in the gallery. With ctrl (or cmd) it is added to what is shown already, or taken out of it.
  */
-const toggleQuery = (nodeData: ClientTag, uiStore: UiStore) => {
-  if (nodeData.isSearched) {
-    // if it already exists, then remove it
-    const alreadySearchedCrit = uiStore.searchCriteriaList.find((c) =>
-      (c as ClientTagSearchCriteria).value?.includes(nodeData.id),
-    );
-    if (alreadySearchedCrit) {
-      uiStore.replaceSearchCriterias(
-        uiStore.searchCriteriaList.filter((c) => c !== alreadySearchedCrit),
-      );
-    }
+const viewTag = (nodeData: ClientTag, uiStore: UiStore, isAdditive: boolean) => {
+  if (!isAdditive) {
+    uiStore.replaceSearchCriteria(new ClientTagSearchCriteria('tags', nodeData.id));
+    return;
+  }
+  const crit = uiStore.searchCriteriaList.find(
+    (c) => c instanceof ClientTagSearchCriteria && c.value === nodeData.id,
+  );
+  if (crit) {
+    uiStore.removeSearchCriteria(crit);
   } else {
     uiStore.addSearchCriteria(new ClientTagSearchCriteria('tags', nodeData.id));
   }
@@ -124,7 +73,7 @@ const toggleQuery = (nodeData: ClientTag, uiStore: UiStore) => {
 const DnDHelper = createDragReorderHelper('tag-dnd-preview', DnDTagType);
 
 const TagItem = observer((props: ITagItemProps) => {
-  const { nodeData, dispatch, expansion, isEditing, submit, pos, select } = props;
+  const { nodeData, dispatch, expansion, pos, isManualSort } = props;
   const { uiStore } = useStore();
   const dndData = useTagDnD();
 
@@ -134,9 +83,9 @@ const TagItem = observer((props: ITagItemProps) => {
       show(
         e.clientX,
         e.clientY,
-        <TagItemContextMenu dispatch={dispatch} tag={nodeData} pos={pos} />,
+        <TagItemContextMenu tag={nodeData} pos={pos} isManualSort={isManualSort} />,
       ),
-    [dispatch, nodeData, pos, show],
+    [isManualSort, nodeData, pos, show],
   );
 
   const handleDragStart = useCallback(
@@ -178,6 +127,10 @@ const TagItem = observer((props: ITagItemProps) => {
   const handleDragOver = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       runInAction(() => {
+        // In alphabetical order there is no place to drop a tag
+        if (!isManualSort) {
+          return;
+        }
         if (
           (dndData.source?.isSelected && nodeData.isSelected) ||
           nodeData.isAncestor(dndData.source!)
@@ -202,7 +155,7 @@ const TagItem = observer((props: ITagItemProps) => {
         }
       });
     },
-    [dndData, expandDelayed, expandTimeoutId, expansion, nodeData],
+    [dndData, expandDelayed, expandTimeoutId, expansion, isManualSort, nodeData],
   );
 
   const handleDragLeave = useCallback(
@@ -222,6 +175,9 @@ const TagItem = observer((props: ITagItemProps) => {
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       runInAction(() => {
+        if (!isManualSort) {
+          return;
+        }
         const relativeMovePos = DnDHelper.onDrop(event);
 
         // Expand the tag if it's not already expanded
@@ -250,46 +206,16 @@ const TagItem = observer((props: ITagItemProps) => {
         setExpandTimeoutId(undefined);
       }
     },
-    [dispatch, dndData, expandTimeoutId, expansion, nodeData, pos, uiStore],
+    [dispatch, dndData, expandTimeoutId, expansion, isManualSort, nodeData, pos, uiStore],
   );
 
-  const handleSelect = useCallback(
+  // Clicking anywhere on the tag opens it in the gallery
+  const handleClick = useCallback(
     (event: React.MouseEvent) => {
       event.stopPropagation();
-      select(event, nodeData);
-    },
-    [nodeData, select],
-  );
-
-  const handleQuickQuery = useCallback(
-    (event: React.MouseEvent) => {
-      runInAction(() => {
-        event.stopPropagation();
-        if (nodeData.isSearched) {
-          // if already searched, un-search
-          const crit = uiStore.searchCriteriaList.find(
-            (c) => c instanceof ClientTagSearchCriteria && c.value === nodeData.id,
-          );
-          if (crit) {
-            uiStore.removeSearchCriteria(crit);
-          }
-        } else {
-          // otherwise, search it
-          const query = new ClientTagSearchCriteria('tags', nodeData.id, 'containsRecursively');
-          if (event.ctrlKey || event.metaKey) {
-            uiStore.addSearchCriteria(query);
-          } else {
-            uiStore.replaceSearchCriteria(query);
-          }
-        }
-      });
+      runInAction(() => viewTag(nodeData, uiStore, event.ctrlKey || event.metaKey));
     },
     [nodeData, uiStore],
-  );
-
-  const handleRename = useCallback(
-    () => dispatch(Factory.enableEditing(nodeData.id)),
-    [dispatch, nodeData.id],
   );
 
   useEffect(
@@ -304,26 +230,23 @@ const TagItem = observer((props: ITagItemProps) => {
   return (
     <div
       className="tree-content-label"
-      draggable={!isEditing}
+      draggable
       onDragStart={handleDragStart}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
       onContextMenu={handleContextMenu}
-      onClick={handleSelect}
-      onDoubleClick={handleRename}
+      onClick={handleClick}
     >
       <span style={{ color: nodeData.viewColor }}>
         {nodeData.isHidden ? IconSet.HIDDEN : IconSet.TAG}
       </span>
-      <Label
-        text={nodeData.name}
-        setText={nodeData.rename}
-        isEditing={isEditing}
-        onSubmit={submit}
-        tooltip={`${nodeData.path.join(' › ')} (${nodeData.fileCount})`}
-      />
-      {!isEditing && <SearchButton onClick={handleQuickQuery} isSearched={nodeData.isSearched} />}
+      <div
+        className="label-text"
+        data-tooltip={`${nodeData.path.join(' › ')} (${nodeData.fileCount})`}
+      >
+        {nodeData.name}
+      </div>
     </div>
   );
 });
@@ -331,8 +254,7 @@ const TagItem = observer((props: ITagItemProps) => {
 interface ITreeData {
   state: State;
   dispatch: React.Dispatch<Action>;
-  submit: (target: EventTarget & HTMLInputElement) => void;
-  select: (event: React.MouseEvent, nodeData: ClientTag) => void;
+  sort: OutlinerSort;
 }
 
 const TagItemLabel: TreeLabel = ({
@@ -348,10 +270,8 @@ const TagItemLabel: TreeLabel = ({
     nodeData={nodeData}
     dispatch={treeData.dispatch}
     expansion={treeData.state.expansion}
-    isEditing={treeData.state.editableNode === nodeData.id}
-    submit={treeData.submit}
     pos={pos}
-    select={treeData.select}
+    isManualSort={treeData.sort === 'manual'}
   />
 );
 
@@ -386,14 +306,8 @@ const customKeys = (
   tagStore: TagStore,
   event: React.KeyboardEvent<HTMLLIElement>,
   nodeData: ClientTag,
-  treeData: ITreeData,
 ) => {
   switch (event.key) {
-    case 'F2':
-      event.stopPropagation();
-      treeData.dispatch(Factory.enableEditing(nodeData.id));
-      break;
-
     case 'F10':
       if (event.shiftKey) {
         triggerContextMenuEvent(event);
@@ -402,11 +316,7 @@ const customKeys = (
 
     case 'Enter':
       event.stopPropagation();
-      toggleQuery(nodeData, uiStore);
-      break;
-
-    case 'Delete':
-      treeData.dispatch(Factory.confirmDeletion(nodeData));
+      viewTag(nodeData, uiStore, event.ctrlKey || event.metaKey);
       break;
 
     case 'ContextMenu':
@@ -418,10 +328,14 @@ const customKeys = (
   }
 };
 
-const mapTag = (tag: ClientTag): ITreeItem => ({
+/** Sorted by hand is the order the tags are stored in; by name is only how they are shown */
+const mapTags = (tags: readonly ClientTag[], sort: OutlinerSort): ITreeItem[] =>
+  (sort === 'name' ? sortedByName(tags) : tags).map((tag) => mapTag(tag, sort));
+
+const mapTag = (tag: ClientTag, sort: OutlinerSort): ITreeItem => ({
   id: tag.id,
   label: TagItemLabel,
-  children: tag.subTags.map(mapTag),
+  children: mapTags(tag.subTags, sort),
   nodeData: tag,
   isExpanded,
   isSelected,
@@ -438,6 +352,7 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
     mergableNode: undefined,
   });
   const dndData = useTagDnD();
+  const [sort, setSort] = useLocalStorage<OutlinerSort>('outliner-tag-sort', 'manual');
 
   /** Header and Footer drop zones of the root node */
   const handleDragOverAndLeave = useAction((event: React.DragEvent<HTMLDivElement>) => {
@@ -447,77 +362,12 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
     }
   });
 
-  const submit = useRef((target: EventTarget & HTMLInputElement) => {
-    target.focus();
-    dispatch(Factory.disableEditing());
-    target.setSelectionRange(0, 0);
-  });
-
-  /** The first item that is selected in a multi-selection */
-  const initialSelectionIndex = useRef<number>();
-  /** The last item that is selected in a multi-selection */
-  const lastSelectionIndex = useRef<number>();
-  // Handles selection via click event
-  const select = useAction((e: React.MouseEvent, selectedTag: ClientTag) => {
-    // Note: selection logic is copied from Gallery.tsx
-    const rangeSelection = e.shiftKey;
-    const expandSelection = e.ctrlKey || e.metaKey;
-
-    /** The index of the active (newly selected) item */
-    const i = tagStore.findFlatTagListIndex(selectedTag);
-
-    // If nothing is selected, initialize the selection range and select that single item
-    if (lastSelectionIndex.current === undefined) {
-      initialSelectionIndex.current = i;
-      lastSelectionIndex.current = i;
-      uiStore.toggleTagSelection(selectedTag);
-      return;
-    }
-
-    // Mark this index as the last item that was selected
-    lastSelectionIndex.current = i;
-
-    if (rangeSelection && initialSelectionIndex.current !== undefined) {
-      if (i === undefined) {
-        return;
-      }
-      if (i < initialSelectionIndex.current) {
-        uiStore.selectTagRange(i, initialSelectionIndex.current, expandSelection);
-      } else {
-        uiStore.selectTagRange(initialSelectionIndex.current, i, expandSelection);
-      }
-    } else if (expandSelection) {
-      uiStore.toggleTagSelection(selectedTag);
-      initialSelectionIndex.current = i;
-    } else {
-      if (selectedTag.isSelected && uiStore.tagSelection.size === 1) {
-        uiStore.clearTagSelection();
-        (document.activeElement as HTMLElement | null)?.blur();
-      } else {
-        uiStore.selectTag(selectedTag, true);
-      }
-      initialSelectionIndex.current = i;
-    }
-  });
-
-  const treeData: ITreeData = useMemo(
-    () => ({
-      state,
-      dispatch,
-      submit: submit.current,
-      select,
-    }),
-    [select, state],
-  );
-
-  const handleRootAddTag = useAction(() =>
-    tagStore
-      .create(tagStore.root, 'New Tag')
-      .then((tag) => dispatch(Factory.enableEditing(tag.id)))
-      .catch((err) => console.log('Could not create tag', err)),
-  );
+  const treeData: ITreeData = useMemo(() => ({ state, dispatch, sort }), [sort, state]);
 
   const handleDrop = useAction(() => {
+    if (sort !== 'manual') {
+      return;
+    }
     if (dndData.source?.isSelected) {
       uiStore.moveSelectedTagItems(ROOT_TAG_ID);
     } else if (dndData.source !== undefined) {
@@ -572,21 +422,30 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
       }}
       headerToolbar={
         <Toolbar controls="tag-hierarchy" isCompact>
-          {uiStore.tagSelection.size > 0 ? (
+          {uiStore.tagSelection.size > 0 && (
             <ToolbarButton
               icon={IconSet.CLOSE}
               text="Clear"
               onClick={uiStore.clearTagSelection}
               tooltip="Clear Selection"
             />
-          ) : (
-            <ToolbarButton
-              icon={IconSet.PLUS}
-              text="New Tag"
-              onClick={handleRootAddTag}
-              tooltip="Add a new tag"
-            />
           )}
+          <ToolbarButton
+            icon={sort === 'name' ? IconSet.FILTER_NAME_DOWN : IconSet.TREE_LIST}
+            text="Sort"
+            onClick={() => setSort(sort === 'name' ? 'manual' : 'name')}
+            tooltip={
+              sort === 'name'
+                ? 'Sorted alphabetically. Click to sort by hand: drag tags to where you want them'
+                : 'Sorted by hand: drag tags to where you want them. Click to sort alphabetically'
+            }
+          />
+          <ToolbarButton
+            icon={IconSet.EDIT}
+            text="Edit"
+            onClick={uiStore.openTagManager}
+            tooltip="Edit tags and collections"
+          />
         </Toolbar>
       }
       {...props}
@@ -602,7 +461,7 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
           multiSelect
           id="tag-hierarchy"
           className={uiStore.tagSelection.size > 0 ? 'selected' : undefined}
-          children={root.subTags.map(mapTag)}
+          children={mapTags(root.subTags, sort)}
           treeData={treeData}
           toggleExpansion={toggleExpansion}
           onBranchKeyDown={handleBranchOnKeyDown}
@@ -618,17 +477,6 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
         onDragLeave={handleDragOverAndLeave}
         onDrop={handleDrop}
       />
-
-      {state.deletableNode && (
-        <TagRemoval
-          object={state.deletableNode}
-          onClose={() => dispatch(Factory.abortDeletion())}
-        />
-      )}
-
-      {state.mergableNode && (
-        <TagMerge tag={state.mergableNode} onClose={() => dispatch(Factory.abortMerge())} />
-      )}
     </MultiSplitPane>
   );
 });

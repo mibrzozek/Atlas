@@ -19,8 +19,8 @@ interface IRemovalProps<T> {
 export const LocationRemoval = (props: IRemovalProps<ClientLocation>) => (
   <RemovalAlert
     open
-    title={`Are you sure you want to delete the location "${props.object.name}"?`}
-    information="This will permanently remove the location and all data linked to its images in Atlas."
+    title={`Are you sure you want to delete the source "${props.object.name}"?`}
+    information="This will permanently remove the source and all data linked to its images in Atlas."
     onCancel={props.onClose}
     onConfirm={() => {
       props.onClose();
@@ -103,7 +103,7 @@ export const FileRemoval = observer(() => {
       title={`Are you sure you want to delete ${selection.size} missing file${
         selection.size > 1 ? 's' : ''
       }?`}
-      information="Deleting files will permanently remove them from Atlas, so any tags saved on them will be lost. If you move files back into their location, they will be automatically detected by Atlas."
+      information="Deleting files will permanently remove them from Atlas, so any tags saved on them will be lost. If you move files back into their source, they will be automatically detected by Atlas."
       body={
         <div className="deletion-confirmation-list">
           {Array.from(selection).map((f) => (

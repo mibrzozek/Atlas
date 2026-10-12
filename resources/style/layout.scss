@@ -40,10 +40,15 @@ body {
   gap: 0.25rem;
   background: var(--background-color-alt);
   border-bottom: 0.0625rem solid var(--border-color);
-  contain: strict;
+  // Its menu opens over the panels below, which come later in the page
+  z-index: 1;
 
   .toolbar-button[aria-pressed='true'] {
     color: var(--accent-color);
+  }
+
+  .spacer {
+    flex-grow: 1;
   }
 }
 
@@ -90,6 +95,11 @@ body {
   right: 0;
   bottom: 0;
   background: var(--background-color);
+}
+
+// The bar above the gallery is hidden: the gallery takes its place
+#main[data-toolbar-hidden='true'] #content-view {
+  top: 0;
 }
 
 // Main window layout definition

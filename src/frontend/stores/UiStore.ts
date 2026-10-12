@@ -21,6 +21,7 @@ import { AppToaster } from '../components/Toaster';
 import { ClientFile } from '../entities/File';
 import { ClientFileSearchCriteria, ClientTagSearchCriteria } from '../entities/SearchCriteria';
 import { ClientTag } from '../entities/Tag';
+import { ClientCollection } from './CollectionStore';
 import { comboMatches, getKeyCombo, parseKeyCombo } from '../hotkeyParser';
 import RootStore from './RootStore';
 
@@ -128,6 +129,10 @@ type PersistentPreferenceFields =
   | 'isScreensaverEnabled'
   | 'screensaverIdleMinutes'
   | 'screensaverSecondsPerImage'
+  | 'isScreensaverOnAllMonitors'
+  | 'screensaverTagIds'
+  | 'screensaverCollectionIds'
+  | 'isSearchBarVisible'
   // the following are only restored when isRememberSearchEnabled is enabled
   | 'isSlideMode'
   | 'firstItem'
@@ -153,11 +158,21 @@ class UiStore {
   @observable isPreviewOpen: boolean = false;
   @observable isAdvancedSearchOpen: boolean = false;
   @observable isFolderCreatorOpen: boolean = false;
+  /** Whether the bar above the gallery is there: the search with the tags that are shown, sorting and view */
+  @observable isSearchBarVisible: boolean = true;
+  /** The page where tags and collections are edited */
+  @observable isTagManagerOpen: boolean = false;
   /** Whether the screensaver is being shown right now */
   @observable isScreensaverActive: boolean = false;
   @observable isScreensaverEnabled: boolean = DEFAULT_SCREENSAVER_SETTINGS.isEnabled;
   @observable screensaverIdleMinutes: number = DEFAULT_SCREENSAVER_SETTINGS.idleMinutes;
   @observable screensaverSecondsPerImage: number = DEFAULT_SCREENSAVER_SETTINGS.secondsPerImage;
+  /** Whether the screensaver covers every monitor, or only the one Atlas is on */
+  @observable isScreensaverOnAllMonitors: boolean = true;
+  /** The tags whose images the screensaver shows. None picked: the home gallery */
+  readonly screensaverTagIds = observable<ID>([]);
+  /** The collections whose images the screensaver shows as well */
+  readonly screensaverCollectionIds = observable<ID>([]);
   /** Goes up whenever the panels of the outliner should collapse. The outliner keeps their state itself */
   @observable outlinerCollapseRequest: number = 0;
   @observable searchMatchAny = false;
@@ -399,6 +414,22 @@ class UiStore {
     this.isFolderCreatorOpen = false;
   }
 
+  @action.bound toggleSearchBar(): void {
+    this.isSearchBarVisible = !this.isSearchBarVisible;
+  }
+
+  @action.bound openTagManager(): void {
+    // Deleting and merging act on all selected tags: nothing is selected from in there
+    this.clearTagSelection();
+    this.isTagManagerOpen = true;
+  }
+
+  @action.bound closeTagManager(): void {
+    // What was selected in there should not stay marked in the side panel
+    this.clearTagSelection();
+    this.isTagManagerOpen = false;
+  }
+
   @computed get screensaverSettings(): ScreensaverSettings {
     return {
       isEnabled: this.isScreensaverEnabled,
@@ -451,6 +482,27 @@ class UiStore {
     } catch (e) {
       console.error('Could not open the home gallery', e);
     }
+  }
+
+  /**
+   * For start-up: makes the home gallery what is shown, instead of the search of the previous session.
+   * It does not load the images: the file store does that when it initializes.
+   */
+  @action.bound startInHomeGallery(homeTagId: ID): void {
+    const [crit] = this.searchCriteriaList;
+    const wasHomeGallery =
+      this.searchCriteriaList.length === 1 &&
+      crit instanceof ClientTagSearchCriteria &&
+      crit.value === homeTagId;
+    if (!wasHomeGallery) {
+      // Where the previous session was looking belongs to another set of images
+      this.firstItem = 0;
+      this.isSlideMode = false;
+    }
+    this.searchCriteriaList.forEach((c) => c.dispose());
+    // A restored search loses "including sub-tags", and is then shown as the text "Tags contains Home"
+    this.searchCriteriaList.replace([new ClientTagSearchCriteria('tags', homeTagId)]);
+    this.searchMatchAny = false;
   }
 
   @action.bound openToolbarFileRemover(): void {
@@ -919,6 +971,18 @@ class UiStore {
         );
         this.screensaverIdleMinutes = clampIdleMinutes(prefs.screensaverIdleMinutes);
         this.screensaverSecondsPerImage = clampSecondsPerImage(prefs.screensaverSecondsPerImage);
+        this.isScreensaverOnAllMonitors = Boolean(prefs.isScreensaverOnAllMonitors ?? true);
+        this.isSearchBarVisible = Boolean(prefs.isSearchBarVisible ?? true);
+        if (Array.isArray(prefs.screensaverCollectionIds)) {
+          this.screensaverCollectionIds.replace(
+            prefs.screensaverCollectionIds.filter((id: unknown) => typeof id === 'string'),
+          );
+        }
+        if (Array.isArray(prefs.screensaverTagIds)) {
+          this.screensaverTagIds.replace(
+            prefs.screensaverTagIds.filter((id: unknown) => typeof id === 'string'),
+          );
+        }
 
         this.isRememberSearchEnabled = Boolean(prefs.isRememberSearchEnabled);
         if (this.isRememberSearchEnabled) {
@@ -976,6 +1040,10 @@ class UiStore {
       isScreensaverEnabled: this.isScreensaverEnabled,
       screensaverIdleMinutes: this.screensaverIdleMinutes,
       screensaverSecondsPerImage: this.screensaverSecondsPerImage,
+      isScreensaverOnAllMonitors: this.isScreensaverOnAllMonitors,
+      screensaverTagIds: this.screensaverTagIds.slice(),
+      screensaverCollectionIds: this.screensaverCollectionIds.slice(),
+      isSearchBarVisible: this.isSearchBarVisible,
       isSlideMode: this.isSlideMode,
       firstItem: this.firstItem,
       searchMatchAny: this.searchMatchAny,

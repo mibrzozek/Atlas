@@ -44,6 +44,9 @@ class LocationStore {
   // TODO: Maybe per location/sub-location?
   readonly enabledFileExtensions = observable(new Set<IMG_EXTENSIONS_TYPE>());
 
+  /** How far the start-up scan for new and changed images is, while it runs: shown at the foot of the outliner */
+  @observable scanProgress: { done: number; total: number } | undefined = undefined;
+
   constructor(backend: DataStorage, rootStore: RootStore) {
     this.backend = backend;
     this.rootStore = rootStore;
@@ -93,10 +96,19 @@ class LocationStore {
   // E.g. in preview window, it's not needed to watch the locations
   // Returns whether files have been added, changed or removed
   @action async watchLocations(): Promise<boolean> {
+    try {
+      return await this.scanLocations();
+    } finally {
+      // Also when it failed: the progress bar must not keep running
+      runInAction(() => (this.scanProgress = undefined));
+    }
+  }
+
+  private async scanLocations(): Promise<boolean> {
     const progressToastKey = 'progress';
     let foundNewFiles = false;
     let foundChangedFiles = false;
-    const len = this.locationList.length;
+    const len = runInAction(() => this.locationList.length);
     const getLocation = action((index: number) => this.locationList[index]);
 
     // Get all files in the DB, set up data structures for quick lookups
@@ -120,13 +132,7 @@ class LocationStore {
     for (let i = 0; i < len; i++) {
       const location = getLocation(i);
 
-      AppToaster.show(
-        {
-          message: `Looking for new images... [${i + 1} / ${len}]`,
-          timeout: 0,
-        },
-        progressToastKey,
-      );
+      runInAction(() => (this.scanProgress = { done: i, total: len }));
 
       // TODO: Add a maximum timeout for init: sometimes it's hanging for me. Could also be some of the following steps though
       // added a retry toast for now, can't figure out the cause, and it's hard to reproduce
@@ -157,7 +163,7 @@ class LocationStore {
       if (diskFiles === undefined) {
         AppToaster.show(
           {
-            message: `Cannot find Location "${location.name}"`,
+            message: `Cannot find Source "${location.name}"`,
             timeout: 0,
           },
           // a key such that the toast can be dismissed automatically on recovery
@@ -311,8 +317,6 @@ class LocationStore {
 
     if (foundNewFiles) {
       AppToaster.show({ message: 'New images detected.', timeout: 5000 }, progressToastKey);
-    } else {
-      AppToaster.dismiss(progressToastKey);
     }
     return foundNewFiles || foundChangedFiles;
   }
@@ -428,7 +432,7 @@ class LocationStore {
     AppToaster.show({ message: 'Updating database...', timeout: 0 }, toastKey);
     await this.backend.createFilesFromPath(location.path, files);
 
-    AppToaster.show({ message: `Location "${location.name}" is ready!`, timeout: 5000 }, toastKey);
+    AppToaster.show({ message: `Source "${location.name}" is ready!`, timeout: 5000 }, toastKey);
     this.rootStore.fileStore.refetch();
     this.rootStore.fileStore.refetchFileCounts();
   }

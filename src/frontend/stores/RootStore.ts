@@ -12,6 +12,7 @@ import ImageLoader from '../image/ImageLoader';
 
 import { RendererMessenger } from 'src/ipc/renderer';
 import SearchStore from './SearchStore';
+import CollectionStore from './CollectionStore';
 
 // This will throw exceptions whenever we try to modify the state directly without an action
 // Actions will batch state modifications -> better for performance
@@ -37,6 +38,7 @@ class RootStore {
   readonly locationStore: LocationStore;
   readonly uiStore: UiStore;
   readonly searchStore: SearchStore;
+  readonly collectionStore: CollectionStore;
   readonly exifTool: ExifIO;
   readonly imageLoader: ImageLoader;
   readonly getWindowTitle: () => string;
@@ -51,6 +53,7 @@ class RootStore {
     this.locationStore = new LocationStore(backend, this);
     this.uiStore = new UiStore(this);
     this.searchStore = new SearchStore(backend, this);
+    this.collectionStore = new CollectionStore(backend, this);
     this.#backend = backend;
     this.#backup = backup;
     this.exifTool = new ExifIO(localStorage.getItem('hierarchical-separator') || undefined);
@@ -80,6 +83,7 @@ class RootStore {
       rootStore.tagStore.init(),
       rootStore.imageLoader.init(),
       rootStore.searchStore.init(),
+      rootStore.collectionStore.init(),
     ]);
 
     // A new user starts out with the tag of the home gallery, which the home button opens
@@ -94,6 +98,16 @@ class RootStore {
     // It depends on tag store being initialized for reconstructing search criteria
     rootStore.uiStore.recoverPersistentPreferences();
     rootStore.fileStore.recoverPersistentPreferences();
+
+    // Anyone but a new user starts in their home gallery
+    if (!isNewUser) {
+      try {
+        const homeTag = await rootStore.tagStore.getOrCreateHomeTag();
+        rootStore.uiStore.startInHomeGallery(homeTag.id);
+      } catch (e) {
+        console.error('Could not start in the home gallery', e);
+      }
+    }
     const isSlideMode = runInAction(() => rootStore.uiStore.isSlideMode);
 
     const numCriterias = runInAction(() => rootStore.uiStore.searchCriteriaList.length);
@@ -111,7 +125,7 @@ class RootStore {
 
     // Load the files already in the database so user instantly sees their images
     fileStoreInit().then(() => {
-      rootStore.tagStore.initializeFileCounts(rootStore.fileStore.fileList);
+      rootStore.tagStore.initializeFileCountsFromBackend().catch(console.error);
 
       // If slide mode was recovered from previous session, it's disabled by setContentQuery :/
       // hacky workaround

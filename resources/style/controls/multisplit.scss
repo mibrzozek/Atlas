@@ -52,5 +52,10 @@
         padding-bottom: 1rem;
       }
     }
+
+    // As tall as what is in it, and no more
+    &.fit-content {
+      flex-shrink: 0;
+    }
   }
 }

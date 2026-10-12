@@ -415,7 +415,7 @@ const FolderCreatorForm = observer(() => {
 
       {locationStore.locationList.length > 0 && (
         <div className="folder-creator-locations">
-          <span>Locations</span>
+          <span>Sources</span>
           {locationStore.locationList.map((location) => (
             <button
               key={location.id}

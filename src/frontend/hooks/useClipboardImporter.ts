@@ -29,7 +29,7 @@ export function useClipboardImporter(uiStore: UiStore) {
       const directory = uiStore.importDirectory;
       if (!directory) {
         AppToaster.show({
-          message: 'Please choose a location. Settings>BackgroundProcesses>Browse',
+          message: 'Please choose a source. Settings>BackgroundProcesses>Browse',
           timeout: 5000,
         });
         return;

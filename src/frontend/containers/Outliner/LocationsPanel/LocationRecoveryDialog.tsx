@@ -91,15 +91,15 @@ const RecoveryInfo = observer(({ location, status, match }: IRecoveryInfoProps) 
   switch (status) {
     case Status.Ok:
       return (
-        <p>The location has been recovered, all files were found in the specified directory!</p>
+        <p>The source has been recovered, all files were found in the specified directory!</p>
       );
 
     case Status.InvalidPath:
       return (
         <>
-          <p>The location {location.name} could not be found on your system.</p>
+          <p>The source {location.name} could not be found on your system.</p>
           <p>
-            If it has been moved to a different directory, you can relocate the location by choosing
+            If it has been moved to a different directory, you can relocate the source by choosing
             its new path to recover information Atlas has stored about your images
           </p>
           <p>Original path:</p>
@@ -110,7 +110,7 @@ const RecoveryInfo = observer(({ location, status, match }: IRecoveryInfoProps) 
     case Status.NoMatches:
       return (
         <p>
-          The location could not be recovered since no images of this location were found in the
+          The source could not be recovered since no images of this source were found in the
           specified directory.
         </p>
       );
@@ -121,8 +121,8 @@ const RecoveryInfo = observer(({ location, status, match }: IRecoveryInfoProps) 
         return (
           <p>
             Only {match.matchCount} out of {match.locationImageCount} images were found in the
-            specified directory. By recovering the location, the missing files would be lost. Do you
-            still want to recover the location using this directory?
+            specified directory. By recovering the source, the missing files would be lost. Do you
+            still want to recover the source using this directory?
           </p>
         );
       }
@@ -219,7 +219,7 @@ const LocationRecoveryDialog = () => {
 
   const handleChangeLocationPath = (location: ClientLocation, path: string) => {
     locationStore.changeLocationPath(location, path);
-    AppToaster.show({ message: `Recovered Location ${path}!`, timeout: 5000 });
+    AppToaster.show({ message: `Recovered Source ${path}!`, timeout: 5000 });
   };
 
   const handleLocate = async () => {
@@ -257,14 +257,14 @@ const LocationRecoveryDialog = () => {
       }
       AppToaster.show({ message: `Re-discovered ${location.path}!`, timeout: 5000 });
     } else {
-      AppToaster.show({ message: `Location ${location.path} still not found`, timeout: 5000 });
+      AppToaster.show({ message: `Source ${location.path} still not found`, timeout: 5000 });
     }
   };
 
   return (
     <Dialog
       open
-      title={`Recover Location ${location.name}`}
+      title={`Recover Source ${location.name}`}
       icon={IconSet.FOLDER_CLOSE}
       describedby="location-recovery-info"
       onCancel={uiStore.closeLocationRecovery}

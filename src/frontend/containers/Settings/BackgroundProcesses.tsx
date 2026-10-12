@@ -17,7 +17,7 @@ export const BackgroundProcesses = observer(() => {
       await RendererMessenger.setClipServerImportLocation(newDir);
       uiStore.setImportDirectory(newDir);
     } else {
-      alert('Please choose a location or any of its subfolders.');
+      alert('Please choose a source or any of its subfolders.');
       return;
     }
   };
@@ -50,7 +50,7 @@ export const BackgroundProcesses = observer(() => {
         background option.
       </Callout>
       <Callout icon={IconSet.INFO}>
-        For the browser extension to work, choose a download folder that is in one of your locations
+        For the browser extension to work, choose a download folder that is in one of your sources
         already added to Atlas.
       </Callout>
       <Toggle

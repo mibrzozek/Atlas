@@ -1,4 +1,4 @@
-import { action, computed, makeObservable, observable } from 'mobx';
+import { action, computed, makeObservable, observable, runInAction } from 'mobx';
 
 import { DataStorage } from '../../api/data-storage';
 import { generateId, ID } from '../../api/id';
@@ -46,6 +46,16 @@ class TagStore {
         fileTag.incrementFileCount();
       }
     }
+  }
+
+  /**
+   * Sets how many images every tag has, counted in the whole library:
+   * the loaded files are only the ones being shown, which at start-up is the home gallery.
+   */
+  async initializeFileCountsFromBackend(): Promise<void> {
+    const tags = runInAction(() => this.tagList.slice());
+    const counts = await this.backend.countFilesByTag(tags.map((tag) => tag.id));
+    runInAction(() => tags.forEach((tag, i) => (tag.fileCount = counts[i])));
   }
 
   @action get(tag: ID): ClientTag | undefined {

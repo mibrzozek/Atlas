@@ -25,7 +25,10 @@ class SearchStore {
 
   async init(): Promise<void> {
     try {
-      const fetchedSearches = await this.backend.fetchSearches();
+      // Collections of tags are kept in the same table: those belong to the collection store
+      const fetchedSearches = (await this.backend.fetchSearches()).filter(
+        (s) => s.isCollection !== true,
+      );
       fetchedSearches.sort((a, b) => a.index - b.index);
 
       this.searchList.push(

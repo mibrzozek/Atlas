@@ -17,6 +17,7 @@ import { DropContextProvider } from './contexts/DropContext';
 import Main from './containers/Main';
 import TopBar from './containers/TopBar';
 import FolderCreator from './containers/FolderCreator';
+import TagManager from './containers/TagManager';
 import Screensaver from './containers/Screensaver';
 import About from './containers/About';
 import { CustomThemeProvider } from './hooks/useCustomTheme';
@@ -103,6 +104,8 @@ const App = observer(() => {
             <Main />
 
             <FolderCreator />
+
+            <TagManager />
 
             <Settings />
 

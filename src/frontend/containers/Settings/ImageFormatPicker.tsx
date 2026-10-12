@@ -47,7 +47,7 @@ export const ImageFormatPicker = observer(() => {
   return (
     <>
       <fieldset>
-        <legend>Image formats to be discovered by Atlas in your Locations</legend>
+        <legend>Image formats to be discovered by Atlas in your Sources</legend>
         <div className="checkbox-set-container">
           {IMG_EXTENSIONS.map((ext) => (
             <Checkbox

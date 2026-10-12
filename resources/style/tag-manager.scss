@@ -1,0 +1,356 @@
+// The page where tags and collections are edited
+// Two lists side by side need more room than other dialogs get
+dialog:has(#tag-manager) {
+  max-width: none;
+}
+
+#tag-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75em;
+  width: min(66rem, 86vw);
+  height: min(44rem, 66vh);
+
+  .tag-manager-toolbar {
+    display: flex;
+    gap: 0.5em;
+
+    input {
+      flex: 1;
+      min-width: 0;
+    }
+  }
+
+  // Collections on the left, tags on the right; each scrolls on its own
+  .tag-manager-columns {
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 3fr);
+    gap: 1em;
+  }
+
+  section {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.25rem;
+    background: var(--background-color-alt);
+
+    > header {
+      display: flex;
+      align-items: center;
+      gap: 0.5em;
+      // The same height for both lists, whatever is in it
+      min-height: 2.75rem;
+      box-sizing: border-box;
+      padding: 0.375em 0.75em;
+      border-bottom: 0.0625rem solid var(--border-color);
+
+      h3 {
+        flex: 1;
+        min-width: 0;
+        margin: 0;
+        white-space: nowrap;
+
+        small {
+          margin-inline-start: 0.25em;
+          font-weight: normal;
+          color: var(--text-color-muted);
+        }
+      }
+    }
+
+    > ul {
+      flex: 1;
+      min-height: 0;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      overflow: hidden auto;
+    }
+  }
+
+  .tag-manager-empty {
+    margin: 0;
+    padding: 1em 0.75em;
+    color: var(--text-color-muted);
+  }
+
+  .tag-manager-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25em;
+    padding: 0.5em 0.75em;
+    border-bottom: 0.0625rem solid var(--border-color);
+
+    &:hover {
+      background: var(--hover-color);
+    }
+  }
+
+  .tag-manager-row {
+    display: flex;
+    align-items: center;
+    gap: 0.375em;
+
+    .btn-icon {
+      flex: none;
+      color: var(--text-color-muted);
+
+      &:hover:not(:disabled) {
+        color: var(--text-color-strong);
+      }
+
+      &:disabled {
+        opacity: 0.35;
+        cursor: not-allowed;
+      }
+    }
+  }
+
+  .tag-manager-icon {
+    display: flex;
+    flex: none;
+    width: 1.25rem;
+    justify-content: center;
+    color: var(--text-color-muted);
+  }
+
+  // Looks like plain text until it is hovered or typed in
+  .tag-manager-name {
+    flex: 1;
+    min-width: 0;
+    height: 1.75em;
+    padding: 0 0.375em;
+    font-weight: bold;
+    border: 0.0625rem solid transparent;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: var(--text-color-strong);
+
+    &:hover,
+    &:focus {
+      border-color: var(--border-color);
+      background: var(--input-color);
+    }
+  }
+
+  .tag-manager-count {
+    flex: none;
+    min-width: 2.5em;
+    text-align: end;
+    font-size: 0.75rem;
+    color: var(--text-color-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // The color of the tag: a round swatch that opens the color picker of the system
+  .tag-manager-color {
+    flex: none;
+    appearance: none;
+    width: 1.25rem;
+    height: 1.25rem;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: none;
+    cursor: pointer;
+
+    &::-webkit-color-swatch-wrapper {
+      padding: 0;
+    }
+
+    &::-webkit-color-swatch {
+      border: 0.0625rem solid var(--border-color);
+      border-radius: 50%;
+    }
+
+    // No color yet: an empty ring
+    &[data-empty='true']::-webkit-color-swatch {
+      background: transparent !important;
+      border: 0.125rem dashed var(--text-color-muted);
+    }
+  }
+
+  .tag-manager-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.25em;
+    padding-inline-start: 1.625rem;
+    font-size: 0.8125rem;
+  }
+
+  // The tags of a collection: one line, and a button at the end when there are more
+  .tag-manager-chips-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.25em;
+    padding-inline-start: 1.625rem;
+
+    .tag-manager-chips {
+      flex: 1;
+      min-width: 0;
+      padding-inline-start: 0;
+      // Every line is exactly this high, so that one line can be cut off cleanly
+      --chip-line: 1.5rem;
+      row-gap: 0.25rem;
+
+      > * {
+        height: var(--chip-line);
+        box-sizing: border-box;
+      }
+
+      &[data-collapsed='true'] {
+        max-height: var(--chip-line);
+        overflow: hidden;
+      }
+    }
+
+    .tag-manager-expand {
+      flex: none;
+      height: 1.5rem;
+      width: 1.5rem;
+      color: var(--text-color-muted);
+
+      &:hover {
+        color: var(--text-color-strong);
+      }
+    }
+  }
+
+  // Above the list of tags: how it is sorted, and which tags are listed
+  .tag-manager-option {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375em;
+    margin: 0;
+    font-size: 0.8125rem;
+    color: var(--text-color-muted);
+    white-space: nowrap;
+    cursor: pointer;
+
+    input[type='checkbox'] {
+      width: 1rem;
+      height: 1rem;
+      margin: 0;
+    }
+
+    &:hover {
+      color: var(--text-color);
+    }
+  }
+
+  .tag-manager-sort {
+    height: 1.75rem;
+    font-size: 0.8125rem;
+  }
+
+  .tag-manager-add,
+  .tag-manager-parent {
+    height: 1.5rem;
+    max-width: 16rem;
+    padding: 0 0.375em;
+    border: 0.0625rem solid transparent;
+    border-radius: 0.25rem;
+    background: transparent;
+    color: var(--text-color-muted);
+    font-size: inherit;
+    cursor: pointer;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+
+    &:hover:not(:disabled),
+    &:focus {
+      border-color: var(--border-color);
+      background: var(--input-color);
+      color: var(--text-color);
+    }
+
+    &:disabled {
+      display: none;
+    }
+  }
+
+  // The tags as a tree, like a list in the side panel: select, drag, rename in place
+  .tag-manager-tree {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden auto;
+    padding: 0.25em 0;
+
+    .tree-content-label {
+      cursor: default;
+      padding-right: 0.5rem;
+    }
+
+    .tag-manager-parent-path {
+      margin-inline-start: 0.625em;
+      font-size: 0.75rem;
+      color: var(--text-color-muted);
+    }
+
+    .tag-manager-memberships {
+      white-space: nowrap;
+      flex: 0 1 auto;
+      min-width: 0;
+      margin-inline: 0.75em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-size: 0.75rem;
+      color: var(--text-color-muted);
+    }
+  }
+
+  // Underneath the tree: click to select nothing, drop to move a tag out of the tag it is in
+  .tag-manager-tree-footer {
+    flex: 1;
+    min-height: 2rem;
+  }
+
+  // What is selected, and what can be done with it
+  .tag-manager-selection {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.25em;
+    min-height: 4rem;
+    padding: 0.5em 0.75em;
+    border-bottom: 0.0625rem solid var(--border-color);
+
+    .tag-manager-chips {
+      padding-inline-start: 0;
+    }
+  }
+
+  .tag-manager-selection-title {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: bold;
+    color: var(--text-color-strong);
+  }
+
+  .tag-manager-hint {
+    font-size: 0.8125rem;
+    color: var(--text-color-muted);
+  }
+
+  // A collection that a dragged tag would be added to
+  .tag-manager-card[data-drop-target] {
+    outline: 0.125rem solid var(--accent-color);
+    outline-offset: -0.125rem;
+  }
+
+  // The plus on a collection: lit up while there are selected tags it can take
+  .tag-manager-row .tag-manager-add-selection:not(:disabled) {
+    color: var(--accent-color);
+  }
+}

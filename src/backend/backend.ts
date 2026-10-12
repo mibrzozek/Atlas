@@ -258,6 +258,30 @@ export default class Backend implements DataStorage {
     });
   }
 
+  async countFilesInFolders(
+    paths: string[],
+  ): Promise<[fileCount: number, taggedFileCount: number]> {
+    let fileCount = 0;
+    let taggedFileCount = 0;
+    await this.#files
+      .where('absolutePath')
+      .startsWithAnyOf(paths)
+      .each((file) => {
+        fileCount++;
+        if (file.tags.length > 0) {
+          taggedFileCount++;
+        }
+      });
+    return [fileCount, taggedFileCount];
+  }
+
+  async countFilesByTag(tags: ID[]): Promise<number[]> {
+    // Counted from the index on tags: no file is read
+    return this.#db.transaction('r', this.#files, () =>
+      Promise.all(tags.map((tag) => this.#files.where('tags').equals(tag).count())),
+    );
+  }
+
   // Creates many files at once, and checks for duplicates in the path they are in
   async createFilesFromPath(path: string, files: FileDTO[]): Promise<void> {
     console.info('IndexedDB: Creating files...', path, files);

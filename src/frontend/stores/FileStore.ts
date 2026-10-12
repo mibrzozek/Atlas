@@ -686,7 +686,7 @@ class FileStore {
       AppToaster.show(
         {
           message:
-            'Some files can no longer be found. Either move them back to their location, or delete them from Atlas',
+            'Some files can no longer be found. Either move them back to their source, or delete them from Atlas',
           timeout: 12000,
         },
         'recovery-view',
@@ -1106,6 +1106,11 @@ class FileStore {
     } else if (this.showsUntaggedContent) {
       this.numUntaggedFiles = this.fileList.length;
     }
+  }
+
+  /** How many images are in the given folders, and how many of those have a tag: counted in the database */
+  countFilesInFolders(paths: string[]): Promise<[fileCount: number, taggedFileCount: number]> {
+    return this.backend.countFilesInFolders(paths);
   }
 
   /** Initializes the total and untagged file counters by querying the database with count operations */

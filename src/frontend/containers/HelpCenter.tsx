@@ -232,20 +232,20 @@ const PAGE_DATA: () => IPageData[] = () => [
               Library setup refers to the process of getting your images into Atlas, so that they
               are available to be managed and viewed. Rather than manually importing images from
               your filesystem, Atlas focuses on linked folders, which we refer to as{' '}
-              <b>Locations</b>. Read on to find out about how to add images to your Atlas library.
+              <b>Sources</b>. Read on to find out about how to add images to your Atlas library.
             </p>
           </>
         ),
       },
       {
-        title: 'Locations',
+        title: 'Sources',
         content: (
           <>
             <p>
-              In Atlas, the primary way of adding images to your library is the use of "Locations".
-              A location in this context is a link to a folder on your computer. This means that all
+              In Atlas, the primary way of adding images to your library is the use of "Sources".
+              A source in this context is a link to a folder on your computer. This means that all
               images in that folder as well as any subfolders will be automatically loaded once it
-              is added to your list of locations.
+              is added to your list of sources.
               <br />
               The benefit of this system is that you can have full control over where your data is
               stored, while not having to tediously import images manually from various places. To
@@ -261,24 +261,24 @@ const PAGE_DATA: () => IPageData[] = () => [
               again.
               <br />
               You are free to rename your images, and to move them to a different folder, as long as
-              they remain within the same location. Atlas will automatically detect those changes
+              they remain within the same source. Atlas will automatically detect those changes
               upon you restarting the application.
             </p>
             <p>
-              To add a new location, open the outliner and hover with your mouse over the location's
+              To add a new source, open the outliner and hover with your mouse over the source's
               header. You will see a small plus icon to the right. Once you click the icon, go ahead
               and browse the folder that contains images. Confirm your selection and select your
-              location preferences in the following popup. You have the option to exclude subfolders
+              source preferences in the following popup. You have the option to exclude subfolders
               during this process. Excluding subfolders later is also possible but keep in mind that
               Atlas does not store tag data for excluded folders. Any existing tag data will be
               removed when you choose to exclude a subfolder. Once you confirm, your images will
               show up in the content area.
             </p>
             <p>
-              To remove a location, open the outliner and right click on a location. A context menu
-              will open with the option to remove your location. You have to confirm this action.
-              Please be aware that removing a location will delete all tagging information that may
-              have been attached to images of that location. The images themselves on your
+              To remove a source, open the outliner and right click on a source. A context menu
+              will open with the option to remove your source. You have to confirm this action.
+              Please be aware that removing a source will delete all tagging information that may
+              have been attached to images of that source. The images themselves on your
               filesystem however, will of course remain.
             </p>
           </>
@@ -290,7 +290,7 @@ const PAGE_DATA: () => IPageData[] = () => [
           <>
             <p>
               Another way of quickly importing images is by dragging them into your list of
-              locations in the the application window. You can drag them from your file explorer,
+              sources in the the application window. You can drag them from your file explorer,
               but also from any other sources like a web browser. When dropping those images, they
               will be copied in into the (sub)folder you chose.
             </p>
@@ -341,7 +341,7 @@ const PAGE_DATA: () => IPageData[] = () => [
             <p>
               Although it is possible to create tags on the fly, it is recommended to set up useful
               tags in advance to take full advantage of the organized tag structures that can be
-              created in the outliner. The outliner has a tag related section below your locations.
+              created in the outliner. The outliner has a tag related section below your sources.
               In this section you are able to create, edit and organize your tags.
             </p>
             <p>

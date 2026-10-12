@@ -150,13 +150,13 @@ const LocationCreationDialog = ({ location, onClose }: LocationCreationDialogPro
   return (
     <Dialog
       open
-      title={`Add Location ${location.name}`}
+      title={`Add Source ${location.name}`}
       icon={IconSet.FOLDER_CLOSE}
       describedby="location-add-info"
       onCancel={handleCancel}
     >
       <p id="location-add-info">
-        You can configure the location {location.name} by including only certain subdirectories from
+        You can configure the source {location.name} by including only certain subdirectories from
         the directory.
         {/* TODO: Switch for importing folder structure as tags */}
         {/* <p>Would you like to create tags from the folder structure of this Location?</p>

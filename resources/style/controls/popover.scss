@@ -145,6 +145,8 @@ dialog[role='alertdialog'] {
 
 [role='tooltip'] {
   display: inline-flex;
+  // A long one wraps instead of running across the window
+  max-width: min(24rem, 90vw);
   padding: 0.25rem 0.5rem;
   margin: 0;
   background: var(--accent-color);
