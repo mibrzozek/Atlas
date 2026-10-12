@@ -11,6 +11,7 @@ import { ClientFile } from '../../entities/File';
 import { ClientTag } from '../../entities/Tag';
 import { usePromise } from '../../hooks/usePromise';
 import { CommandDispatcher, MousePointerEvent } from './Commands';
+import { createCollageDnD } from './collageDnD';
 import { ITransform } from './Masonry/layout-helpers';
 
 interface ItemProps {
@@ -35,6 +36,12 @@ export const MasonryCell = observer(
     const { uiStore, fileStore, imageLoader } = useStore();
     const style = { height, width, transform: `translate(${left}px,${top}px)` };
     const eventManager = useMemo(() => new CommandDispatcher(file), [file]);
+    // In collage mode, dragging an image moves it to another place instead of out of the window
+    const collageDnD = useMemo(
+      () => createCollageDnD(file, fileStore, uiStore, eventManager),
+      [eventManager, file, fileStore, uiStore],
+    );
+    const dnd = fileStore.canReorderCollage ? collageDnD : eventManager;
     // Get a head start on decoding the full image when it looks like it is going to be opened:
     // when the pointer rests on it, or on the first click of a double click
     const hoverTimer = useRef<number>();
@@ -62,12 +69,12 @@ export const MasonryCell = observer(
           onPointerLeave={handlePointerLeave}
           onDoubleClick={eventManager.preview}
           onContextMenu={eventManager.showContextMenu}
-          onDragStart={eventManager.dragStart}
+          onDragStart={dnd.dragStart}
           onDragEnter={eventManager.dragEnter}
-          onDragOver={eventManager.dragOver}
-          onDragLeave={eventManager.dragLeave}
-          onDrop={eventManager.drop}
-          onDragEnd={eventManager.dragEnd}
+          onDragOver={dnd.dragOver}
+          onDragLeave={dnd.dragLeave}
+          onDrop={dnd.drop}
+          onDragEnd={dnd.dragEnd}
         >
           <Thumbnail mounted={mounted} file={file} forceNoThumbnail={forceNoThumbnail} />
         </div>

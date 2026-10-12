@@ -34,6 +34,23 @@ const Layout = ({ contentRect }: LayoutProps) => {
       /** The index of the actived item */
       const i = fileStore.getIndex(selectedFile.id);
 
+      // In collage mode a click picks an image to switch with another: up to two are selected.
+      // A click on a selected one lets go of it, a third one takes the place of the one picked first
+      if (fileStore.canReorderCollage && !rangeSelection) {
+        const selection = uiStore.fileSelection;
+        if (selection.has(selectedFile)) {
+          uiStore.deselectFile(selectedFile);
+        } else {
+          while (selection.size >= 2) {
+            uiStore.deselectFile(selection.values().next().value as ClientFile);
+          }
+          uiStore.selectFile(selectedFile);
+        }
+        initialSelectionIndex.current = i;
+        lastSelectionIndex.current = i;
+        return;
+      }
+
       // If nothing is selected, initialize the selection range and select that single item
       if (lastSelectionIndex.current === undefined) {
         initialSelectionIndex.current = i;

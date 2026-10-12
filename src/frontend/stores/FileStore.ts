@@ -2,6 +2,13 @@ import { shell } from 'electron';
 import fse from 'fs-extra';
 import { action, computed, makeObservable, observable, runInAction } from 'mobx';
 
+import {
+  MAX_COLLAGE_IMAGES,
+  applyCollageOrder,
+  collageKey,
+  moveInCollage,
+  swapInCollage,
+} from 'common/collage';
 import { exportFilesToDirectory } from 'common/export';
 import { getThumbnailPath } from 'common/fs';
 import { ScreensaverImage } from 'common/screensaver';
@@ -33,6 +40,11 @@ const WEB_EXTENSIONS = new Set<string>([
   'bmp',
 ]);
 const ROTATED_DIMENSIONS_FIXED_KEY = 'Atlas_RotatedDimensionsFixed';
+const COLLAGE_MODE_KEY = 'Atlas_CollageMode';
+/** How long the images take to glide to their places when collage mode is switched. Longer than the CSS transition */
+export const COLLAGE_ANIMATION_DURATION = 1100;
+/** Followed by the key of the view: the ids of its images in the order made by hand */
+const COLLAGE_ORDER_KEY_PREFIX = 'Atlas_CollageOrder:';
 const ROTATED_DIMENSIONS_PROGRESS_KEY = 'Atlas_RotatedDimensionsProgress';
 
 /** These fields are stored and recovered when the application opens up */
@@ -67,6 +79,19 @@ class FileStore {
   @observable numTotalFiles = 0;
   @observable numUntaggedFiles = 0;
   @observable numMissingFiles = 0;
+  /**
+   * Collage mode: the images are shown in the order made by hand for this view, instead of sorted,
+   * and can be dragged to another place
+   */
+  @observable isCollageMode =
+    typeof localStorage !== 'undefined' && localStorage.getItem(COLLAGE_MODE_KEY) === 'true';
+  /** For a moment after collage mode is switched on or off: the images glide to their new places */
+  @observable isCollageAnimating = false;
+  private collageAnimationTimeout: number | undefined;
+  /** When collage mode was last switched (`performance.now()`): what was on screen is kept while it glides away */
+  lastCollageToggle = -Infinity;
+  /** When images were last moved by hand: the gallery must not scroll for that */
+  lastCollageReorder = -Infinity;
 
   debouncedRefetch: () => void;
   debouncedSaveFilesToSave: () => Promise<void>;
@@ -225,6 +250,15 @@ class FileStore {
   @action.bound orderFilesBy(prop: OrderBy<FileDTO> = 'dateAdded'): void {
     this.setOrderBy(prop);
     this.refetch();
+  }
+
+  /** Puts the images that are shown in a random order: a new one every time */
+  @action.bound shuffle(): void {
+    // The order made by hand would take the place of the random one
+    if (this.isCollageMode) {
+      this.setCollageMode(false);
+    }
+    this.orderFilesBy('random');
   }
 
   @action.bound setContentQuery(): void {
@@ -695,6 +729,160 @@ class FileStore {
     this.numUntaggedFiles--;
   }
 
+  /////////////////// Collage mode ///////////////////
+
+  /** What the current view is known by, for remembering its hand-made order */
+  private get collageStorageKey(): string {
+    const { uiStore } = this.rootStore;
+    const content = this.showsQueryContent
+      ? 'query'
+      : this.showsUntaggedContent
+      ? 'untagged'
+      : this.showsMissingContent
+      ? 'missing'
+      : 'all';
+    return (
+      COLLAGE_ORDER_KEY_PREFIX +
+      collageKey(
+        content,
+        uiStore.searchMatchAny,
+        this.showsQueryContent
+          ? uiStore.searchCriteriaList.map((c) => ({
+              key: String(c.key),
+              operator: c.operator,
+              value: (c as { value?: unknown }).value,
+            }))
+          : [],
+      )
+    );
+  }
+
+  private readCollageOrder(): string[] {
+    try {
+      const stored = JSON.parse(localStorage.getItem(this.collageStorageKey) ?? '[]');
+      return Array.isArray(stored) ? stored.filter((id) => typeof id === 'string') : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Puts files in the hand-made order of the current view, when collage mode is on */
+  private inCollageOrder<T extends { id: ID }>(files: T[]): T[] {
+    if (!this.isCollageMode || files.length > MAX_COLLAGE_IMAGES) {
+      return files;
+    }
+    const savedOrder = this.readCollageOrder();
+    if (savedOrder.length === 0) {
+      return files;
+    }
+    const byId = new Map(files.map((file) => [file.id, file]));
+    return applyCollageOrder(
+      files.map((file) => file.id),
+      savedOrder,
+    ).map((id) => byId.get(id) as T);
+  }
+
+  /** Whether the images of this view can be put in order by hand */
+  @computed get canReorderCollage(): boolean {
+    return this.isCollageMode && this.fileList.length <= MAX_COLLAGE_IMAGES;
+  }
+
+  /** Switches collage mode, and lets the gallery know that the images are on the move */
+  @action private setCollageMode(isCollageMode: boolean): void {
+    this.isCollageMode = isCollageMode;
+    localStorage.setItem(COLLAGE_MODE_KEY, String(isCollageMode));
+    this.lastCollageToggle = performance.now();
+    this.isCollageAnimating = true;
+    window.clearTimeout(this.collageAnimationTimeout);
+    this.collageAnimationTimeout = window.setTimeout(
+      action(() => (this.isCollageAnimating = false)),
+      COLLAGE_ANIMATION_DURATION,
+    );
+  }
+
+  @action.bound toggleCollageMode(): void {
+    this.setCollageMode(!this.isCollageMode);
+    if (this.isCollageMode && this.fileList.length > MAX_COLLAGE_IMAGES) {
+      AppToaster.show(
+        {
+          message: `Collage mode puts up to ${MAX_COLLAGE_IMAGES} images in order by hand. Open a tag or a folder with fewer images to use it.`,
+          timeout: 8000,
+        },
+        'collage',
+      );
+    }
+    this.refetch();
+  }
+
+  /** Shows the loaded files in the given order, and remembers it for this view */
+  @action private setCollageOrder(ids: string[]): void {
+    const byId = new Map(this.fileList.map((file) => [file.id, file]));
+    const files = ids.map((id) => byId.get(id)).filter((file): file is ClientFile => !!file);
+    if (files.length !== this.fileList.length) {
+      return;
+    }
+    // Every image has a place of the same size in collage mode: the others stay where they are,
+    // and so does what part of the gallery is in view
+    this.lastCollageReorder = performance.now();
+    this.fileList.clear();
+    this.fileList.push(...files);
+    this.updateFileListState();
+    this.fileListLastModified = new Date();
+    try {
+      localStorage.setItem(this.collageStorageKey, JSON.stringify(ids));
+    } catch (e) {
+      console.error('Could not remember the order of the collage', e);
+      AppToaster.show(
+        { message: 'The order could not be saved: there is no room left for it', timeout: 6000 },
+        'collage',
+      );
+    }
+  }
+
+  /** Collage mode: moves images to right before or after another image */
+  @action.bound moveFilesInCollage(
+    moved: ClientFile[],
+    target: ClientFile,
+    place: 'before' | 'after',
+  ): void {
+    if (!this.canReorderCollage) {
+      return;
+    }
+    const ids = this.fileList.map((file) => file.id);
+    const newIds = moveInCollage(
+      ids,
+      moved.map((file) => file.id),
+      target.id,
+      place,
+    );
+    if (newIds.some((id, i) => id !== ids[i])) {
+      this.setCollageOrder(newIds);
+    }
+  }
+
+  /** Collage mode: puts two images in each other's place */
+  @action.bound swapFilesInCollage(a: ClientFile, b: ClientFile): void {
+    if (!this.canReorderCollage || a === b) {
+      return;
+    }
+    this.setCollageOrder(
+      swapInCollage(
+        this.fileList.map((file) => file.id),
+        a.id,
+        b.id,
+      ),
+    );
+  }
+
+  /** Collage mode: switches the two selected images. Does nothing unless exactly two are selected */
+  @action.bound swapSelectedFilesInCollage(): void {
+    const { fileSelection } = this.rootStore.uiStore;
+    if (fileSelection.size === 2) {
+      const [a, b] = Array.from(fileSelection);
+      this.swapFilesInCollage(a, b);
+    }
+  }
+
   // Removes all items from fileList
   @action.bound clearFileList(): void {
     this.fileList.clear();
@@ -795,6 +983,9 @@ class FileStore {
       this.rootStore.tagStore.tagList.filter((t) => t.isHidden).map((t) => t.id),
     );
     backendFiles = backendFiles.filter((f) => !f.tags.some((t) => hiddenTagIds.has(t)));
+
+    // In collage mode the order is the one made by hand for this view
+    backendFiles = this.inCollageOrder(backendFiles);
 
     // For every new file coming in, either re-use the existing client file if it exists,
     // or construct a new client file

@@ -38,6 +38,9 @@ const MasonryRenderer = observer(({ contentRect, select, lastSelectionIndex }: G
   const containerWidth = contentRect.width - SCROLL_BAR_WIDTH - MASONRY_PADDING;
 
   const viewMethod = uiStore.method as SupportedViewMethod;
+  // Collage mode gives every image a place of the same size, whatever the view is set to:
+  // moving or switching images then never pushes the others around
+  const layoutType = fileStore.isCollageMode ? MasonryType.Grid : ViewMethodLayoutDict[viewMethod];
   const numImages = fileStore.fileList.length;
 
   // Vertical keyboard navigation with lastSelectionIndex
@@ -99,7 +102,7 @@ const MasonryRenderer = observer(({ contentRect, select, lastSelectionIndex }: G
           containerWidth,
           {
             thumbSize: thumbnailSize,
-            type: ViewMethodLayoutDict[viewMethod],
+            type: layoutType,
           },
         );
         setContainerHeight(containerHeight);
@@ -125,7 +128,7 @@ const MasonryRenderer = observer(({ contentRect, select, lastSelectionIndex }: G
             containerWidth,
             {
               thumbSize: thumbnailSize,
-              type: ViewMethodLayoutDict[viewMethod],
+              type: layoutType,
             },
           );
           setContainerHeight(containerHeight);
@@ -144,13 +147,13 @@ const MasonryRenderer = observer(({ contentRect, select, lastSelectionIndex }: G
       async function onResize(
         containerWidth: number,
         thumbnailSize: number,
-        viewMethod: SupportedViewMethod,
+        layoutType: MasonryType,
       ) {
         console.debug('Masonry: Environment changed. Recomputing layout!');
         try {
           const containerHeight = await worker.recompute(containerWidth, {
             thumbSize: thumbnailSize,
-            type: ViewMethodLayoutDict[viewMethod],
+            type: layoutType,
           });
           setContainerHeight(containerHeight);
           setLayoutTimestamp(new Date());
@@ -169,10 +172,10 @@ const MasonryRenderer = observer(({ contentRect, select, lastSelectionIndex }: G
   // Re-compute when the environment changes (container width, thumbnail size, view method)
   useEffect(() => {
     if (containerHeight !== undefined && containerWidth > 100) {
-      handleResize.current(containerWidth, thumbnailSize, viewMethod);
+      handleResize.current(containerWidth, thumbnailSize, layoutType);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [containerWidth, handleResize, thumbnailSize, viewMethod]);
+  }, [containerWidth, handleResize, thumbnailSize, layoutType]);
 
   return !containerHeight ? (
     <></>

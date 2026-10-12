@@ -17,15 +17,15 @@ import useIsWindowMaximized from 'src/frontend/hooks/useIsWindowMaximized';
 import { ManyOpenExternal } from 'src/frontend/components/WarningAlert';
 
 const ContentView = observer(() => {
-  const {
-    uiStore,
-    fileStore: { fileList },
-  } = useStore();
+  const { uiStore, fileStore } = useStore();
+  const { fileList } = fileStore;
 
   return (
     <div
       id="content-view"
-      className={`thumbnail-${uiStore.thumbnailSize} thumbnail-${uiStore.thumbnailShape}`}
+      className={`thumbnail-${uiStore.thumbnailSize} thumbnail-${uiStore.thumbnailShape} ${
+        fileStore.isCollageMode ? 'collage' : ''
+      } ${fileStore.isCollageAnimating ? 'collage-animating' : ''}`}
     >
       {fileList.length === 0 ? <Placeholder /> : <Content />}
     </div>

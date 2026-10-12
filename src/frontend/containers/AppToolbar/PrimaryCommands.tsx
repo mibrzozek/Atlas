@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import React from 'react';
 
-import { IconSet } from 'widgets';
+import { IconSet, keyComboToString } from 'widgets';
 import { ToolbarButton } from 'widgets/toolbar';
 import { FileRemoval } from '../../components/RemovalAlert';
 import FileTagEditor from '../../containers/AppToolbar/FileTagEditor';
@@ -9,7 +9,7 @@ import { useStore } from '../../contexts/StoreContext';
 import { SortCommand, ViewCommand } from './Menus';
 import Searchbar from './Searchbar';
 
-const OutlinerToggle = observer(() => {
+export const OutlinerToggle = observer(() => {
   const { uiStore } = useStore();
 
   return (
@@ -45,6 +45,10 @@ const PrimaryCommands = observer(() => {
         <FileTagEditor />
       )}
 
+      <CollageCommands />
+
+      <ShuffleCommand />
+
       <SortCommand />
 
       <ViewCommand />
@@ -53,6 +57,61 @@ const PrimaryCommands = observer(() => {
 });
 
 export default PrimaryCommands;
+
+/** A new random order of the images that are shown, with every click */
+export const ShuffleCommand = observer(() => {
+  const { fileStore, uiStore } = useStore();
+  return (
+    <ToolbarButton
+      icon={IconSet.SHUFFLE}
+      text="Shuffle"
+      onClick={fileStore.shuffle}
+      pressed={fileStore.orderBy === 'random' && !fileStore.isCollageMode}
+      tooltip={`Random order (${keyComboToString(uiStore.hotkeyMap.shuffle)})`}
+    />
+  );
+});
+
+/**
+ * Collage mode: the images are in an order made by hand, and can be dragged to another place.
+ * While it is on, two selected images can be switched.
+ */
+export const CollageCommands = observer(() => {
+  const { fileStore, uiStore } = useStore();
+  const { isCollageMode, canReorderCollage } = fileStore;
+  const selection = uiStore.fileSelection;
+
+  const shortcut = keyComboToString(uiStore.hotkeyMap.switchCollageImages);
+
+  return (
+    <>
+      {isCollageMode && (
+        <ToolbarButton
+          icon={IconSet.REPLACE}
+          text="Switch"
+          onClick={fileStore.swapSelectedFilesInCollage}
+          disabled={!canReorderCollage || selection.size !== 2}
+          tooltip={
+            selection.size === 2
+              ? `Switch the two selected images (${shortcut})`
+              : `Select two images to switch them (${shortcut})`
+          }
+        />
+      )}
+      <ToolbarButton
+        icon={IconSet.COLLAGE}
+        text="Collage"
+        onClick={fileStore.toggleCollageMode}
+        pressed={isCollageMode}
+        tooltip={
+          isCollageMode
+            ? 'Collage mode is on: drag images to move them'
+            : 'Collage mode: drag images into your own order'
+        }
+      />
+    </>
+  );
+});
 
 export const SlideModeCommand = observer(() => {
   const { uiStore } = useStore();

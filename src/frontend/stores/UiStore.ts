@@ -57,6 +57,8 @@ export interface IHotkeyMap {
   viewSlide: string;
   search: string;
   advancedSearch: string;
+  shuffle: string;
+  switchCollageImages: string;
 
   // Other
   openPreviewWindow: string;
@@ -81,6 +83,8 @@ export const defaultHotkeyMap: IHotkeyMap = {
   viewMasonryHorizontal: 'alt + 4',
   search: 'mod + f',
   advancedSearch: 'mod + shift + f',
+  shuffle: 'alt + r',
+  switchCollageImages: 'alt + s',
   openPreviewWindow: 'space',
   openExternal: 'mod + enter',
 };
@@ -832,6 +836,10 @@ class UiStore {
       this.setMethodMasonryHorizontal();
     } else if (matches(hotkeyMap.viewSlide)) {
       this.toggleSlideMode();
+    } else if (matches(hotkeyMap.shuffle)) {
+      this.rootStore.fileStore.shuffle();
+    } else if (matches(hotkeyMap.switchCollageImages)) {
+      this.rootStore.fileStore.swapSelectedFilesInCollage();
     } else {
       isMatch = false;
     }

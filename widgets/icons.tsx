@@ -26,6 +26,7 @@ import ARROW_UP from 'resources/icons/arrow-up.svg';
 import CHROME_DEVTOOLS from 'resources/icons/chrome-devtools.svg';
 import CLEAR_DATABASE from 'resources/icons/clear-database.svg';
 import CLOSE from 'resources/icons/close.svg';
+import COLLAGE from 'resources/icons/collage.svg';
 import COLOR from 'resources/icons/color.svg';
 import CHROME_CLOSE from 'resources/icons/chrome-close.svg';
 import CHROME_MAXIMIZE from 'resources/icons/chrome-maximize.svg';
@@ -95,6 +96,7 @@ import SETTINGS from 'resources/icons/settings.svg';
 // import SMALL_ARROW_RIGHT from 'resources/icons/small-arrow-right.svg';
 import SORT from 'resources/icons/sort.svg';
 import SORT_ALT from 'resources/icons/sort-alt.svg';
+import SHUFFLE from 'resources/icons/shuffle.svg';
 import TAG_ADD from 'resources/icons/tag-add.svg';
 // import TAG_ADD_COLLECTION from 'resources/icons/tag-add-collection.svg';
 import TAG_BLANCO from 'resources/icons/tag-blanco.svg';
@@ -132,6 +134,7 @@ const IconSet = {
   CHROME_DEVTOOLS: toSvg(CHROME_DEVTOOLS),
   CLEAR_DATABASE: toSvg(CLEAR_DATABASE),
   CLOSE: toSvg(CLOSE),
+  COLLAGE: toSvg(COLLAGE),
   COLOR: toSvg(COLOR),
   CHROME_CLOSE: toSvg(CHROME_CLOSE),
   CHROME_MAXIMIZE: toSvg(CHROME_MAXIMIZE),
@@ -197,6 +200,7 @@ const IconSet = {
   SELECT: toSvg(SELECT),
   SELECT_CHECKED: toSvg(SELECT_CHECKED),
   SETTINGS: toSvg(SETTINGS),
+  SHUFFLE: toSvg(SHUFFLE),
   // SMALL_ARROW_DOWN: toSvg(SMALL_ARROW_DOWN),
   // SMALL_ARROW_RIGHT: toSvg(SMALL_ARROW_RIGHT),
   SORT: toSvg(SORT),

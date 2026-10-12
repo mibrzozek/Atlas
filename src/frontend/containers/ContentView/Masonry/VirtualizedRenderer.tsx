@@ -1,11 +1,12 @@
 import { runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import React, { useCallback, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { thumbnailMaxSize } from 'common/config';
 import { debouncedThrottle } from 'common/timeout';
 import { useStore } from '../../../contexts/StoreContext';
 import { ClientFile } from '../../../entities/File';
+import { COLLAGE_ANIMATION_DURATION } from '../../../stores/FileStore';
 import useMountState from '../../../hooks/useMountState';
 import { MasonryCell } from '../GalleryItem';
 import { Layouter, findViewportEdge } from './layout-helpers';
@@ -133,11 +134,59 @@ const VirtualizedRenderer = observer(
     // When layout updates, scroll to firstImage (e.g. resize or thumbnail size changed)
     // This also sets the initial scroll position on initial render, for when coming from another view mode
     useLayoutEffect(() => {
+      // Not after moving images by hand in collage mode: everything else stays exactly where it is
+      if (performance.now() - fileStore.lastCollageReorder < 1500) {
+        return;
+      }
       runInAction(() => {
         scrollToIndex(uiStore.firstItem, 'start'); // keep the first item in view aligned at the start
       });
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [layoutUpdateDate]);
+
+    // When collage mode is switched on or off, the images that were on screen stay around for a moment:
+    // the ones that end up outside of the view glide out of it, instead of vanishing on the spot
+    const visibleFiles = images.slice(startRenderIndex, endRenderIndex + 1);
+    const lastVisibleFiles = useRef<ClientFile[]>([]);
+    const [lingeringFiles, setLingeringFiles] = useState<ClientFile[]>([]);
+    const lingerTimeout = useRef<number>();
+    useLayoutEffect(() => {
+      if (performance.now() - fileStore.lastCollageToggle > COLLAGE_ANIMATION_DURATION * 2) {
+        return;
+      }
+      // The layout is updated more than once after a switch: what was on screen before the first update
+      // is kept through all of them
+      setLingeringFiles((lingering) =>
+        Array.from(new Set([...lingering, ...lastVisibleFiles.current])),
+      );
+      window.clearTimeout(lingerTimeout.current);
+      lingerTimeout.current = window.setTimeout(
+        () => setLingeringFiles([]),
+        COLLAGE_ANIMATION_DURATION,
+      );
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [layoutUpdateDate]);
+    useEffect(() => () => window.clearTimeout(lingerTimeout.current), []);
+    useEffect(() => {
+      lastVisibleFiles.current = visibleFiles;
+    });
+
+    // What is drawn, with the place of each in the list. In a fixed order (by id), not the order of the list:
+    // an element that React moves within the page loses its animation, and jumps instead of gliding
+    const cells: { file: ClientFile; index: number }[] = visibleFiles.map((file, i) => ({
+      file,
+      index: startRenderIndex + i,
+    }));
+    if (lingeringFiles.length > 0) {
+      const visibleIds = new Set(visibleFiles.map((file) => file.id));
+      for (const file of lingeringFiles) {
+        const index = fileStore.getIndex(file.id);
+        if (index !== undefined && !visibleIds.has(file.id) && images[index] === file) {
+          cells.push({ file, index });
+        }
+      }
+    }
+    cells.sort((a, b) => (a.file.id < b.file.id ? -1 : 1));
 
     // When selection changes, scroll to last selected image. Nice when using cursor keys for navigation
     const fileSelectionSize = uiStore.fileSelection.size;
@@ -163,13 +212,12 @@ const VirtualizedRenderer = observer(
       <div className={className} onScroll={handleScroll} ref={wrapperRef}>
         {/* One div for the content */}
         <div style={{ width: containerWidth, height: containerHeight }}>
-          {images.slice(startRenderIndex, endRenderIndex + 1).map((im, index) => {
-            const fileListIndex = startRenderIndex + index;
+          {cells.map(({ file: im, index: fileListIndex }) => {
             const transform = layout.getTransform(fileListIndex);
             return (
               <MasonryCell
                 key={im.id}
-                file={fileStore.fileList[fileListIndex]}
+                file={im}
                 mounted
                 transform={transform}
                 // Force to load the full resolution image when the img dimensions on screen are larger than the thumbnail image resolution
