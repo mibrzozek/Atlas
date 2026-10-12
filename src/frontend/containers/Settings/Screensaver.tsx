@@ -2,13 +2,81 @@ import { observer } from 'mobx-react-lite';
 import React from 'react';
 
 import { SCREENSAVER_LIMITS } from 'common/screensaver';
-import { Button, IconSet, Toggle } from 'widgets';
+import { Button, GridCell, IconSet, Row, Tag, Toggle } from 'widgets';
 import { Callout } from 'widgets/notifications';
+import { TagSelector } from '../../components/TagSelector';
 import { useStore } from '../../contexts/StoreContext';
 
-export const Screensaver = observer(() => {
-  const { uiStore, tagStore } = useStore();
+/**
+ * Which images the screensaver shows: type the name of a tag or a collection and pick it from the list,
+ * like tags are picked for an image in the inspector.
+ */
+const ScreensaverTagPicker = observer(() => {
+  const { uiStore, collectionStore, tagStore } = useStore();
+  const pickedCollections = uiStore.screensaverPickedCollections;
   const homeTagName = tagStore.homeTag?.name ?? 'Home';
+
+  return (
+    <div className="screensaver-tags">
+      <span>Show the images of these tags and collections</span>
+      <TagSelector
+        multiline
+        selection={uiStore.screensaverPickedTags}
+        onSelect={uiStore.addScreensaverTag}
+        onDeselect={uiStore.removeScreensaverTag}
+        onClear={uiStore.clearScreensaverSelection}
+        placeholder={
+          uiStore.isScreensaverUsingHomeGallery ? `Your home gallery (${homeTagName})` : undefined
+        }
+        extraSelection={pickedCollections.map((collection) => (
+          <Tag
+            key={collection.id}
+            text={collection.name}
+            tooltip="Collection"
+            onRemove={() => uiStore.removeScreensaverCollection(collection)}
+          />
+        ))}
+        renderExtraOptions={(text, resetTextBox) => {
+          const query = text.trim().toLowerCase();
+          return collectionStore.sortedByName
+            .filter((collection) => collection.name.toLowerCase().includes(query))
+            .map((collection) => {
+              const selected = pickedCollections.includes(collection);
+              return (
+                <Row
+                  key={`collection-${collection.id}`}
+                  id={`screensaver-collection-${collection.id}`}
+                  value={collection.name}
+                  selected={selected}
+                  icon={IconSet.TAG_GROUP}
+                  tooltip={collectionStore
+                    .getTags(collection)
+                    .map((tag) => tag.name)
+                    .join(', ')}
+                  onClick={() => {
+                    if (selected) {
+                      uiStore.removeScreensaverCollection(collection);
+                    } else {
+                      uiStore.addScreensaverCollection(collection);
+                    }
+                    resetTextBox();
+                  }}
+                >
+                  <GridCell className="tag-option-hint">Collection</GridCell>
+                </Row>
+              );
+            });
+        }}
+      />
+      {uiStore.isScreensaverUsingHomeGallery && (
+        <small>Nothing is picked, so your home gallery is shown.</small>
+      )}
+    </div>
+  );
+});
+
+export const Screensaver = observer(() => {
+  const { uiStore } = useStore();
 
   const handlePreview = () => {
     // The settings are a window of their own, which would stay in front of the screensaver
@@ -20,14 +88,18 @@ export const Screensaver = observer(() => {
     <div id="screensaver-settings" className="vstack">
       <Callout icon={IconSet.INFO}>
         When you have not used your computer for a while and Atlas is the window in front, it fills
-        the screen with the images of your home gallery (the images tagged <b>{homeTagName}</b>).
-        They are laid out like the masonry view you use, in rows or in columns, and slowly move
-        through the screen. Moving the mouse or pressing a key brings you back.
+        your monitors with the images of the tags and collections you pick below: your home gallery,
+        unless you pick something else. With plenty of images they are laid out like the masonry
+        view you use, in rows or in columns, and slowly move through the screen. With only a few,
+        they are shown large, a couple at a time. Moving the mouse or pressing a key brings you
+        back.
       </Callout>
 
       <Toggle checked={uiStore.isScreensaverEnabled} onChange={uiStore.toggleScreensaver}>
         Start the screensaver when the computer is not used
       </Toggle>
+
+      <ScreensaverTagPicker />
 
       <label>
         Start after
@@ -55,6 +127,13 @@ export const Screensaver = observer(() => {
         />
         seconds
       </label>
+
+      <Toggle
+        checked={uiStore.isScreensaverOnAllMonitors}
+        onChange={uiStore.toggleScreensaverOnAllMonitors}
+      >
+        Use all monitors
+      </Toggle>
 
       <div>
         <Button text="Start it now" onClick={handlePreview} styling="outlined" />

@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain, WebContents } from 'electron';
-import { IdleState } from '../../common/screensaver';
+import { IdleState, ScreensaverDisplay } from '../../common/screensaver';
 import {
   ADD_TAGS_TO_FILE,
   CHECK_FOR_UPDATES,
@@ -39,7 +39,7 @@ import {
   SET_CLIP_SERVER_ENABLED,
   SET_CLIP_SERVER_IMPORT_LOCATION,
   SET_FULL_SCREEN,
-  SET_SCREENSAVER_MODE,
+  GET_SCREENSAVER_DISPLAYS,
   SET_RUN_IN_BACKGROUND,
   SET_THEME,
   SET_ZOOM_FACTOR,
@@ -107,8 +107,8 @@ export class MainMessenger {
 
   static onGetIdleState = (cb: () => IdleState) => ipcMain.handle(GET_IDLE_STATE, () => cb());
 
-  static onSetScreensaverMode = (cb: (isActive: boolean) => void) =>
-    ipcMain.handle(SET_SCREENSAVER_MODE, (_, isActive) => cb(isActive));
+  static onGetScreensaverDisplays = (cb: () => ScreensaverDisplay[]) =>
+    ipcMain.handle(GET_SCREENSAVER_DISPLAYS, () => cb());
 
   static fullscreenChanged = (wc: WebContents, isFullScreen: boolean) =>
     wc.send(FULL_SCREEN_CHANGED, isFullScreen);

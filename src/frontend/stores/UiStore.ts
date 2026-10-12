@@ -438,6 +438,75 @@ class UiStore {
     };
   }
 
+  /** The tags picked for the screensaver that still exist */
+  @computed get screensaverPickedTags(): ClientTag[] {
+    const { tagStore } = this.rootStore;
+    return this.screensaverTagIds
+      .map((id) => tagStore.get(id))
+      .filter((tag): tag is ClientTag => tag !== undefined);
+  }
+
+  /** The collections picked for the screensaver that still exist */
+  @computed get screensaverPickedCollections(): ClientCollection[] {
+    const { collectionList } = this.rootStore.collectionStore;
+    return this.screensaverCollectionIds
+      .map((id) => collectionList.find((collection) => collection.id === id))
+      .filter((collection): collection is ClientCollection => collection !== undefined);
+  }
+
+  /**
+   * The tags whose images the screensaver shows: the picked tags and those of the picked collections,
+   * or the tag of the home gallery when nothing is picked
+   */
+  @computed get screensaverTags(): ClientTag[] {
+    const { tagStore, collectionStore } = this.rootStore;
+    const tags = new Set(this.screensaverPickedTags);
+    for (const collection of this.screensaverPickedCollections) {
+      collectionStore.getTags(collection).forEach((tag) => tags.add(tag));
+    }
+    if (this.isScreensaverUsingHomeGallery && tagStore.homeTag !== undefined) {
+      tags.add(tagStore.homeTag);
+    }
+    return Array.from(tags);
+  }
+
+  /** Whether the screensaver shows the home gallery because nothing else was picked */
+  @computed get isScreensaverUsingHomeGallery(): boolean {
+    return (
+      this.screensaverPickedTags.length === 0 && this.screensaverPickedCollections.length === 0
+    );
+  }
+
+  @action.bound addScreensaverCollection(collection: ClientCollection): void {
+    if (!this.screensaverCollectionIds.includes(collection.id)) {
+      this.screensaverCollectionIds.push(collection.id);
+    }
+  }
+
+  @action.bound removeScreensaverCollection(collection: ClientCollection): void {
+    this.screensaverCollectionIds.remove(collection.id);
+  }
+
+  @action.bound clearScreensaverSelection(): void {
+    this.screensaverTagIds.clear();
+    this.screensaverCollectionIds.clear();
+  }
+
+  @action.bound addScreensaverTag(tag: ClientTag): void {
+    if (!this.screensaverTagIds.includes(tag.id)) {
+      // Tags that were deleted since are dropped along the way
+      const { tagStore } = this.rootStore;
+      this.screensaverTagIds.replace([
+        ...this.screensaverTagIds.filter((id) => tagStore.get(id) !== undefined),
+        tag.id,
+      ]);
+    }
+  }
+
+  @action.bound removeScreensaverTag(tag: ClientTag): void {
+    this.screensaverTagIds.remove(tag.id);
+  }
+
   @action.bound startScreensaver(): void {
     this.isScreensaverActive = true;
   }
@@ -448,6 +517,10 @@ class UiStore {
 
   @action.bound toggleScreensaver(): void {
     this.isScreensaverEnabled = !this.isScreensaverEnabled;
+  }
+
+  @action.bound toggleScreensaverOnAllMonitors(): void {
+    this.isScreensaverOnAllMonitors = !this.isScreensaverOnAllMonitors;
   }
 
   @action.bound setScreensaverIdleMinutes(minutes: number): void {

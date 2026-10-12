@@ -546,32 +546,41 @@ class FileStore {
   }
 
   /**
-   * The images of the home gallery for the screensaver, regardless of what is currently shown,
+   * The images for the screensaver: those of the tags picked in its settings, which is the home gallery
+   * unless something else was picked. Regardless of what is currently shown,
    * and without loading them into the view.
-   * Many are shown at once, so their thumbnails are used: full-size photos would take far too much memory.
+   * Only where to find them and their shape: the screensaver decodes them itself, at the size it needs.
    */
-  async fetchHomeGalleryImages(): Promise<ScreensaverImage[]> {
-    const homeTag = runInAction(() => this.rootStore.tagStore.homeTag);
-    if (homeTag === undefined) {
+  async fetchScreensaverImages(): Promise<ScreensaverImage[]> {
+    const { imageLoader, uiStore } = this.rootStore;
+    const tags = runInAction(() => uiStore.screensaverTags);
+    if (tags.length === 0) {
       return [];
     }
-    const { imageLoader, uiStore } = this.rootStore;
     const thumbnailDirectory = runInAction(() => uiStore.thumbnailDirectory);
-    const condition = new ClientTagSearchCriteria('tags', homeTag.id).toCondition(this.rootStore);
-    const files = await this.backend.searchFiles(condition, 'id', OrderDirection.Asc);
+    // The images that have any of the tags, or one of their sub-tags
+    const conditions = runInAction(() =>
+      tags.map((tag) => new ClientTagSearchCriteria('tags', tag.id).toCondition(this.rootStore)),
+    ) as [ConditionDTO<FileDTO>, ...ConditionDTO<FileDTO>[]];
+    const files = await this.backend.searchFiles(conditions, 'id', OrderDirection.Asc, true);
     const images: ScreensaverImage[] = [];
     for (const file of files) {
       const isShownAsIs = WEB_EXTENSIONS.has(file.extension);
       const hasThumbnail = imageLoader.needsThumbnail(file);
       // Without a thumbnail, and without a format the browser can show, there is nothing to show
       if (isShownAsIs || hasThumbnail) {
+        const thumbnailPath = hasThumbnail
+          ? getThumbnailPath(file.absolutePath, thumbnailDirectory)
+          : undefined;
         images.push({
           id: file.id,
-          src: hasThumbnail
-            ? getThumbnailPath(file.absolutePath, thumbnailDirectory)
-            : file.absolutePath,
-          fallbackSrc: isShownAsIs ? file.absolutePath : undefined,
+          // The image itself where possible: it is drawn at the size it gets on screen, which a
+          // thumbnail is too small for
+          src: isShownAsIs ? file.absolutePath : (thumbnailPath as string),
+          fallbackSrc: isShownAsIs ? thumbnailPath : undefined,
           aspectRatio: file.width > 0 && file.height > 0 ? file.width / file.height : 1.5,
+          // The same picture stored in two folders has the same size in bytes and in pixels
+          duplicateKey: `${file.size}:${file.width}x${file.height}`,
         });
       }
     }

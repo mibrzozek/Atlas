@@ -42,6 +42,22 @@ export interface IdleState {
   isWindowActive: boolean;
 }
 
+/** A monitor the screensaver can cover */
+export interface ScreensaverDisplay {
+  id: number;
+  /** Where it is among the other monitors */
+  x: number;
+  y: number;
+  /** Whether it is the monitor the main window is on */
+  isCurrent: boolean;
+}
+
+/**
+ * The windows of the screensaver are opened by the main window with this name plus the id of a monitor.
+ * The main process recognises them by it, and puts each over its monitor, above everything else.
+ */
+export const SCREENSAVER_WINDOW_PREFIX = 'screensaver-';
+
 /**
  * The screensaver only takes over the screen when Atlas is the application in front,
  * so it does not cover a video or anything else that is running in another window.
@@ -72,12 +88,268 @@ export function shuffled<T>(items: readonly T[], random: () => number = Math.ran
 /** An image of the screensaver */
 export interface ScreensaverImage {
   id: string;
-  /** What is shown: the thumbnail when there is one, since many are on screen at once */
+  /**
+   * The file that is decoded for it: the image itself when the browser can read it, so that it can be drawn
+   * at exactly the size it gets on screen. Its thumbnail otherwise.
+   */
   src: string;
-  /** Shown instead when `src` cannot be loaded, e.g. when the thumbnail was not generated yet */
+  /** Decoded instead when `src` cannot be, e.g. its thumbnail */
   fallbackSrc?: string;
   /** Width divided by height, as the image is displayed */
   aspectRatio: number;
+  /** The same for files that are copies of each other: only one of them is shown */
+  duplicateKey?: string;
+}
+
+/** Leaves out images that are in the list twice, and files that are a copy of one that is already in it */
+export function withoutDuplicates(images: readonly ScreensaverImage[]): ScreensaverImage[] {
+  const ids = new Set<string>();
+  const copies = new Set<string>();
+  const result: ScreensaverImage[] = [];
+  for (const image of images) {
+    if (ids.has(image.id) || (image.duplicateKey !== undefined && copies.has(image.duplicateKey))) {
+      continue;
+    }
+    ids.add(image.id);
+    if (image.duplicateKey !== undefined) {
+      copies.add(image.duplicateKey);
+    }
+    result.push(image);
+  }
+  return result;
+}
+
+/**
+ * Hands out the images to show, to all screens together.
+ * An image that is on a screen is never handed out a second time, and of the others it picks one of those
+ * that have not been shown for the longest time: an image only comes back after about all the others have
+ * had their turn, in an order that is different every round.
+ */
+export class ImagePool<T extends { id: string }> {
+  private readonly items: T[];
+  private readonly inUse = new Set<string>();
+  /** A counter that goes up with every image that is handed back: when it was last on screen */
+  private readonly lastShown = new Map<string, number>();
+  private clock = 0;
+
+  constructor(items: readonly T[], private readonly random: () => number = Math.random) {
+    this.items = shuffled(items, random);
+  }
+
+  get size(): number {
+    return this.items.length;
+  }
+
+  /** How many images are not on a screen */
+  get freeCount(): number {
+    return this.items.length - this.inUse.size;
+  }
+
+  /** Returns an image that is not in use and marks it as in use, or undefined when all of them are */
+  take(): T | undefined {
+    const free = this.items.filter((item) => !this.inUse.has(item.id));
+    if (free.length === 0) {
+      return undefined;
+    }
+    // Longest ago first. Sorting is stable, so images that were never shown stay in their shuffled order
+    free.sort((a, b) => (this.lastShown.get(a.id) ?? -1) - (this.lastShown.get(b.id) ?? -1));
+    // Some choice, for a different order every round, but only among the ones whose turn it is
+    const choices = Math.max(1, Math.floor(free.length / 4));
+    const item = free[Math.min(choices - 1, Math.floor(this.random() * choices))];
+    this.inUse.add(item.id);
+    return item;
+  }
+
+  /** The image is no longer on screen */
+  release(item: T): void {
+    if (this.inUse.delete(item.id)) {
+      this.lastShown.set(item.id, ++this.clock);
+    }
+  }
+
+  /** The image was taken but not shown after all: it keeps its turn */
+  putBack(item: T): void {
+    this.inUse.delete(item.id);
+  }
+
+  /** The image cannot be shown: it is never handed out again */
+  remove(item: T): void {
+    this.inUse.delete(item.id);
+    this.lastShown.delete(item.id);
+    const index = this.items.findIndex((other) => other.id === item.id);
+    if (index !== -1) {
+      this.items.splice(index, 1);
+    }
+  }
+}
+
+/** A rectangle whose edges are on whole device pixels, so that what is drawn in it is not blurred */
+export interface PixelRect {
+  /** In CSS pixels */
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  /** The size in device pixels: whole numbers */
+  pixelWidth: number;
+  pixelHeight: number;
+}
+
+/** Moves the edges of a rectangle to the nearest device pixels. Rectangles that touched keep touching */
+export function snapToDevicePixels(
+  rect: { x: number; y: number; width: number; height: number },
+  devicePixelRatio: number,
+): PixelRect {
+  const dpr = devicePixelRatio > 0 ? devicePixelRatio : 1;
+  const left = Math.round(rect.x * dpr);
+  const top = Math.round(rect.y * dpr);
+  const pixelWidth = Math.max(1, Math.round((rect.x + rect.width) * dpr) - left);
+  const pixelHeight = Math.max(1, Math.round((rect.y + rect.height) * dpr) - top);
+  return {
+    x: left / dpr,
+    y: top / dpr,
+    width: pixelWidth / dpr,
+    height: pixelHeight / dpr,
+    pixelWidth,
+    pixelHeight,
+  };
+}
+
+/**
+ * The size, in whole device pixels, at which an image has to be drawn to fill a frame of the given size
+ * without being distorted, and where it goes in that frame: centred, with what does not fit cut off.
+ */
+export function coverPixels(
+  frameWidth: number,
+  frameHeight: number,
+  aspectRatio: number,
+): { width: number; height: number; left: number; top: number } {
+  const ratio = Number.isFinite(aspectRatio) && aspectRatio > 0 ? aspectRatio : 1.5;
+  let width = frameWidth;
+  let height = Math.round(frameWidth / ratio);
+  if (height < frameHeight) {
+    height = frameHeight;
+    width = Math.max(frameWidth, Math.round(frameHeight * ratio));
+  }
+  return {
+    width,
+    height,
+    left: -Math.floor((width - frameWidth) / 2),
+    top: -Math.floor((height - frameHeight) / 2),
+  };
+}
+
+/** How the images are presented on one screen */
+export type ScreenPlan =
+  // A wall of images in this many rows or columns, that moves one image at a time
+  | { mode: 'wall'; laneCount: number }
+  // A few large images at a time, shown whole: for when there are not enough images for a wall
+  | { mode: 'showcase'; groupSize: number };
+
+/**
+ * A wall only moves when there are images that are not on it. With fewer than this many times what fits
+ * on the screens, the same images would come back right after they left.
+ */
+export const WALL_SPARE_FACTOR = 1.5;
+/** At most this many images next to each other in a showcase */
+export const MAX_SHOWCASE_GROUP = 3;
+
+/** About how many images a wall with this many lanes shows */
+export function estimateWallCount(
+  orientation: LaneOrientation,
+  laneCount: number,
+  width: number,
+  height: number,
+  gap: number,
+  meanAspectRatio: number,
+): number {
+  const isRows = orientation === 'rows';
+  const laneLength = isRows ? width : height;
+  const crossLength = isRows ? height : width;
+  const thickness = (crossLength - (laneCount + 1) * gap) / laneCount;
+  const ratio = Number.isFinite(meanAspectRatio) && meanAspectRatio > 0 ? meanAspectRatio : 1.5;
+  const itemLength = isRows ? thickness * ratio : thickness / ratio;
+  if (!(thickness > 0) || !(itemLength > 0)) {
+    return 0;
+  }
+  return Math.max(laneCount, Math.ceil((laneCount * (laneLength - gap)) / (itemLength + gap)));
+}
+
+/**
+ * Decides what every screen shows, for the number of images there is to show.
+ * Plenty of images: the usual wall. Fewer: walls with fewer, larger rows. Only several: a showcase.
+ */
+export function planScreens(
+  screens: readonly { width: number; height: number }[],
+  imageCount: number,
+  meanAspectRatio: number,
+  orientation: LaneOrientation,
+  gap: number,
+): ScreenPlan[] {
+  const minLanes = orientation === 'rows' ? 2 : 3;
+  const usual = screens.map((screen) => getLaneCount(orientation, screen.width));
+  for (let fewer = 0; fewer <= Math.max(0, ...usual) - minLanes; fewer++) {
+    const laneCounts = usual.map((count) => Math.max(minLanes, count - fewer));
+    const shown = screens.reduce(
+      (sum, screen, i) =>
+        sum +
+        estimateWallCount(
+          orientation,
+          laneCounts[i],
+          screen.width,
+          screen.height,
+          gap,
+          meanAspectRatio,
+        ),
+      0,
+    );
+    if (shown * WALL_SPARE_FACTOR <= imageCount) {
+      return laneCounts.map((laneCount) => ({ mode: 'wall', laneCount }));
+    }
+  }
+  // One image is kept aside, so that there is something to change to
+  const perScreen = Math.floor((imageCount - 1) / Math.max(1, screens.length));
+  const groupSize = Math.min(MAX_SHOWCASE_GROUP, Math.max(1, perScreen));
+  return screens.map(() => ({ mode: 'showcase', groupSize }));
+}
+
+/**
+ * Lays out a few images next to each other, each shown whole and as large as the screen allows.
+ * Of the given images as many are used as fit without making them much smaller: a landscape image
+ * usually fills a screen on its own, two or three portraits fit side by side.
+ * @returns A rectangle for each image that is used, in order
+ */
+export function layoutShowcase(
+  aspectRatios: readonly number[],
+  width: number,
+  height: number,
+  margin: number,
+  gap: number,
+): { x: number; y: number; width: number; height: number }[] {
+  const maxHeight = height - 2 * margin;
+  const ratios = aspectRatios.map((r) => (Number.isFinite(r) && r > 0 ? r : 1.5));
+  if (ratios.length === 0 || !(maxHeight > 0) || !(width - 2 * margin > 0)) {
+    return [];
+  }
+  const heightFor = (count: number) => {
+    const ratioSum = ratios.slice(0, count).reduce((sum, r) => sum + r, 0);
+    return Math.min(maxHeight, (width - 2 * margin - (count - 1) * gap) / ratioSum);
+  };
+  let count = 1;
+  // One more, as long as that costs little of their size
+  while (count < ratios.length && heightFor(count + 1) >= 0.8 * maxHeight) {
+    count++;
+  }
+  const rowHeight = heightFor(count);
+  const rowWidth =
+    ratios.slice(0, count).reduce((sum, r) => sum + r * rowHeight, 0) + (count - 1) * gap;
+  let x = (width - rowWidth) / 2;
+  const y = (height - rowHeight) / 2;
+  return ratios.slice(0, count).map((ratio) => {
+    const rect = { x, y, width: ratio * rowHeight, height: rowHeight };
+    x += rect.width + gap;
+    return rect;
+  });
 }
 
 /**

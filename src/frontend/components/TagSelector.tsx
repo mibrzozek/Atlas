@@ -31,6 +31,11 @@ export interface TagSelectorProps {
   ) => ReactElement<RowProps> | ReactElement<RowProps>[];
   multiline?: boolean;
   showTagContextMenu?: (e: React.MouseEvent<HTMLElement>, tag: ClientTag) => void;
+  /** Shown in front of the selected tags: other things that are selected, like collections */
+  extraSelection?: React.ReactNode;
+  /** Rows listed above the tags, for the text that is typed: other things that can be picked */
+  renderExtraOptions?: (inputText: string, resetTextBox: () => void) => ReactElement<RowProps>[];
+  placeholder?: string;
 }
 
 const TagSelector = (props: TagSelectorProps) => {
@@ -45,6 +50,9 @@ const TagSelector = (props: TagSelectorProps) => {
     extraIconButtons,
     renderCreateOption,
     multiline,
+    extraSelection,
+    renderExtraOptions,
+    placeholder,
   } = props;
   const gridId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -143,6 +151,7 @@ const TagSelector = (props: TagSelectorProps) => {
         target={(ref) => (
           <div ref={ref} className="multiautocomplete-input">
             <div className="input-wrapper">
+              {extraSelection}
               {selection.map((t) => (
                 <SelectedTag
                   key={t.id}
@@ -163,6 +172,7 @@ const TagSelector = (props: TagSelectorProps) => {
                 aria-activedescendant={activeDescendant}
                 ref={inputRef}
                 onFocus={handleFocus}
+                placeholder={placeholder}
               />
             </div>
             {extraIconButtons}
@@ -178,6 +188,7 @@ const TagSelector = (props: TagSelectorProps) => {
           toggleSelection={toggleSelection}
           resetTextBox={resetTextBox.current}
           renderCreateOption={renderCreateOption}
+          renderExtraOptions={renderExtraOptions}
         />
       </Flyout>
     </div>
@@ -216,6 +227,7 @@ interface SuggestedTagsListProps {
     inputText: string,
     resetTextBox: () => void,
   ) => ReactElement<RowProps> | ReactElement<RowProps>[];
+  renderExtraOptions?: (inputText: string, resetTextBox: () => void) => ReactElement<RowProps>[];
 }
 
 const SuggestedTagsList = observer(
@@ -225,6 +237,7 @@ const SuggestedTagsList = observer(
   ) {
     const { id, query, selection, toggleSelection, resetTextBox, renderCreateOption } = props;
     const { tagStore } = useStore();
+    const extraOptions = props.renderExtraOptions?.(query, resetTextBox) ?? [];
 
     const suggestions = useMemo(
       () =>
@@ -241,6 +254,7 @@ const SuggestedTagsList = observer(
 
     return (
       <Grid ref={ref} id={id} multiselectable>
+        {extraOptions}
         {suggestions.map((tag) => {
           const selected = selection.includes(tag);
           return (
@@ -253,7 +267,9 @@ const SuggestedTagsList = observer(
             />
           );
         })}
-        {suggestions.length === 0 && renderCreateOption?.(query, resetTextBox)}
+        {suggestions.length === 0 &&
+          extraOptions.length === 0 &&
+          renderCreateOption?.(query, resetTextBox)}
       </Grid>
     );
   }),

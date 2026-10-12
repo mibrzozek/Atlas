@@ -1,6 +1,6 @@
 import { ipcRenderer } from 'electron';
 import path from 'path';
-import { IdleState } from '../../common/screensaver';
+import { IdleState, ScreensaverDisplay } from '../../common/screensaver';
 import {
   ADD_TAGS_TO_FILE,
   CHECK_FOR_UPDATES,
@@ -40,7 +40,7 @@ import {
   SET_CLIP_SERVER_ENABLED,
   SET_CLIP_SERVER_IMPORT_LOCATION,
   SET_FULL_SCREEN,
-  SET_SCREENSAVER_MODE,
+  GET_SCREENSAVER_DISPLAYS,
   SET_RUN_IN_BACKGROUND,
   SET_THEME,
   SET_ZOOM_FACTOR,
@@ -91,9 +91,9 @@ export class RendererMessenger {
   /** How long the whole system has not been used, and whether the main window is the one in front */
   static getIdleState = (): Promise<IdleState> => ipcRenderer.invoke(GET_IDLE_STATE);
 
-  /** Makes the main window cover the whole screen, taskbar included, or puts it back the way it was */
-  static setScreensaverMode = (isActive: boolean) =>
-    ipcRenderer.invoke(SET_SCREENSAVER_MODE, isActive);
+  /** The monitors the screensaver can cover */
+  static getScreensaverDisplays = (): Promise<ScreensaverDisplay[]> =>
+    ipcRenderer.invoke(GET_SCREENSAVER_DISPLAYS);
 
   static onFullScreenChanged = (cb: (val: boolean) => void) =>
     ipcRenderer.on(FULL_SCREEN_CHANGED, (_, val: boolean) => cb(val));

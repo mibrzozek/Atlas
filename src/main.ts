@@ -27,6 +27,7 @@ import {
   githubUrl,
 } from '../common/config';
 import { IS_DEV, IS_MAC } from '../common/process';
+import { SCREENSAVER_WINDOW_PREFIX } from '../common/screensaver';
 import { TagDTO, ROOT_TAG_ID } from './api/tag';
 import { MainMessenger } from './ipc/main';
 import { WindowSystemButtonPress } from './ipc/messages';
@@ -129,6 +130,34 @@ function createWindow() {
       about: 'About',
     };
 
+    // A window of the screensaver: covers one monitor completely, taskbar included, without taking the
+    // keyboard away from the main window (a key press there is what ends it)
+    const screensaverDisplay = getScreensaverDisplay(frameName);
+    if (screensaverDisplay !== undefined) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          ...screensaverDisplay.bounds,
+          backgroundColor: '#000000',
+          title: 'Atlas',
+          frame: false,
+          thickFrame: false,
+          hasShadow: false,
+          roundedCorners: false,
+          resizable: false,
+          movable: false,
+          minimizable: false,
+          maximizable: false,
+          fullscreenable: false,
+          skipTaskbar: true,
+          focusable: false,
+          alwaysOnTop: true,
+          enableLargerThanScreen: true,
+          show: false,
+        },
+      };
+    }
+
     if (!(frameName in WINDOW_TITLES)) {
       return { action: 'deny' };
     }
@@ -154,13 +183,31 @@ function createWindow() {
     };
   });
 
-  mainWindow.webContents.on('did-create-window', (childWindow) => {
+  mainWindow.webContents.on('did-create-window', (childWindow, details) => {
     if (mainWindow === null || mainWindow.isDestroyed()) {
       return;
     }
 
-    childWindow.center(); // "center" in additionalOptions doesn't work :/
     childWindow.setMenu(null); // no toolbar needed
+    const screensaverDisplay = getScreensaverDisplay(details.frameName);
+    if (screensaverDisplay !== undefined) {
+      // Above the taskbar and anything else that stays on top
+      const claimTop = () => {
+        if (!childWindow.isDestroyed()) {
+          childWindow.setBounds(screensaverDisplay.bounds);
+          childWindow.setAlwaysOnTop(true, 'screen-saver');
+          childWindow.showInactive();
+          childWindow.moveTop();
+        }
+      };
+      claimTop();
+      // When another window of ours closes at the same moment (the settings, with its "Start it now"
+      // button), Windows puts the taskbar back in front. Claim the top again once that has settled
+      setTimeout(claimTop, 250);
+      setTimeout(claimTop, 1000);
+    } else {
+      childWindow.center(); // "center" in additionalOptions doesn't work :/
+    }
 
     mainWindow.webContents.once('will-navigate', () => {
       if (!childWindow.isDestroyed()) {
@@ -695,46 +742,16 @@ MainMessenger.onTrashFile((absolutePath) =>
 
 MainMessenger.onIsFullScreen(() => mainWindow?.isFullScreen() ?? false);
 
-// The screensaver covers the whole screen. Plain full-screen can leave the taskbar of Windows in front,
-// so the window is also put above it for as long as the screensaver runs.
-let windowStateBeforeScreensaver: { isFullScreen: boolean; isAlwaysOnTop: boolean } | undefined;
-MainMessenger.onSetScreensaverMode((isActive) => {
-  if (mainWindow === null || mainWindow.isDestroyed()) {
-    return;
-  }
-  if (isActive) {
-    if (windowStateBeforeScreensaver === undefined) {
-      windowStateBeforeScreensaver = {
-        isFullScreen: mainWindow.isFullScreen(),
-        isAlwaysOnTop: mainWindow.isAlwaysOnTop(),
-      };
-    }
-    mainWindow.setAlwaysOnTop(true, 'screen-saver');
-    mainWindow.setFullScreen(true);
-    // When another window of ours closes at the same moment (the settings, with its "Start it now" button),
-    // Windows puts the taskbar back in front. Claim the top again once that has settled
-    const bringToFront = () => {
-      if (
-        windowStateBeforeScreensaver !== undefined &&
-        mainWindow !== null &&
-        !mainWindow.isDestroyed()
-      ) {
-        mainWindow.setAlwaysOnTop(false);
-        mainWindow.setAlwaysOnTop(true, 'screen-saver');
-        mainWindow.moveTop();
-        mainWindow.focus();
-      }
-    };
-    setTimeout(bringToFront, 250);
-    setTimeout(bringToFront, 1000);
-  } else if (windowStateBeforeScreensaver !== undefined) {
-    const { isFullScreen, isAlwaysOnTop } = windowStateBeforeScreensaver;
-    windowStateBeforeScreensaver = undefined;
-    mainWindow.setAlwaysOnTop(isAlwaysOnTop);
-    if (!isFullScreen) {
-      mainWindow.setFullScreen(false);
-    }
-  }
+// The screensaver opens a window of its own over every monitor (see the window open handler). The main
+// window is never made full-screen for it, so there is nothing to put back when it ends.
+MainMessenger.onGetScreensaverDisplays(() => {
+  const current = getMainWindowDisplay();
+  return screen.getAllDisplays().map((display) => ({
+    id: display.id,
+    x: display.bounds.x,
+    y: display.bounds.y,
+    isCurrent: display.id === current.id,
+  }));
 });
 
 // For the screensaver: it starts when the whole system is idle while this window is the one in front
@@ -805,6 +822,15 @@ const MIN_ZOOM_FACTOR = 0.5;
 const MAX_ZOOM_FACTOR = 2;
 const MIN_WINDOW_WIDTH = 240;
 const MIN_WINDOW_HEIGHT = 64;
+
+/** The monitor a window with this name is meant to cover, when it is a window of the screensaver */
+function getScreensaverDisplay(frameName: string) {
+  if (!frameName.startsWith(SCREENSAVER_WINDOW_PREFIX)) {
+    return undefined;
+  }
+  const id = Number(frameName.slice(SCREENSAVER_WINDOW_PREFIX.length));
+  return screen.getAllDisplays().find((display) => display.id === id);
+}
 
 function getMainWindowDisplay() {
   if (mainWindow !== null) {
