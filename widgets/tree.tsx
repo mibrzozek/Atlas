@@ -123,7 +123,9 @@ export const createLeafOnKeyDown = (
 };
 
 const handleTreeKeyDown = (event: React.KeyboardEvent<HTMLUListElement>) => {
-  if (event.target instanceof Element && !event.target.matches('[role="treeitem"]')) {
+  // Not `instanceof Element`: that fails for elements in another window, like the settings
+  const target = event.target as Element;
+  if (typeof target.matches === 'function' && !target.matches('[role="treeitem"]')) {
     return;
   }
   switch (event.key) {

@@ -91,8 +91,12 @@ const TagSelector = (props: TagSelectorProps) => {
 
   const handleBlur = useRef((e: React.FocusEvent<HTMLDivElement>) => {
     // If anything is blurred, and the new focus is not the input nor the flyout, close the flyout
+    // Not `instanceof HTMLElement`: in the settings window, which is another window, the elements are
+    // made by that window and are not instances of this window's classes. The list then closed before
+    // the click on an option arrived, and nothing could be picked
+    const target = e.relatedTarget as Element | null;
     const isFocusingOption =
-      e.relatedTarget instanceof HTMLElement && e.relatedTarget.matches('div[role="row"]');
+      target !== null && typeof target.matches === 'function' && target.matches('div[role="row"]');
     if (isFocusingOption || e.relatedTarget === inputRef.current) {
       return;
     }

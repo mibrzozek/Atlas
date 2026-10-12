@@ -214,10 +214,12 @@ export const GridCombobox = ({
 
   // Select option
   const handleMousedown = (e: React.MouseEvent<HTMLElement>) => {
-    if (!(e.target instanceof Element) || matches.length === 0) {
+    // Not `instanceof Element`: that fails for elements in another window, like the settings
+    const target = e.target as Element;
+    if (typeof target.closest !== 'function' || matches.length === 0) {
       return;
     }
-    const row = e.target.closest('[role="row"][aria-rowindex]') as HTMLElement | null;
+    const row = target.closest('[role="row"][aria-rowindex]') as HTMLElement | null;
     if (row !== null) {
       // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
       const optionIndex = parseInt(row.getAttribute('aria-rowindex')!) - 1;
