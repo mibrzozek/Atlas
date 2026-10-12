@@ -14,6 +14,7 @@ import { useStore } from '../../../contexts/StoreContext';
 import { DnDTagType, useTagDnD } from '../../../contexts/TagDnDContext';
 import { ClientTagSearchCriteria } from '../../../entities/SearchCriteria';
 import { ClientTag } from '../../../entities/Tag';
+import { TagCounts } from '../PanelCounts';
 import { useAction } from '../../../hooks/mobx';
 import useLocalStorage from '../../../hooks/useLocalStorage';
 import TagStore from '../../../stores/TagStore';
@@ -477,6 +478,7 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
         onDragLeave={handleDragOverAndLeave}
         onDrop={handleDrop}
       />
+      {!tagStore.isEmpty && <TagCounts />}
     </MultiSplitPane>
   );
 });

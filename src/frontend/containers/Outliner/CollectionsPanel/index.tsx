@@ -12,6 +12,7 @@ import { ClientTagSearchCriteria } from '../../../entities/SearchCriteria';
 import { ClientTag } from '../../../entities/Tag';
 import useLocalStorage from '../../../hooks/useLocalStorage';
 import { ClientCollection } from '../../../stores/CollectionStore';
+import { CollectionCounts } from '../PanelCounts';
 
 const COLLECTION_DND_TYPE = 'application/x-atlas-collection';
 
@@ -219,6 +220,7 @@ const CollectionsPanel = observer((props: Partial<MultiSplitPaneProps>) => {
           ))}
         </ul>
       )}
+      {collections.length > 0 && <CollectionCounts />}
     </MultiSplitPane>
   );
 });

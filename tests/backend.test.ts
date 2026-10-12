@@ -52,6 +52,21 @@ describe('Backend', () => {
     return mockFiles;
   }
 
+  describe('countFiles', () => {
+    test('counts a file with several tags as one tagged file', async (backend) => {
+      const files = createMockFiles(5);
+      files[0].tags = ['11111111-1111-1111-1111-111111111111'];
+      files[1].tags = [
+        '11111111-1111-1111-1111-111111111111',
+        '22222222-2222-2222-2222-222222222222',
+        '33333333-3333-3333-3333-333333333333',
+      ];
+      await backend.createFilesFromPath(mockLocationPath, files);
+      // 5 files, 2 of them tagged
+      expect(await backend.countFiles()).toEqual([5, 3]);
+    });
+  });
+
   describe('Tag API', () => {
     test('should be able to fetch a tag after adding it', async (backend) => {
       await backend.createTag({ ...mockTag });

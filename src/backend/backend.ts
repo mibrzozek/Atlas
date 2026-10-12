@@ -240,8 +240,10 @@ export default class Backend implements DataStorage {
   async countFiles(): Promise<[fileCount: number, untaggedFileCount: number]> {
     console.info('IndexedDB: Getting number stats of files...');
     return this.#db.transaction('r', this.#files, async () => {
-      const [fileCount, taggedFileCount] = await Promise.all([
+      const [fileCount, taggedFileIds] = await Promise.all([
         this.#files.count(),
+        // Only the keys are read, from the index on tags. A file is in that index once for each of
+        // its tags, so counting the entries would count a file with three tags three times
         this.#files
           .where('tags')
           .between(
@@ -252,9 +254,9 @@ export default class Backend implements DataStorage {
             true,
             true,
           )
-          .count(),
+          .primaryKeys(),
       ]);
-      return [fileCount, fileCount - taggedFileCount];
+      return [fileCount, fileCount - new Set(taggedFileIds).size];
     });
   }
 
@@ -280,6 +282,15 @@ export default class Backend implements DataStorage {
     return this.#db.transaction('r', this.#files, () =>
       Promise.all(tags.map((tag) => this.#files.where('tags').equals(tag).count())),
     );
+  }
+
+  async countFilesWithAnyTag(tags: ID[]): Promise<number> {
+    if (tags.length === 0) {
+      return 0;
+    }
+    // Only keys, from the index on tags. A file with two of the tags is in there twice
+    const ids = await this.#files.where('tags').anyOf(tags).primaryKeys();
+    return new Set(ids).size;
   }
 
   // Creates many files at once, and checks for duplicates in the path they are in

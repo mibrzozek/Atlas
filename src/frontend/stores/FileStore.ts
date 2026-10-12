@@ -1113,6 +1113,19 @@ class FileStore {
     return this.backend.countFilesInFolders(paths);
   }
 
+  /** How many images have any of the given tags, or a tag inside one of them: counted in the database */
+  countFilesWithAnyTag(tags: readonly ClientTag[]): Promise<number> {
+    const ids = new Set<ID>();
+    runInAction(() => {
+      for (const tag of tags) {
+        for (const subTag of tag.getSubTree()) {
+          ids.add(subTag.id);
+        }
+      }
+    });
+    return this.backend.countFilesWithAnyTag(Array.from(ids));
+  }
+
   /** Initializes the total and untagged file counters by querying the database with count operations */
   async refetchFileCounts(): Promise<void> {
     const [numTotalFiles, numUntaggedFiles] = await this.backend.countFiles();
