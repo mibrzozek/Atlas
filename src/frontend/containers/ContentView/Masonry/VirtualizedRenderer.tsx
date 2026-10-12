@@ -221,8 +221,9 @@ const VirtualizedRenderer = observer(
                 mounted
                 transform={transform}
                 // Force to load the full resolution image when the img dimensions on screen are larger than the thumbnail image resolution
-                // Otherwise you'll see very low res images. This is usually only the case for images with extreme aspect ratios
-                // TODO: Not the best solution; could generate multiple thumbnails of other resolutions
+                // Otherwise you'll see very low res images.
+                // Only for formats that cannot be drawn at the right size in the background (see SharpImages):
+                // for the others the cell asks for exactly the pixels it needs
                 forceNoThumbnail={
                   transform[0] > thumbnailMaxSize ||
                   transform[1] > thumbnailMaxSize ||
