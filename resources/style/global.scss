@@ -69,7 +69,34 @@ input {
   line-height: 1.5rem;
 }
 
-// Number fields follow the theme, like select below: the system draws them white otherwise
+// Every field for typing follows the theme, like select below. The system draws it white otherwise, under
+// the light text of a dark theme. In :where(), which counts for nothing, so that a field with a look of its
+// own (`.input`, the comboboxes) keeps it
+:where(
+    input:not([type]),
+    input[type='text'],
+    input[type='search'],
+    input[type='date'],
+    input[type='email'],
+    input[type='url'],
+    input[type='password'],
+    textarea
+  ) {
+  background-color: var(--input-color);
+  color: var(--text-color);
+  border: 0.0625rem solid var(--border-color);
+  border-radius: 0.25rem;
+  outline: none;
+
+  &:focus {
+    box-shadow: 0 0 0 0.125rem var(--accent-color);
+  }
+
+  &:disabled {
+    opacity: 0.5;
+  }
+}
+
 input[type='number'] {
   background: var(--input-color);
   color: var(--text-color);
@@ -90,6 +117,10 @@ input[type='number'] {
   &:disabled {
     opacity: 0.5;
   }
+}
+
+textarea {
+  padding: 0.25rem 0.375rem;
 }
 
 table {
