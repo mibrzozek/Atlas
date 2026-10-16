@@ -12,6 +12,8 @@ export interface MenuButtonProps {
   menuID: string;
   children: MenuChildren;
   disabled?: boolean;
+  /** Stays open when a choice is made, for choices that are tried one after the other */
+  staysOpen?: boolean;
 }
 
 export const MenuButton = ({
@@ -23,6 +25,7 @@ export const MenuButton = ({
   disabled,
   menuID,
   children,
+  staysOpen,
 }: MenuButtonProps) => {
   const [isOpen, setIsOpen] = useState(false);
   const menu = useRef<HTMLUListElement>(null);
@@ -52,7 +55,7 @@ export const MenuButton = ({
     const menuItem = (e.target as HTMLElement).closest('[role^="menuitem"]') as HTMLElement | null;
     // Don't close when using slider
     const isSlider = (e.target as HTMLInputElement).type === 'range';
-    if (menuItem !== null && !isSlider) {
+    if (menuItem !== null && !isSlider && !staysOpen) {
       setIsOpen(false);
     }
   };
