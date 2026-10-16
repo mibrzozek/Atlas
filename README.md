@@ -35,6 +35,10 @@ on their work, and it is released under the same licence, GPL-3.0.
 - **Tags and Collections page**: one place to rename, colour, nest, merge and delete tags and to build
   collections. Tag colours can follow the theme.
 - **Home gallery**: the images tagged `Home`, shown when Atlas starts.
+- **Workspaces**: endless canvases, one per tab, made from what the Library shows and laid out the same
+  way. Move, stack and size images, add texts and paper sheets, snap to edges, middles and even gaps,
+  arrange a selection in rows, columns or a grid (whole or cut to 1:1 or 4:5), reorder layers, and print
+  at the full resolution of the photos. Zoom from thousands of images at a glance to one at full size.
 - **Collage mode**: put the images of any view in your own order by dragging them, or switch two.
 - **Export**: copy selected or tagged images to a folder you pick.
 - **Folder creator**: make a run of numbered or dated folders, continuing the numbering already there.

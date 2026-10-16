@@ -312,6 +312,48 @@ Probe pitfalls that cost time:
   a notch, between the ends of the View menu slider) instead of zooming the window. The listener is a native
   non-passive one in `ContentView/index.tsx`: a React `onWheel` cannot stop the browser's zoom. Touchpad
   amounts add up to a notch; what is left over is dropped when the wheel turns the other way. Not in the viewer.
+- **Workspaces** (plan and status in `docs/workspaces-roadmap.md`): tabs in the top bar (Library + one per
+  workspace), a Workspaces panel, and an endless surface drawn over the Library, which stays mounted
+  underneath. Maths in `common/workspace.ts` (tested); `entities/Workspace.ts` (items, groups, selection,
+  undo; the lock is enforced there); `stores/WorkspaceStore.ts`; stored in a database of its own,
+  `Atlas_Workspaces` (`backend/workspace-db.ts`), so the library database stays at version 8. Not in backups.
+  Images are read as plain rows (`fetchFilesByID`), never as `ClientFile`s. Any change to what the Library
+  shows brings the Library tab back (a reaction in the `UiStore` constructor).
+  Speed rules, measured at 2,000 to 12,000 images (`containers/Workspace/WorkspaceSurface.ts`):
+  pan and zoom only set one transform on the world element, outside React; images under 48 px on screen
+  are drawn on a canvas from 48 px tiles (`TileImages`), not as elements; zoomed far out one overview
+  picture (up to 4096 px) is drawn instead of every tile, which took a 12,000-image workspace from never
+  finishing to 16 s; the stacking order is the page order, not `z-index` (that made every image a layer);
+  which images get an element changes only at half-octave steps of the zoom; dragged images are moved in
+  the page and stored once on release. Images get the pixels they cover once the camera stops (the
+  `SharpImages` workers), and the file itself from its full size on. Tiles are prepared in the background
+  per workspace (`WorkspaceImages`, kept for the last 3 opened); from 2,000 images on, + asks first and
+  does not open the workspace. Progress shows at the foot of the outliner (`BackgroundProgress`, shared
+  with the start-up scan). Pointer capture makes the surface the target of clicks and double clicks:
+  remember the pressed image, or use `elementFromPoint`.
+  Everything on a workspace is an object (`WorkspaceItem`: an image, whose id is its file id, or a text)
+  with its own `z`, its layer. The name of a batch is a text object; rows stored before that have a
+  `groups` list, which `workspaceFromRow` turns into texts. Texts are measured in the page
+  (`measureText.ts`, same font and weight as `.workspace-text`) so their frame fits the letters; the store
+  takes the measuring as a parameter so tests can pass their own. Texts are always elements, never tiles.
+  The layers panel (`LayersPanel.tsx`, right of the surface, folds into the Layers button) draws only the
+  rows in sight; dragging rows calls `moveLayers`, which numbers every `z` anew. Typing in a text is
+  stored a moment after the last key, not per key: every change saves the whole workspace row.
+  A new workspace is laid out as the Library shows it (`UiStore.galleryLayout`, mirroring
+  `wasm/masonry/src/layout.rs` in whole pixels; grid with square thumbnails cuts to 1:1) and starts with
+  its batch selected. Arrange (a menu that stays open) lays a selection out in rows, columns or a grid,
+  cut 1:1 or 4:5 or whole, with a spacing; images remember their photo's shape (`imageAspect`) so a cut
+  can be undone. Dragging snaps edges and middles, and even gaps in the same row or column
+  (`snapMove`, guides drawn over everything); Alt drags freely. Swap trades two places. A background is a
+  sheet (default white A4) drawn in its own layer under the tiles canvas, so small images stay visible on
+  it; a drag on an unselected sheet draws a selection box, a click selects it, and a selected sheet is
+  dragged on its own: what lies on it stays where it is (the user asked for that). Print (`printWorkspace.ts`) draws the selected
+  sheet, the selection or everything at the full resolution of its photos, capped at 8,192 px (127 MP
+  never reached the dialog), and prints the canvas itself from a hidden iframe.
+  An Arrange session lays out from a snapshot of how things were (sizes never drift, one undo step, stored
+  once it rests), one step per frame. **Never read an observable array item by item** (`for...of`, `[i]`,
+  spread): in this development build every read is checked (`observableRequiresReaction`), which cost 65 ms
+  per slider step at 2,000 images. Take `.slice()` once and loop over the copy.
 - The viewer (one image open) keeps the search bar in its toolbar; searching from there goes back to the
   gallery with the results.
 - Dragging in the lists of the side panel (`Outliner/TreeItemDnD.ts`): one shared line that glides between
@@ -332,7 +374,7 @@ small "of my mind" underneath, which is what the user asked for.
 
 ## Known open items
 
-- **Workspaces** (tabs with an infinite, pannable canvas): agreed plan in `docs/workspaces-roadmap.md`, not started.
+- **Workspaces**: what is left is under "Next steps" in `docs/workspaces-roadmap.md` (first: try it on the real library, screen and printer; then dropping tags and folders onto a workspace).
 - A "Date taken" sort from Exif capture date: discussed, user said not yet.
 - Camera raw files (CR2/CR3) are not recognised at all; most of the user's shoots are raw + JPEG pairs.
 - PSD and EXR thumbnails, and their full-size conversion, are still done on the main thread.
