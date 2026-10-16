@@ -75,8 +75,6 @@ export class ClientLocation {
   private isReady = false;
   // whether initialization has started or has been completed
   @observable isInitialized = false;
-  // whether sub-locations are being refreshed
-  @observable isRefreshing = false;
   // true when the path no longer exists (broken link)
   @observable isBroken = false;
 
@@ -232,9 +230,6 @@ export class ClientLocation {
   }
 
   async refreshSublocations(): Promise<void> {
-    // Trigger loading icon
-    this.isRefreshing = true;
-
     // TODO: Can also get this from watching
     const directoryTree = await getDirectoryTree(this.path);
 
@@ -255,8 +250,6 @@ export class ClientLocation {
           }
         }
         loc.subLocations.replace(newSublocations.sort(sort));
-
-        this.isRefreshing = false;
       },
     );
 

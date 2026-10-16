@@ -16,9 +16,9 @@ import { LocationRemoval, SubLocationExclusion } from '../../../components/Remov
 import { AppToaster } from '../../../components/Toaster';
 import DropContext from '../../../contexts/DropContext';
 import { useStore } from '../../../contexts/StoreContext';
-import { DnDLocationType, useLocationDnD } from '../../../contexts/TagDnDContext';
+import { DnDFolderType, DnDLocationType, useLocationDnD } from '../../../contexts/TagDnDContext';
 import { ClientLocation, ClientSubLocation } from '../../../entities/Location';
-import { ClientStringSearchCriteria } from '../../../entities/SearchCriteria';
+import { folderCriteria } from '../../../entities/SearchCriteria';
 import { useAutorun } from '../../../hooks/mobx';
 import LocationStore from '../../../stores/LocationStore';
 import { IExpansionState } from '../../types';
@@ -95,12 +95,6 @@ const toggleExpansion = (nodeData: ClientLocation | ClientSubLocation, treeData:
 const isExpanded = (nodeData: ClientLocation | ClientSubLocation, treeData: ITreeData) =>
   !!treeData.expansion[nodeData instanceof ClientLocation ? nodeData.id : nodeData.path];
 
-/** Add an additional / or \ in order to enforce files only in the specific directory are found, not in those starting with same name */
-const pathAsSearchPath = (path: string) => `${path}${SysPath.sep}`;
-
-const pathCriteria = (path: string) =>
-  new ClientStringSearchCriteria('absolutePath', pathAsSearchPath(path), 'startsWith');
-
 const customKeys = (
   search: (path: string) => void,
   event: React.KeyboardEvent<HTMLLIElement>,
@@ -150,12 +144,12 @@ const DirectoryMenu = observer(
     const handleOpenFileExplorer = useCallback(() => shell.showItemInFolder(path), [path]);
 
     const handleAddToSearch = useCallback(
-      () => uiStore.addSearchCriteria(pathCriteria(path)),
+      () => uiStore.addSearchCriteria(folderCriteria(path)),
       [path, uiStore],
     );
 
     const handleReplaceSearch = useCallback(
-      () => uiStore.replaceSearchCriteria(pathCriteria(path)),
+      () => uiStore.replaceSearchCriteria(folderCriteria(path)),
       [path, uiStore],
     );
 
@@ -237,7 +231,7 @@ const SubLocation = observer((props: { nodeData: ClientSubLocation; treeData: IT
   );
 
   const existingSearchCrit = uiStore.searchCriteriaList.find(
-    (c: any) => c.value === pathAsSearchPath(nodeData.path),
+    (c: any) => c.value === folderCriteria(nodeData.path).value,
   );
   // const isSearched = Boolean(existingSearchCrit);
 
@@ -246,8 +240,8 @@ const SubLocation = observer((props: { nodeData: ClientSubLocation; treeData: IT
       existingSearchCrit // toggle search
         ? uiStore.removeSearchCriteria(existingSearchCrit)
         : event.ctrlKey // otherwise add/replace depending on ctrl
-        ? uiStore.addSearchCriteria(pathCriteria(nodeData.path))
-        : uiStore.replaceSearchCriteria(pathCriteria(nodeData.path));
+        ? uiStore.addSearchCriteria(folderCriteria(nodeData.path))
+        : uiStore.replaceSearchCriteria(folderCriteria(nodeData.path));
     },
     [existingSearchCrit, nodeData.path, uiStore],
   );
@@ -265,6 +259,12 @@ const SubLocation = observer((props: { nodeData: ClientSubLocation; treeData: IT
       aria-disabled={nodeData.isExcluded}
       onClick={handleClick}
       onContextMenu={handleContextMenu}
+      // Onto a workspace, which adds its images; nowhere else in the window takes it
+      draggable
+      onDragStart={(event) => {
+        event.dataTransfer.setData(DnDFolderType, nodeData.path);
+        event.dataTransfer.effectAllowed = 'link';
+      }}
       onDragEnter={handleDragEnter}
       onDragOver={onDragOverFileDnD}
       onDrop={handleDrop}
@@ -309,7 +309,7 @@ const Location = observer(
 
     // TODO: idem
     const existingSearchCrit = uiStore.searchCriteriaList.find(
-      (c: any) => c.value === pathAsSearchPath(nodeData.path),
+      (c: any) => c.value === folderCriteria(nodeData.path).value,
     );
 
     const handleClick = useCallback(
@@ -317,8 +317,8 @@ const Location = observer(
         existingSearchCrit // toggle search
           ? uiStore.removeSearchCriteria(existingSearchCrit)
           : event.ctrlKey
-          ? uiStore.addSearchCriteria(pathCriteria(nodeData.path))
-          : uiStore.replaceSearchCriteria(pathCriteria(nodeData.path));
+          ? uiStore.addSearchCriteria(folderCriteria(nodeData.path))
+          : uiStore.replaceSearchCriteria(folderCriteria(nodeData.path));
       },
       [existingSearchCrit, nodeData.path, uiStore],
     );
@@ -399,11 +399,8 @@ const Location = observer(
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {nodeData.isInitialized && !nodeData.isRefreshing
-          ? expansion[nodeData.id]
-            ? IconSet.FOLDER_OPEN
-            : IconSet.FOLDER_CLOSE
-          : IconSet.LOADING}
+        {/* No spinner while a source is being looked through: that shows in the bar at the foot */}
+        {expansion[nodeData.id] ? IconSet.FOLDER_OPEN : IconSet.FOLDER_CLOSE}
         <div className="label-text">{nodeData.name}</div>
         {nodeData.isBroken ? (
           <span onClick={() => uiStore.openLocationRecovery(nodeData.id)}>{IconSet.WARNING}</span>
@@ -466,7 +463,9 @@ const LocationsTree = ({ onDelete, onExclude }: ILocationTreeProps) => {
         isExpanded,
         () => {},
         toggleExpansion,
-        customKeys.bind(null, (path: string) => uiStore.replaceSearchCriteria(pathCriteria(path))),
+        customKeys.bind(null, (path: string) =>
+          uiStore.replaceSearchCriteria(folderCriteria(path)),
+        ),
       ),
     [uiStore],
   );

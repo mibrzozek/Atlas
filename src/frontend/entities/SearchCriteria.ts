@@ -1,4 +1,5 @@
 import { action, Lambda, makeObservable, observable } from 'mobx';
+import SysPath from 'path';
 
 import { camelCaseToSpaced } from '../../../common/fmt';
 import {
@@ -297,6 +298,13 @@ export class ClientDateSearchCriteria extends ClientFileSearchCriteria {
     this.value = date;
   }
 }
+
+/**
+ * The images in a folder and the folders in it, as the Sources panel opens it: "path starts with", with a
+ * separator at the end, so a folder of a longer name that starts the same is not included
+ */
+export const folderCriteria = (path: string): ClientStringSearchCriteria =>
+  new ClientStringSearchCriteria('absolutePath', `${path}${SysPath.sep}`, 'startsWith');
 
 /** The folders opened in the Sources panel are searched as "path starts with" */
 export const isFolderCriteria = (crit: unknown): crit is ClientStringSearchCriteria =>

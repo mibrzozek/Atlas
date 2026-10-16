@@ -5,7 +5,7 @@ import { useStore } from '../../../contexts/StoreContext';
 import { useTagDnD } from '../../../contexts/TagDnDContext';
 import { ClientCollection } from '../../../entities/Collection';
 
-const COLLECTION_DND_TYPE = 'application/x-atlas-collection';
+export const COLLECTION_DND_TYPE = 'application/x-atlas-collection';
 
 /** The collection that is being dragged to another place in a list of collections */
 let dragged: ClientCollection | undefined;

@@ -52,6 +52,9 @@ export type ILocationDnDData = IDnDData<ClientLocation>;
 
 export const DnDLocationType = 'location';
 
+/** A folder in a source, by its path: dropped on a workspace, its images are added */
+export const DnDFolderType = 'application/x-atlas-folder';
+
 const LocationDnDContext = React.createContext<ILocationDnDData>({} as ILocationDnDData);
 
 export function useLocationDnD(): ILocationDnDData {

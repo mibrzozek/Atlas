@@ -7,7 +7,7 @@ import { useCallback, useState } from 'react';
 import { RendererMessenger } from '../../../../ipc/renderer';
 import { AppToaster } from '../../../components/Toaster';
 import { useStore } from '../../../contexts/StoreContext';
-import { DnDAttribute } from '../../../contexts/TagDnDContext';
+import { DnDAttribute, DnDFolderType } from '../../../contexts/TagDnDContext';
 import { ClientFile } from '../../../entities/File';
 import { ClientLocation } from '../../../entities/Location';
 import FileStore from '../../../stores/FileStore';
@@ -145,6 +145,10 @@ export const useFileDropHandling = (
     async (event: React.DragEvent<HTMLDivElement>) => {
       event.currentTarget.dataset[DnDAttribute.Target] = 'false';
 
+      // A folder of the side panel dragged on its way to a workspace: nothing to do here
+      if (event.dataTransfer.types.includes(DnDFolderType)) {
+        return;
+      }
       if (isAcceptableType(event)) {
         event.dataTransfer.dropEffect = 'none';
         try {
