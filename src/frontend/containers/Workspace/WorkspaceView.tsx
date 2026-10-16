@@ -2,10 +2,12 @@ import { reaction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import React, { useEffect, useRef, useState } from 'react';
 
-import { START_CAMERA, WorkspaceItem } from 'common/workspace';
+import { isStartCamera, textInk, WorkspaceItem } from 'common/workspace';
 import { useStore } from '../../contexts/StoreContext';
+import { comboMatches, getKeyCombo, parseKeyCombo } from '../../hotkeyParser';
 import { ClientWorkspace } from '../../entities/Workspace';
 import LayersPanel from './LayersPanel';
+import { carriesLibraryBatch, dropEffectFor, readLibraryBatch } from './libraryDrop';
 import WorkspaceObject from './WorkspaceObject';
 import { WorkspaceImages } from './WorkspaceImages';
 import { VisibleItems, WorkspaceSurface } from './WorkspaceSurface';
@@ -28,6 +30,8 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
   const images = workspaceStore.imagesOf(workspace)!;
   // Images are given their pixels for the zoom once the camera has stopped, not in every frame
   const [settledZoom, setSettledZoom] = useState(workspace.camera.zoom);
+  // While a tag, collection, folder or images of the Library are held over it
+  const [isDropTarget, setIsDropTarget] = useState(false);
 
   useEffect(() => {
     const created = new WorkspaceSurface(
@@ -56,7 +60,7 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
       { fireImmediately: true },
     );
     // A workspace that was never looked at opens with everything on it in view
-    if (workspace.camera === START_CAMERA) {
+    if (isStartCamera(workspace.camera)) {
       created.fitEverything();
     }
     return () => {
@@ -68,29 +72,42 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
     };
   }, [workspace, workspaceStore, images, uiStore]);
 
-  const isGridShown = uiStore.isWorkspaceGridShown;
-  useEffect(() => surface.current?.setGridShown(isGridShown), [isGridShown]);
+  const grid = uiStore.workspaceGrid;
+  useEffect(() => surface.current?.setGrid(grid), [grid]);
 
+  // The keys are in Settings, Shortcuts; Backspace, Escape and copying always do what they do
   const handleKeyDown = (event: React.KeyboardEvent) => {
-    const isCtrl = event.ctrlKey || event.metaKey;
-    const key = event.key.toLowerCase();
-    if (event.key === 'Delete' || event.key === 'Backspace') {
+    const combo = getKeyCombo(event.nativeEvent);
+    const { hotkeyMap } = uiStore;
+    const matches = (keys: string) => comboMatches(combo, parseKeyCombo(keys));
+    if (matches(hotkeyMap.deleteSelection) || event.key === 'Backspace') {
       workspace.removeSelected();
-    } else if (isCtrl && key === 'z') {
+    } else if (matches(hotkeyMap.redo)) {
+      workspace.redo();
+    } else if (matches(hotkeyMap.undo)) {
       workspace.undo();
-    } else if (isCtrl && key === 'a') {
+    } else if (matches(hotkeyMap.selectAll)) {
       workspace.selectAll();
     } else if (event.key === 'Escape') {
       workspace.clearSelection();
-    } else if (isCtrl || event.altKey) {
-      return;
-    } else if (key === 'l') {
+    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'c') {
+      workspaceStore.copy(workspace);
+    } else if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v') {
+      if (surface.current !== undefined) {
+        workspaceStore.paste(workspace, surface.current.middle);
+      }
+    } else if (matches(hotkeyMap.workspaceLock)) {
       workspace.toggleLock();
-    } else if (key === 'g') {
+    } else if (matches(hotkeyMap.workspaceGrid)) {
       uiStore.toggleWorkspaceGrid();
-    } else if (key === 'f') {
+    } else if (matches(hotkeyMap.workspaceFitAll)) {
       surface.current?.fitEverything();
-    } else if (key === 't') {
+    } else if (matches(hotkeyMap.workspaceActualSize)) {
+      // Before the menu's Ctrl+0, which would set the zoom of the whole window
+      surface.current?.zoomToActualSize();
+    } else if (matches(hotkeyMap.workspaceSwap)) {
+      workspace.swapSelection();
+    } else if (matches(hotkeyMap.workspaceAddText)) {
       const id = surface.current?.addText();
       if (id !== undefined) {
         uiStore.editWorkspaceText(id);
@@ -122,6 +139,8 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
       zoom={settledZoom}
       isSelected={selection.has(item.id)}
       isSizable={!isLocked && selection.size === 1 && selection.has(item.id)}
+      // A sheet under a text in view is in view too
+      ink={item.kind === 'text' ? textInk(item, backgrounds) : undefined}
     />
   );
 
@@ -133,7 +152,30 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
         tabIndex={-1}
         aria-label={workspace.name}
         data-locked={isLocked}
+        data-drop-target={isDropTarget}
         onKeyDown={handleKeyDown}
+        onDragOver={(event) => {
+          if (!isLocked && carriesLibraryBatch(event.dataTransfer)) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = dropEffectFor(event.dataTransfer);
+            setIsDropTarget(true);
+          }
+        }}
+        onDragLeave={(event) => {
+          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+            setIsDropTarget(false);
+          }
+        }}
+        onDrop={(event) => {
+          setIsDropTarget(false);
+          const batch = readLibraryBatch(event.dataTransfer, workspaceStore.rootStore);
+          if (batch !== undefined && surface.current !== undefined) {
+            event.preventDefault();
+            // Its top left where it was let go
+            workspaceStore.addBatch(workspace, batch, surface.current.worldAt(event));
+            viewport.current?.focus();
+          }
+        }}
       >
         {/* From the bottom: the grid, the backgrounds, the tiles of small images, everything else */}
         <canvas ref={canvas} className="workspace-backdrop" />

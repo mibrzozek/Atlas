@@ -71,6 +71,8 @@ const Content = observer(() => {
         contentRect: { width, height },
       } = entries[0];
       setContentRect({ width, height });
+      // As wide as a workspace lays out what it is given from the Library
+      uiStore.galleryWidth = (entries[0].target as HTMLElement).clientWidth;
     }),
   );
 

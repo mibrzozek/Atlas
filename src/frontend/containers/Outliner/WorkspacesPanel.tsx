@@ -1,16 +1,68 @@
 import { observer } from 'mobx-react-lite';
-import React from 'react';
+import React, { useState } from 'react';
 
 import { IconSet } from 'widgets';
 import MultiSplitPane, { MultiSplitPaneProps } from 'widgets/MultiSplit/MultiSplitPane';
 import { Toolbar, ToolbarButton } from 'widgets/toolbar';
 import { useStore } from '../../contexts/StoreContext';
+import { ClientWorkspace } from '../../entities/Workspace';
+import { useWorkspaceDrop } from '../Workspace/useWorkspaceDrop';
+import { WorkspaceNameInput } from '../Workspace/WorkspaceNameInput';
 
-/** The workspaces, in the order of their tabs. A click opens one */
+/** How a drop on a row is shown: a line above or below it, or the whole row lit for adding to it */
+const MARK_CLASS = { before: 'top', after: 'bottom', into: 'center' } as const;
+
+/**
+ * A workspace in the side panel, as its tab behaves: a click opens it, a double click (or F2) renames
+ * it, a drag moves it among the others, and a tag, collection, folder or images dropped on it are added
+ */
+const WorkspaceRow = observer(({ workspace }: { workspace: ClientWorkspace }) => {
+  const { uiStore } = useStore();
+  const [isRenaming, setIsRenaming] = useState(false);
+  const { mark, props: dnd } = useWorkspaceDrop(workspace, 'vertical', !isRenaming);
+  const isOpen = workspace === uiStore.activeWorkspace;
+  const imageCount = workspace.fileIds.length;
+
+  return (
+    <li role="treeitem" aria-selected={isOpen} className={isOpen ? 'searched' : undefined}>
+      <div
+        className={`tree-content-label workspace-row ${mark !== undefined ? MARK_CLASS[mark] : ''}`}
+        data-dnd-target={mark !== undefined || undefined}
+        tabIndex={-1}
+        onClick={() => uiStore.openWorkspace(workspace)}
+        onDoubleClick={() => setIsRenaming(true)}
+        onKeyDown={(event) => {
+          if (event.key === 'F2') {
+            setIsRenaming(true);
+          }
+        }}
+        {...dnd}
+      >
+        <span>{IconSet.WORKSPACE}</span>
+        {isRenaming ? (
+          <WorkspaceNameInput
+            workspace={workspace}
+            className="label-text"
+            onDone={() => setIsRenaming(false)}
+          />
+        ) : (
+          <div className="label-text">{workspace.name}</div>
+        )}
+        <span
+          className="collection-count"
+          data-tooltip={`${imageCount.toLocaleString()} ${imageCount === 1 ? 'image' : 'images'}`}
+        >
+          {imageCount.toLocaleString()}
+        </span>
+      </div>
+    </li>
+  );
+});
+
+/** The workspaces, in the order of their tabs */
 const WorkspacesPanel = observer((props: Partial<MultiSplitPaneProps>) => {
-  const { uiStore, workspaceStore } = useStore();
+  const { workspaceStore } = useStore();
   const workspaces = workspaceStore.workspaceList;
-  const active = uiStore.activeWorkspace;
 
   return (
     <MultiSplitPane
@@ -35,18 +87,7 @@ const WorkspacesPanel = observer((props: Partial<MultiSplitPaneProps>) => {
       ) : (
         <ul id="workspace-list" role="tree">
           {workspaces.map((workspace) => (
-            <li
-              key={workspace.id}
-              role="treeitem"
-              aria-selected={workspace === active}
-              className={workspace === active ? 'searched' : undefined}
-            >
-              <div className="tree-content-label" onClick={() => uiStore.openWorkspace(workspace)}>
-                <span>{IconSet.WORKSPACE}</span>
-                <div className="label-text">{workspace.name}</div>
-                <span className="collection-count">{workspace.items.length}</span>
-              </div>
-            </li>
+            <WorkspaceRow key={workspace.id} workspace={workspace} />
           ))}
         </ul>
       )}

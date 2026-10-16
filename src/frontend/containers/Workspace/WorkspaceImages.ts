@@ -28,7 +28,7 @@ export class WorkspaceImages {
   private readonly stopFollowing: () => void;
 
   constructor(private readonly store: WorkspaceStore, readonly workspace: ClientWorkspace) {
-    this.tiles = new TileImages(this.handlePrepared);
+    this.tiles = new TileImages(this.handlePrepared, store.tileCache);
     makeObservable(this);
     // Whenever images are added or taken off
     this.stopFollowing = reaction(
@@ -43,6 +43,7 @@ export class WorkspaceImages {
   }
 
   dispose(): void {
+    this.isDisposed = true;
     clearTimeout(this.progressTimer);
     this.stopFollowing();
     this.tiles.dispose();
@@ -67,7 +68,7 @@ export class WorkspaceImages {
         return;
       }
       const sources = new Map([...this.sources, ...found]);
-      this.tiles.setPaths(new Map([...sources].map(([id, source]) => [id, source.path])));
+      this.tiles.setSources(sources);
       runInAction(() => (this.sources = sources));
       this.pending = new Set(wanted);
       this.tiles.prepare(wanted);

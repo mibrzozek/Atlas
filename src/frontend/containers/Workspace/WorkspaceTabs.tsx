@@ -5,9 +5,8 @@ import { IconSet } from 'widgets';
 import { Alert, DialogButton } from 'widgets/popovers';
 import { useStore } from '../../contexts/StoreContext';
 import { ClientWorkspace } from '../../entities/Workspace';
-
-/** Marks a drag of a workspace tab to another place among the tabs */
-const TAB_DND_TYPE = 'application/x-atlas-workspace-tab';
+import { useWorkspaceDrop } from './useWorkspaceDrop';
+import { WorkspaceNameInput } from './WorkspaceNameInput';
 
 /**
  * The Library and the workspaces, as tabs in the top bar, and a + that makes a workspace of the images
@@ -69,20 +68,29 @@ const WorkspaceTabs = observer(() => {
   );
 });
 
-/** Asked before making a workspace of many images: preparing them takes a while */
+/**
+ * Asked before making a workspace of many images, or adding many to one by dropping them: preparing
+ * them takes a while
+ */
 const LargeWorkspaceAlert = observer(() => {
   const { workspaceStore } = useStore();
   const request = workspaceStore.largeWorkspaceRequest;
   if (request === undefined) {
     return null;
   }
+  const count = request.imageCount.toLocaleString();
+  const { adding } = request;
   return (
     <Alert
       open
-      title={`Make a workspace of ${request.imageCount.toLocaleString()} images?`}
+      title={
+        adding !== undefined
+          ? `Add ${count} images of ${adding.label} to ${adding.workspaceName}?`
+          : `Make a workspace of ${count} images?`
+      }
       icon={IconSet.INFO}
       type="info"
-      primaryButtonText="Make it"
+      primaryButtonText={adding !== undefined ? 'Add them' : 'Make it'}
       defaultButton={DialogButton.PrimaryButton}
       onClick={(button) =>
         button === DialogButton.PrimaryButton
@@ -91,14 +99,16 @@ const LargeWorkspaceAlert = observer(() => {
       }
     >
       <p>
-        Getting this many images ready to be shown takes a while. Atlas does it in the background:
-        you can keep using the Library, and see how far it got at the foot of the side panel.
+        Getting this many images ready to be shown takes a while. Atlas does it in the background,
+        and shows how far it got at the bottom left.
       </p>
-      <p>
-        Its tab is there right away. Opened before it is ready, it shows the images that are done
-        and how many are still to come. Up close, every image is drawn at its full resolution as you
-        look at it.
-      </p>
+      {adding === undefined && (
+        <p>
+          Its tab is there right away, and you can keep using the Library. Opened before it is
+          ready, it shows the images that are done and how many are still to come.
+        </p>
+      )}
+      <p>Up close, every image is drawn at its full resolution as you look at it.</p>
     </Alert>
   );
 });
@@ -112,20 +122,15 @@ interface WorkspaceTabProps {
 const WorkspaceTab = observer(({ workspace, isActive, onDelete }: WorkspaceTabProps) => {
   const { uiStore, workspaceStore } = useStore();
   const [isRenaming, setIsRenaming] = useState(false);
-  const [dropSide, setDropSide] = useState<'before' | 'after'>();
+  const { mark, props: dnd } = useWorkspaceDrop(workspace, 'horizontal', !isRenaming);
   const isPreparing = workspaceStore.imagesOf(workspace)?.isPreparing === true;
-
-  const sideOf = (event: React.DragEvent) => {
-    const rect = event.currentTarget.getBoundingClientRect();
-    return event.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
-  };
 
   return (
     <div
       role="tab"
       className="workspace-tab"
       aria-selected={isActive}
-      data-drop={dropSide}
+      data-drop={mark}
       tabIndex={0}
       onClick={() => uiStore.openWorkspace(workspace)}
       onDoubleClick={() => setIsRenaming(true)}
@@ -134,35 +139,7 @@ const WorkspaceTab = observer(({ workspace, isActive, onDelete }: WorkspaceTabPr
           setIsRenaming(true);
         }
       }}
-      draggable={!isRenaming}
-      onDragStart={(event) => {
-        event.dataTransfer.setData(TAB_DND_TYPE, workspace.id);
-        event.dataTransfer.effectAllowed = 'move';
-      }}
-      onDragOver={(event) => {
-        if (event.dataTransfer.types.includes(TAB_DND_TYPE)) {
-          event.preventDefault();
-          event.dataTransfer.dropEffect = 'move';
-          setDropSide(sideOf(event));
-        }
-      }}
-      onDragLeave={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
-          setDropSide(undefined);
-        }
-      }}
-      onDrop={(event) => {
-        setDropSide(undefined);
-        const dragged = workspaceStore.workspaceList.find(
-          (w) => w.id === event.dataTransfer.getData(TAB_DND_TYPE),
-        );
-        if (dragged !== undefined && dragged !== workspace) {
-          event.preventDefault();
-          const others = workspaceStore.workspaceList.filter((w) => w !== dragged);
-          const index = others.indexOf(workspace) + (sideOf(event) === 'before' ? 0 : 1);
-          workspaceStore.move(dragged, index);
-        }
-      }}
+      {...dnd}
       data-tooltip={
         isRenaming
           ? undefined
@@ -173,41 +150,28 @@ const WorkspaceTab = observer(({ workspace, isActive, onDelete }: WorkspaceTabPr
     >
       {isPreparing ? <span className="workspace-spinner small" /> : IconSet.WORKSPACE}
       {isRenaming ? (
-        <input
+        <WorkspaceNameInput
+          workspace={workspace}
           className="workspace-tab-name"
-          autoFocus
-          defaultValue={workspace.name}
-          aria-label="Name of the workspace"
-          onFocus={(event) => event.target.select()}
-          onClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => {
-            event.stopPropagation();
-            if (event.key === 'Enter') {
-              workspace.rename(event.currentTarget.value);
-              setIsRenaming(false);
-            } else if (event.key === 'Escape') {
-              setIsRenaming(false);
-            }
-          }}
-          onBlur={(event) => {
-            workspace.rename(event.currentTarget.value);
-            setIsRenaming(false);
-          }}
+          onDone={() => setIsRenaming(false)}
         />
       ) : (
         <span className="workspace-tab-name">{workspace.name}</span>
       )}
-      <button
-        className="workspace-tab-close btn-icon"
-        aria-label={`Delete the workspace ${workspace.name}`}
-        tabIndex={-1}
-        onClick={(event) => {
-          event.stopPropagation();
-          onDelete();
-        }}
-      >
-        {IconSet.CLOSE}
-      </button>
+      {/* Only on the open tab: on the others it would leave a gap where it is hidden */}
+      {isActive && (
+        <button
+          className="workspace-tab-close btn-icon"
+          aria-label={`Delete the workspace ${workspace.name}`}
+          tabIndex={-1}
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+        >
+          {IconSet.CLOSE}
+        </button>
+      )}
     </div>
   );
 });

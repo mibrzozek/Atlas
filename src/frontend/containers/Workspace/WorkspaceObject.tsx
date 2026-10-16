@@ -25,6 +25,8 @@ interface FrameProps {
   isSelected: boolean;
   /** Whether it has the handle for sizing it: when it is the only one selected */
   isSizable: boolean;
+  /** The colour of a text (`textInk`): its own, or the one that reads on the paper under it */
+  ink?: string;
 }
 
 /**
@@ -35,7 +37,7 @@ interface FrameProps {
 const WorkspaceObject = memo(function WorkspaceObject(
   props: FrameProps & { source: WorkspaceImageSource | undefined },
 ) {
-  const { item, zoom, isSelected, isSizable, source } = props;
+  const { item, zoom, isSelected, isSizable, source, ink } = props;
   const element = useRef<HTMLDivElement>(null);
 
   // Drawn at its new place: the offset of the drag is done with, in the same frame
@@ -61,7 +63,7 @@ const WorkspaceObject = memo(function WorkspaceObject(
       {item.kind === 'image' ? (
         <WorkspaceImage item={item} source={source} zoom={zoom} />
       ) : item.kind === 'text' ? (
-        <WorkspaceText item={item} />
+        <WorkspaceText item={item} ink={ink} />
       ) : (
         // A background is its colour
         <div className="workspace-paper" style={{ background: item.color }} />
@@ -108,14 +110,14 @@ function WorkspaceImage(props: {
 }
 
 /** A text, in the letters it was measured in (`measureText`), so that its frame fits around it */
-function WorkspaceText({ item }: { item: WorkspaceTextItem }): JSX.Element {
+function WorkspaceText({ item, ink }: { item: WorkspaceTextItem; ink?: string }): JSX.Element {
   return (
     <span
       style={{
         fontSize: item.fontSize,
         fontWeight: TEXT_FONT_WEIGHT,
         lineHeight: TEXT_LINE_HEIGHT,
-        color: item.color || undefined,
+        color: ink,
       }}
     >
       {item.text}

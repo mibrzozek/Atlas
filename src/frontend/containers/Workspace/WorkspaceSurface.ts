@@ -8,6 +8,7 @@ import {
   groupUnder,
   LABEL_FONT_SIZE,
   MAX_ZOOM,
+  MIN_DOT_SPACING,
   panBy,
   PAPER_FORMATS,
   Point,
@@ -15,8 +16,11 @@ import {
   resizeItem,
   Size,
   snapMove,
+  snapSize,
   SnapGuide,
   SpatialIndex,
+  toScreen,
+  WorkspaceGridStyle,
   toWorld,
   visibleRect,
   wheelZoomFactor,
@@ -62,6 +66,12 @@ const WHEEL_LINE = 40;
 const CLICK_DISTANCE = 4;
 /** How near, in screen pixels, an edge or middle of what is dragged comes before it snaps to another */
 const SNAP_PIXELS = 7;
+/**
+ * Held this close to an edge of the view while drawing a box or dragging, the view scrolls that way by
+ * itself, faster the closer (and beyond the edge), up to the most pixels a frame
+ */
+const EDGE_PIXELS = 48;
+const EDGE_SPEED = 24;
 /** How long the camera takes to glide to an image or to everything */
 const GLIDE_DURATION = 320;
 
@@ -87,14 +97,18 @@ type Gesture =
       /** Around what is dragged, where it was, and what is near to line it up with */
       bounds: Rect;
       others: WorkspaceItem[];
-      /** Their elements, found once: not searched for with every move of the pointer */
-      elements: HTMLElement[];
+      /**
+       * Their elements, found once: not searched for with every move of the pointer. Undefined when they
+       * are to be found again, because the elements in the page changed during the drag
+       */
+      elements: HTMLElement[] | undefined;
       /** Whether it is a background alone: it lines up with the images it is under as a whole too */
       isSheet: boolean;
       /** How far it is moved, snapped, in world units */
       offset: Point;
     }
-  | { kind: 'resize'; item: WorkspaceItem }
+  /** Its width as sized so far, snapped */
+  | { kind: 'resize'; item: WorkspaceItem; width: number }
   /**
    * What was selected before, which stays selected when adding (Shift or Ctrl); and the background the
    * box was started on, which a click (no box) selects
@@ -104,8 +118,12 @@ type Gesture =
 interface Press {
   pointerId: number;
   gesture: Gesture;
+  /** Where it was pressed, in the window, and on the workspace: what the box or the drag is held by */
   start: Point;
+  startInWorld: Point;
+  /** Where the pointer is now, in the window, and whether Alt is held (no snapping) */
   last: Point;
+  isAltDown: boolean;
   hasMoved: boolean;
 }
 
@@ -116,7 +134,8 @@ export class WorkspaceSurface {
   private items = new Map<string, WorkspaceItem>();
   /** The same, from back to front */
   private itemsBackToFront: WorkspaceItem[] = [];
-  private isGridShown = true;
+  /** Undefined when the grid is hidden */
+  private grid: WorkspaceGridStyle | undefined = 'lines';
   private colors = { line: '#888', tile: '#555' };
 
   private frame: number | undefined;
@@ -138,11 +157,14 @@ export class WorkspaceSurface {
   /** When the images last changed: the overview is drawn anew once they rest */
   private changedAt = 0;
   private overviewTimer: number | undefined;
+  /** The frame of scrolling by itself while the pointer is held at an edge of the view */
+  private edgeScroll: number | undefined;
 
   private readonly resizeObserver: ResizeObserver;
 
   constructor(
-    private readonly viewport: HTMLElement,
+    /** The surface on screen, which also carries the colours of the theme */
+    readonly viewport: HTMLElement,
     /** Everything but the backgrounds, over the tiles */
     private readonly world: HTMLElement,
     /** The grid, under everything */
@@ -159,6 +181,10 @@ export class WorkspaceSurface {
     this.camera = workspace.camera;
     tileImages.onLoad = (id) => {
       this.drawIntoOverview(id);
+      this.requestFrame();
+    };
+    tileImages.onColors = () => {
+      this.isOverviewStale = true;
       this.requestFrame();
     };
     this.marquee = document.createElement('div');
@@ -199,6 +225,7 @@ export class WorkspaceSurface {
       cancelAnimationFrame(this.frame);
     }
     this.stopGlide();
+    this.stopEdgeScroll();
     window.clearTimeout(this.settleTimer);
     window.clearTimeout(this.overviewTimer);
     // Let go of the overview picture (up to 64 MB) at once
@@ -206,6 +233,7 @@ export class WorkspaceSurface {
       this.overview.canvas.width = 0;
     }
     this.tileImages.onLoad = undefined;
+    this.tileImages.onColors = undefined;
     this.tileImages.forgetUrgent();
     // What was seen last is where the workspace opens next time
     this.events.onSettle(this.camera);
@@ -231,8 +259,8 @@ export class WorkspaceSurface {
     this.requestFrame();
   }
 
-  setGridShown(isShown: boolean): void {
-    this.isGridShown = isShown;
+  setGrid(grid: WorkspaceGridStyle | undefined): void {
+    this.grid = grid;
     this.requestFrame();
   }
 
@@ -249,9 +277,14 @@ export class WorkspaceSurface {
     this.glideTo(zoomAt(this.camera, middle, 1 / this.camera.zoom));
   };
 
+  /** The middle of the view, on the workspace */
+  get middle(): Point {
+    return toWorld(this.camera, { x: this.view.width / 2, y: this.view.height / 2 });
+  }
+
   /** A new text in the middle of the view, its letters as large on the screen as at 100% */
   addText = (): string | undefined => {
-    const middle = toWorld(this.camera, { x: this.view.width / 2, y: this.view.height / 2 });
+    const { middle } = this;
     const fontSize = LABEL_FONT_SIZE / this.camera.zoom;
     const at = { x: middle.x - fontSize, y: middle.y - fontSize / 2 };
     return this.workspace.addText(at, fontSize)?.id;
@@ -274,8 +307,7 @@ export class WorkspaceSurface {
         height,
       );
     } else {
-      const middle = toWorld(this.camera, { x: this.view.width / 2, y: this.view.height / 2 });
-      this.workspace.addBackground(middle, (this.view.height * 0.8) / this.camera.zoom);
+      this.workspace.addBackground(this.middle, (this.view.height * 0.8) / this.camera.zoom);
     }
     // All of it in view, its edges and the handle in its corner too: around a large selection it can
     // be larger than the view, and then could not be taken hold of
@@ -284,6 +316,10 @@ export class WorkspaceSurface {
       this.glideTo(fitCamera(sheet, this.view, 64, this.camera.zoom));
     }
   };
+
+  /** Where on the workspace a point of the window is, such as where something was dropped */
+  worldAt = (point: { clientX: number; clientY: number }): Point =>
+    toWorld(this.camera, this.pointerAt(point));
 
   /** The camera glides to one image or text, which then fills the view, as sharp as it is */
   lookAt = (id: string): void => {
@@ -325,7 +361,15 @@ export class WorkspaceSurface {
     }
     this.viewport.setPointerCapture(event.pointerId);
     const at = { x: event.clientX, y: event.clientY };
-    this.press = { pointerId: event.pointerId, gesture, start: at, last: at, hasMoved: false };
+    this.press = {
+      pointerId: event.pointerId,
+      gesture,
+      start: at,
+      startInWorld: toWorld(this.camera, this.pointerAt(at)),
+      last: at,
+      isAltDown: event.altKey,
+      hasMoved: false,
+    };
     if (gesture.kind === 'pan') {
       this.viewport.dataset.panning = 'true';
     }
@@ -355,7 +399,7 @@ export class WorkspaceSurface {
     }
     if (target.closest('.workspace-resize') !== null) {
       const item = this.items.get(id);
-      return item !== undefined ? { kind: 'resize', item } : undefined;
+      return item !== undefined ? { kind: 'resize', item, width: item.width } : undefined;
     }
     if (isAdditive) {
       workspace.select(id, true);
@@ -409,18 +453,33 @@ export class WorkspaceSurface {
     const at = { x: event.clientX, y: event.clientY };
     const step = { x: at.x - press.last.x, y: at.y - press.last.y };
     press.last = at;
+    press.isAltDown = event.altKey;
     if (!press.hasMoved) {
       press.hasMoved = Math.hypot(at.x - press.start.x, at.y - press.start.y) >= CLICK_DISTANCE;
       if (!press.hasMoved) {
         return;
       }
     }
-    const { zoom } = this.camera;
-    const total = { x: (at.x - press.start.x) / zoom, y: (at.y - press.start.y) / zoom };
+    if (press.gesture.kind === 'pan') {
+      this.moveCamera(panBy(this.camera, step.x, step.y));
+    } else {
+      this.follow(press);
+      this.scrollAtEdge(press);
+    }
+  };
+
+  /**
+   * The box, the drag or the sizing brought up to where the pointer is now, measured on the workspace from
+   * where it was pressed: also when the view moves under a pointer that stays where it is (the wheel, a
+   * zoom, scrolling at an edge), what was pressed stays under the pointer and the box keeps its start.
+   */
+  private follow(press: Press) {
+    const now = toWorld(this.camera, this.pointerAt(press.last));
+    const total = { x: now.x - press.startInWorld.x, y: now.y - press.startInWorld.y };
+    const threshold = SNAP_PIXELS / this.camera.zoom;
     const { gesture } = press;
     switch (gesture.kind) {
       case 'pan':
-        this.moveCamera(panBy(this.camera, step.x, step.y));
         break;
       case 'move': {
         // Lined up with what is near when it comes close, unless Alt is held
@@ -430,18 +489,19 @@ export class WorkspaceSurface {
           y: gesture.bounds.y + total.y,
         };
         const group = gesture.isSheet ? groupUnder(where, gesture.others) : undefined;
-        const snapped = event.altKey
+        const snapped = press.isAltDown
           ? { dx: total.x, dy: total.y, guides: [] }
           : snapMove(
               gesture.bounds,
               gesture.others,
               total.x,
               total.y,
-              SNAP_PIXELS / zoom,
+              threshold,
               group !== undefined ? [group] : [],
             );
         gesture.offset = { x: snapped.dx, y: snapped.dy };
         this.dragged = { ids: gesture.ids, dx: snapped.dx, dy: snapped.dy };
+        gesture.elements ??= this.elementsOf(gesture.ids);
         for (const element of gesture.elements) {
           element.style.transform = `translate(${snapped.dx}px, ${snapped.dy}px)`;
           // Over the others while dragged; it lies on top of them once let go
@@ -452,35 +512,99 @@ export class WorkspaceSurface {
         break;
       }
       case 'resize': {
-        const sized = resizeItem(gesture.item, gesture.item.width + total.x);
+        const wanted = gesture.item.width + total.x;
+        const snapped = press.isAltDown
+          ? { width: wanted, guides: [] }
+          : snapSize(gesture.item, this.othersNear(gesture.item.id), wanted, threshold);
+        const sized = resizeItem(gesture.item, snapped.width);
+        gesture.width = sized.width;
         for (const element of this.elementsOf(new Set([gesture.item.id]))) {
           element.style.width = `${sized.width}px`;
           element.style.height = `${sized.height}px`;
         }
+        this.drawGuides(snapped.guides);
         break;
       }
-      case 'select':
+      case 'select': {
         // What the box touches is selected while it is drawn, not only when it is let go
-        this.drawMarquee(press.start, at);
-        {
-          const area = this.marqueeArea(press.start, at);
-          const touched = this.index.query(area);
-          // A background only when the box takes it in whole: it is under everything else
-          touched.forEach((id) => {
-            const item = this.items.get(id);
-            if (item?.kind === 'background' && !contains(area, item)) {
-              touched.delete(id);
-            }
-          });
-          gesture.before.forEach((id) => touched.add(id));
-          // Only when it touches something else: the layers panel draws along
-          if (!sameSet(touched, this.workspace.selection)) {
-            this.workspace.selectMany(touched, false);
+        const area = {
+          x: Math.min(press.startInWorld.x, now.x),
+          y: Math.min(press.startInWorld.y, now.y),
+          width: Math.abs(now.x - press.startInWorld.x),
+          height: Math.abs(now.y - press.startInWorld.y),
+        };
+        this.drawMarquee(area);
+        const touched = this.index.query(area);
+        // A background only when the box takes it in whole: it is under everything else
+        touched.forEach((id) => {
+          const item = this.items.get(id);
+          if (item?.kind === 'background' && !contains(area, item)) {
+            touched.delete(id);
           }
+        });
+        gesture.before.forEach((id) => touched.add(id));
+        // Only when it touches something else: the layers panel draws along
+        if (!sameSet(touched, this.workspace.selection)) {
+          this.workspace.selectMany(touched, false);
         }
         break;
+      }
     }
-  };
+  }
+
+  /** What is near an object, but not itself: what it can line up with */
+  private othersNear(id: string): WorkspaceItem[] {
+    const others: WorkspaceItem[] = [];
+    for (const near of this.nearby) {
+      const item = this.items.get(near);
+      if (item !== undefined && near !== id) {
+        others.push(item);
+      }
+    }
+    return others;
+  }
+
+  /**
+   * While the pointer is held near an edge of the view (or beyond it), the view scrolls that way by
+   * itself, one step a frame, and the box or the drag goes along
+   */
+  private scrollAtEdge(press: Press) {
+    const at = this.pointerAt(press.last);
+    const speed = (distance: number) =>
+      distance >= EDGE_PIXELS
+        ? 0
+        : (EDGE_SPEED * Math.min(EDGE_PIXELS, EDGE_PIXELS - distance)) / EDGE_PIXELS;
+    const vx = speed(this.view.width - at.x) - speed(at.x);
+    const vy = speed(this.view.height - at.y) - speed(at.y);
+    if (vx === 0 && vy === 0) {
+      this.stopEdgeScroll();
+    } else if (this.edgeScroll === undefined) {
+      const step = () => {
+        if (this.press !== press) {
+          this.stopEdgeScroll();
+          return;
+        }
+        // The pointer may have moved since: how fast is worked out again every frame
+        const now = this.pointerAt(press.last);
+        const dx = speed(this.view.width - now.x) - speed(now.x);
+        const dy = speed(this.view.height - now.y) - speed(now.y);
+        if (dx === 0 && dy === 0) {
+          this.stopEdgeScroll();
+          return;
+        }
+        this.moveCamera(panBy(this.camera, -dx, -dy));
+        this.edgeScroll = requestAnimationFrame(step);
+      };
+      this.edgeScroll = requestAnimationFrame(step);
+    }
+  }
+
+  private stopEdgeScroll() {
+    if (this.edgeScroll !== undefined) {
+      cancelAnimationFrame(this.edgeScroll);
+      this.edgeScroll = undefined;
+    }
+  }
 
   private handlePointerUp = (event: PointerEvent) => {
     const press = this.press;
@@ -488,13 +612,9 @@ export class WorkspaceSurface {
       return;
     }
     this.press = undefined;
+    this.stopEdgeScroll();
     delete this.viewport.dataset.panning;
     const { gesture, hasMoved } = press;
-    const { zoom } = this.camera;
-    const total = {
-      x: (press.last.x - press.start.x) / zoom,
-      y: (press.last.y - press.start.y) / zoom,
-    };
 
     switch (gesture.kind) {
       case 'pan':
@@ -502,7 +622,7 @@ export class WorkspaceSurface {
       case 'move':
         this.dragged = undefined;
         this.drawGuides([]);
-        gesture.elements.forEach((element) => element.style.removeProperty('z-index'));
+        gesture.elements?.forEach((element) => element.style.removeProperty('z-index'));
         if (hasMoved) {
           // The elements keep their offset until they are drawn at their new place (WorkspaceImage)
           this.workspace.moveItems(gesture.ids, gesture.offset.x, gesture.offset.y);
@@ -517,8 +637,9 @@ export class WorkspaceSurface {
         this.requestFrame();
         break;
       case 'resize':
+        this.drawGuides([]);
         if (hasMoved) {
-          this.workspace.resizeItem(gesture.item.id, gesture.item.width + total.x);
+          this.workspace.resizeItem(gesture.item.id, gesture.width);
         }
         break;
       case 'select':
@@ -550,6 +671,8 @@ export class WorkspaceSurface {
   private handleKey = (event: KeyboardEvent) => {
     if (event.key === ' ') {
       event.preventDefault();
+      // Held to pan: not a shortcut of the window as well
+      event.stopPropagation();
       this.isSpaceDown = event.type === 'keydown';
       this.viewport.dataset.space = String(this.isSpaceDown);
     }
@@ -604,27 +727,16 @@ export class WorkspaceSurface {
     });
   }
 
-  /** The part of the world inside the box drawn from one point of the window to another */
-  private marqueeArea(from: Point, to: Point): Rect {
-    const a = toWorld(this.camera, this.pointerAt(from));
-    const b = toWorld(this.camera, this.pointerAt(to));
-    return {
-      x: Math.min(a.x, b.x),
-      y: Math.min(a.y, b.y),
-      width: Math.abs(a.x - b.x),
-      height: Math.abs(a.y - b.y),
-    };
-  }
-
-  private drawMarquee(from: Point, to: Point) {
-    const a = this.pointerAt(from);
-    const b = this.pointerAt(to);
+  /** The box that selects, drawn over everything where the area of the workspace is on screen */
+  private drawMarquee(area: Rect) {
+    const a = toScreen(this.camera, area);
+    const b = toScreen(this.camera, { x: area.x + area.width, y: area.y + area.height });
     const style = this.marquee.style;
     style.display = 'block';
-    style.left = `${Math.min(a.x, b.x)}px`;
-    style.top = `${Math.min(a.y, b.y)}px`;
-    style.width = `${Math.abs(a.x - b.x)}px`;
-    style.height = `${Math.abs(a.y - b.y)}px`;
+    style.left = `${a.x}px`;
+    style.top = `${a.y}px`;
+    style.width = `${b.x - a.x}px`;
+    style.height = `${b.y - a.y}px`;
   }
 
   // The camera
@@ -653,6 +765,10 @@ export class WorkspaceSurface {
 
   private moveCamera(camera: Camera) {
     this.camera = camera;
+    // What is being drawn or dragged stays held where it was pressed on the workspace
+    if (this.press?.hasMoved === true && this.press.gesture.kind !== 'pan') {
+      this.follow(this.press);
+    }
     if (!this.isMoving) {
       // Moved as one picture on the graphics card while it moves; drawn sharp again once it stops
       this.isMoving = true;
@@ -715,12 +831,19 @@ export class WorkspaceSurface {
     const steppedZoom = Math.pow(2, Math.floor(Math.log2(zoom) * 2) / 2);
     const margin = VIEW_MARGIN / zoom;
     const area = visibleRect(this.camera, this.view);
-    const nearby = this.index.query({
+    const near = {
       x: area.x - margin,
       y: area.y - margin,
       width: area.width + 2 * margin,
       height: area.height + 2 * margin,
-    });
+    };
+    const nearby = this.index.query(near);
+    const { dragged } = this;
+    if (dragged !== undefined) {
+      // What is dragged is drawn away from where it is stored: also near when its new place is
+      const movedNear = { ...near, x: near.x - dragged.dx, y: near.y - dragged.dy };
+      this.index.query(movedNear).forEach((id) => dragged.ids.has(id) && nearby.add(id));
+    }
     this.nearby = nearby;
     const shown = new Set<string>();
     // Back to front, like the elements
@@ -743,6 +866,13 @@ export class WorkspaceSurface {
     if (!sameSet(shown, this.visible)) {
       this.visible = shown;
       this.events.onVisibleChange({ ids: shown });
+      const press = this.press;
+      if (press?.gesture.kind === 'move' && press.hasMoved) {
+        // Elements that came for dragged images while it is dragged (the view scrolled, or zoomed in)
+        // are moved along as soon as they are in the page
+        press.gesture.elements = undefined;
+        window.setTimeout(() => this.press === press && this.follow(press));
+      }
     }
   };
 
@@ -767,7 +897,7 @@ export class WorkspaceSurface {
   private drawCanvas(tiles: readonly WorkspaceImageItem[]) {
     const grid = this.prepare(this.canvas);
     const { zoom } = this.camera;
-    if (this.isGridShown && grid.context !== null) {
+    if (this.grid === 'lines' && grid.context !== null) {
       const { context, width, height } = grid;
       const { fine, fineOpacity, major } = gridLevels(zoom);
       context.strokeStyle = this.colors.line;
@@ -776,6 +906,25 @@ export class WorkspaceSurface {
       this.strokeGrid(context, fine, zoom * grid.ratio, width, height, major);
       context.globalAlpha = 0.09;
       this.strokeGrid(context, major, zoom * grid.ratio, width, height);
+      context.globalAlpha = 1;
+    } else if (this.grid === 'dots' && grid.context !== null) {
+      const { context, ratio, width, height } = grid;
+      const { fine, fineOpacity, major } = gridLevels(zoom, MIN_DOT_SPACING);
+      context.fillStyle = this.colors.line;
+      // A dot stands for where two lines would cross, so it can be much stronger than a line; the fine
+      // ones grow in as they spread apart, so a zoom never makes them pop
+      context.globalAlpha = 0.38 * Math.sqrt(fineOpacity);
+      this.dotGrid(
+        context,
+        fine,
+        zoom * ratio,
+        width,
+        height,
+        (0.7 + 0.4 * fineOpacity) * ratio,
+        major,
+      );
+      context.globalAlpha = 0.45;
+      this.dotGrid(context, major, zoom * ratio, width, height, 1.5 * ratio);
       context.globalAlpha = 1;
     }
 
@@ -791,7 +940,6 @@ export class WorkspaceSurface {
     if (tiles.length > 0 && this.dragged === undefined && this.drawOverview(context, scale)) {
       return;
     }
-    context.fillStyle = this.colors.tile;
     // More tiny images than can be kept would be loaded over and over: the rest are dots
     let tileImageBudget = MAX_TILES;
     const dragged = this.dragged;
@@ -819,11 +967,25 @@ export class WorkspaceSurface {
           tileHeight,
         );
       } else {
-        context.globalAlpha = 0.35;
-        context.fillRect(left, top, tileWidth, tileHeight);
+        this.fillWithColor(context, tile.fileId, left, top, tileWidth, tileHeight);
       }
     }
     context.globalAlpha = 1;
+  }
+
+  /** An image without its tiny version yet: its average colour when that is known, else a faint dot */
+  private fillWithColor(
+    context: CanvasRenderingContext2D,
+    fileId: string,
+    left: number,
+    top: number,
+    width: number,
+    height: number,
+  ) {
+    const color = this.tileImages.colorOf(fileId);
+    context.globalAlpha = color !== undefined ? 1 : 0.35;
+    context.fillStyle = color ?? this.colors.tile;
+    context.fillRect(left, top, width, height);
   }
 
   /**
@@ -878,7 +1040,6 @@ export class WorkspaceSurface {
     if (context === null) {
       return;
     }
-    context.fillStyle = this.colors.tile;
     for (const item of this.itemsBackToFront) {
       if (item.kind === 'image') {
         this.drawOverviewTile(context, item);
@@ -906,9 +1067,37 @@ export class WorkspaceSurface {
       context.globalAlpha = 1;
       context.drawImage(tile, ...coverSource(tile, width, height), left, top, width, height);
     } else {
-      context.globalAlpha = 0.35;
-      context.fillRect(left, top, width, height);
+      this.fillWithColor(context, item.fileId, left, top, width, height);
     }
+  }
+
+  /**
+   * Dots `radius` device pixels large every `spacing` world units, in one path; leaves out the ones of the
+   * level above, which are drawn larger
+   */
+  private dotGrid(
+    context: CanvasRenderingContext2D,
+    spacing: number,
+    scale: number,
+    width: number,
+    height: number,
+    radius: number,
+    skipEvery?: number,
+  ) {
+    const { x, y } = this.camera;
+    const skip = skipEvery !== undefined ? Math.round(skipEvery / spacing) : 0;
+    context.beginPath();
+    for (let i = Math.ceil(x / spacing); (i * spacing - x) * scale <= width; i++) {
+      const px = (i * spacing - x) * scale;
+      for (let j = Math.ceil(y / spacing); (j * spacing - y) * scale <= height; j++) {
+        if (skip === 0 || i % skip !== 0 || j % skip !== 0) {
+          const py = (j * spacing - y) * scale;
+          context.moveTo(px + radius, py);
+          context.arc(px, py, radius, 0, Math.PI * 2);
+        }
+      }
+    }
+    context.fill();
   }
 
   /** Lines every `spacing` world units, on whole device pixels; leaves out the ones of the level above */

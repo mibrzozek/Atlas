@@ -1,14 +1,22 @@
 import { observer } from 'mobx-react-lite';
 import React, { useEffect, useRef, useState } from 'react';
 
-import { CropShape, LayoutKind, LAYOUT_GAP, suggestedCount, WorkspaceItem } from 'common/workspace';
-import { IconSet } from 'widgets';
+import {
+  CropShape,
+  LayoutKind,
+  LAYOUT_GAP,
+  suggestedCount,
+  WorkspaceGridStyle,
+  WorkspaceItem,
+} from 'common/workspace';
+import { IconSet, keyComboToString } from 'widgets';
 import { MenuButton, MenuRadioItem } from 'widgets/menus';
 import { MenuDivider, MenuSliderItem } from 'widgets/menus/menu-items';
 import { ToolbarButton } from 'widgets/toolbar';
 import { useStore } from '../../contexts/StoreContext';
 import { ClientWorkspace } from '../../entities/Workspace';
-import { printWorkspace } from './printWorkspace';
+import { IHotkeyMap } from '../../stores/UiStore';
+import { SavePictureDialog } from './SavePictureDialog';
 
 const LAYOUTS: { kind: LayoutKind; text: string; icon: JSX.Element }[] = [
   { kind: 'rows', text: 'In rows', icon: IconSet.VIEW_MASONRY_H },
@@ -155,10 +163,21 @@ const ArrangeMenu = observer(({ workspace }: { workspace: ClientWorkspace }) => 
   );
 });
 
+const GRIDS: { grid: WorkspaceGridStyle | 'none'; text: string; icon: JSX.Element }[] = [
+  { grid: 'lines', text: 'Lines', icon: IconSet.GRID },
+  { grid: 'dots', text: 'Dots', icon: IconSet.GRID_DOTS },
+  { grid: 'none', text: 'No grid', icon: IconSet.CLOSE },
+];
+
 /** What the bar above the gallery holds while a workspace is open */
 const WorkspaceTools = observer(() => {
   const { uiStore, workspaceStore } = useStore();
   const workspace = uiStore.activeWorkspace;
+  const isEmpty = workspace === undefined || workspace.items.length === 0;
+  /** The keys of a shortcut, as they are set in Settings, for a tooltip */
+  const key = (action: keyof IHotkeyMap) => keyComboToString(uiStore.hotkeyMap[action]);
+  const [isSaving, setIsSaving] = useState(false);
+
   return (
     <>
       {workspace !== undefined && <ArrangeMenu workspace={workspace} />}
@@ -167,7 +186,7 @@ const WorkspaceTools = observer(() => {
         text="Swap"
         tooltip={
           workspace?.selection.size === 2
-            ? 'Swap the two selected'
+            ? `Swap the two selected (${key('workspaceSwap')})`
             : 'Select two to swap their places'
         }
         disabled={workspace === undefined || workspace.isLocked || workspace.selection.size !== 2}
@@ -183,7 +202,7 @@ const WorkspaceTools = observer(() => {
       <ToolbarButton
         icon={IconSet.TEXT}
         text="Text"
-        tooltip="Add a text (T)"
+        tooltip={`Add a text (${key('workspaceAddText')})`}
         disabled={workspace?.isLocked}
         onClick={() => {
           const id = workspaceStore.surface?.addText();
@@ -198,45 +217,52 @@ const WorkspaceTools = observer(() => {
           text="Lock"
           tooltip={
             workspace.isLocked
-              ? 'Locked: nothing moves, every drag pans (L)'
-              : 'Lock everything in place (L)'
+              ? `Locked: nothing moves, every drag pans (${key('workspaceLock')})`
+              : `Lock everything in place (${key('workspaceLock')})`
           }
           onClick={workspace.toggleLock}
           pressed={workspace.isLocked}
         />
       )}
-      <ToolbarButton
-        icon={IconSet.GRID}
+      <MenuButton
+        id="__workspace-grid"
+        menuID="__workspace-grid-options"
+        icon={uiStore.workspaceGridStyle === 'dots' ? IconSet.GRID_DOTS : IconSet.GRID}
         text="Grid"
-        tooltip={uiStore.isWorkspaceGridShown ? 'Hide the grid (G)' : 'Show the grid (G)'}
-        onClick={uiStore.toggleWorkspaceGrid}
-        pressed={uiStore.isWorkspaceGridShown}
-      />
+        tooltip={`The grid: lines, dots or none (${key('workspaceGrid')} shows or hides it)`}
+      >
+        {GRIDS.map((option) => (
+          <MenuRadioItem
+            key={option.grid}
+            icon={option.icon}
+            text={option.text}
+            checked={(uiStore.workspaceGrid ?? 'none') === option.grid}
+            onClick={() => uiStore.setWorkspaceGrid(option.grid)}
+          />
+        ))}
+      </MenuButton>
       <ToolbarButton
         icon={IconSet.FIT}
         text="Fit everything"
-        tooltip="Show everything on the workspace (F)"
+        tooltip={`Show everything on the workspace (${key('workspaceFitAll')})`}
         onClick={() => workspaceStore.surface?.fitEverything()}
       />
       <ToolbarButton
         icon={<span className="workspace-actual-size">1:1</span>}
         text="100%"
-        tooltip="Zoom to 100%"
+        tooltip={`Zoom to 100% (${key('workspaceActualSize')})`}
         onClick={() => workspaceStore.surface?.zoomToActualSize()}
       />
       <ToolbarButton
-        icon={IconSet.PRINT}
-        text="Print"
-        tooltip="Print the selected sheet, or what is selected, or everything, at full resolution"
-        disabled={workspace === undefined || workspace.items.length === 0}
-        onClick={() => {
-          const images = workspace && workspaceStore.imagesOf(workspace);
-          const surface = document.querySelector<HTMLElement>('.workspace');
-          if (workspace !== undefined && images !== undefined && surface !== null) {
-            printWorkspace(workspace, images.sources, surface);
-          }
-        }}
+        icon={IconSet.EXPORT}
+        text="Save as picture"
+        tooltip="Save the selected sheet, or what is selected, or everything as a picture"
+        disabled={isEmpty}
+        onClick={() => setIsSaving(true)}
       />
+      {isSaving && workspace !== undefined && (
+        <SavePictureDialog workspace={workspace} onClose={() => setIsSaving(false)} />
+      )}
       <ToolbarButton
         icon={IconSet.LAYERS}
         text="Layers"

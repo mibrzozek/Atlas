@@ -33,6 +33,21 @@
     cursor: grab;
   }
 
+  // Something of the Library held over it: a thin frame in the accent colour, inside the edges
+  &::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    box-shadow: inset 0 0 0 0.125rem var(--accent-color);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+  }
+
+  &[data-drop-target='true']::after {
+    opacity: 1;
+  }
+
   &[data-panning='true'] {
     cursor: grabbing;
   }
@@ -366,59 +381,152 @@
   }
 }
 
-// The tabs in the top bar
+// The tabs in the top bar: as flat as the buttons beside them. The open one is marked by a short line in
+// the accent colour on the lower edge of the bar, which glides out from the middle.
 
 .workspace-tabs {
   display: flex;
-  // The bar lays out what is in it in a column otherwise
+  // The tab rule of the settings window would make this a framed column
   flex-direction: row;
-  align-items: center;
+  align-self: stretch;
+  align-items: stretch;
   gap: 0.125rem;
   min-width: 0;
-  margin-left: 0.75rem;
+  height: auto;
+  margin-left: 0.5rem;
+  padding: 0 0 0 0.5rem;
+  border: none;
+  background: none;
   overflow: hidden;
+  position: relative;
+
+  // A short line between the buttons on the left and the tabs
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    height: 1.125rem;
+    border-left: 0.0625rem solid var(--border-color);
+    transform: translateY(-50%);
+  }
 }
 
 .workspace-tab {
   display: flex;
   align-items: center;
-  gap: 0.375rem;
-  height: calc(var(--top-bar-height) - 0.5rem);
+  gap: 0.4375rem;
+  width: auto;
   max-width: 12rem;
-  padding: 0 0.5rem;
+  padding: 0 0.625rem;
   border: none;
-  border-radius: 0.375rem;
   background: none;
   color: var(--text-color-muted);
   font: inherit;
   font-size: 0.8125rem;
+  white-space: nowrap;
   cursor: pointer;
   position: relative;
+  transition: color 0.15s ease;
+
+  // The soft background on hover, as high as the buttons, not the whole bar
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0.25rem 0;
+    border-radius: 0.25rem;
+    background: var(--hover-color);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    pointer-events: none;
+  }
+
+  // The mark of the open tab
+  &::after {
+    content: '';
+    position: absolute;
+    left: 0.625rem;
+    right: 0.625rem;
+    bottom: 0;
+    height: 0.125rem;
+    border-radius: 0.125rem 0.125rem 0 0;
+    background: var(--accent-color);
+    transform: scaleX(0);
+    transition: transform 0.2s ease;
+    pointer-events: none;
+  }
+
+  > * {
+    position: relative;
+  }
 
   .custom-icon {
     flex: none;
-    width: 0.875rem;
-    height: 0.875rem;
+    width: 1rem;
+    height: 1rem;
+    margin: 0;
+    transition: color 0.15s ease;
   }
 
   &:hover {
-    background: var(--hover-color);
+    background: none;
     color: var(--text-color);
+
+    &::before {
+      opacity: 1;
+    }
+  }
+
+  &:focus-visible {
+    outline: none;
+
+    &::before {
+      opacity: 1;
+      box-shadow: inset 0 0 0 0.0625rem var(--accent-color);
+    }
   }
 
   &[aria-selected='true'] {
-    background: var(--background-color);
+    background: none;
     color: var(--text-color-strong);
-    box-shadow: inset 0 -0.125rem 0 var(--accent-color);
+
+    > .custom-icon {
+      color: var(--accent-color);
+    }
+
+    &::after {
+      transform: scaleX(1);
+    }
   }
 
   // Where a dragged tab would go
-  &[data-drop='before'] {
-    box-shadow: inset 0.1875rem 0 0 var(--accent-color);
+  &[data-drop='before'],
+  &[data-drop='after'] {
+    &::after {
+      top: 0.375rem;
+      bottom: 0.375rem;
+      left: -0.125rem;
+      right: auto;
+      width: 0.125rem;
+      height: auto;
+      border-radius: 0.125rem;
+      transform: none;
+    }
   }
 
-  &[data-drop='after'] {
-    box-shadow: inset -0.1875rem 0 0 var(--accent-color);
+  &[data-drop='after']::after {
+    left: auto;
+    right: -0.125rem;
+  }
+
+  // Something of the Library held over it, to be added to it
+  &[data-drop='into'] {
+    color: var(--text-color-strong);
+
+    &::before {
+      opacity: 1;
+      box-shadow: inset 0 0 0 0.0625rem var(--accent-color);
+    }
   }
 }
 
@@ -431,21 +539,27 @@
 
 input.workspace-tab-name {
   width: 8rem;
-  padding: 0 0.25rem;
+  height: 1.5rem;
+  padding: 0 0.375rem;
   font: inherit;
 }
 
 .workspace-tab-close {
   flex: none;
-  width: 1rem;
-  height: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  margin-right: -0.25rem;
   padding: 0;
   border: none;
   border-radius: 0.25rem;
   background: none;
   color: inherit;
-  opacity: 0;
+  opacity: 0.6;
   cursor: pointer;
+  transition: opacity 0.15s ease;
 
   .custom-icon {
     width: 0.625rem;
@@ -453,34 +567,32 @@ input.workspace-tab-name {
     margin: 0;
   }
 
-  .workspace-tab:hover &,
-  .workspace-tab[aria-selected='true'] & {
-    opacity: 0.6;
-  }
-
   &:hover {
-    opacity: 1 !important;
+    opacity: 1;
     background: var(--hover-color-alt);
   }
 }
 
 .workspace-tab-add {
   flex: none;
+  align-self: center;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 1.5rem;
-  height: 1.5rem;
+  width: 1.75rem;
+  height: 1.75rem;
+  margin-left: 0.125rem;
   padding: 0;
   border: none;
-  border-radius: 0.375rem;
+  border-radius: 0.25rem;
   background: none;
   color: var(--text-color-muted);
   cursor: pointer;
+  transition: color 0.15s ease, background-color 0.15s ease;
 
   .custom-icon {
-    width: 0.75rem;
-    height: 0.75rem;
+    width: 0.875rem;
+    height: 0.875rem;
     margin: 0;
   }
 
@@ -524,6 +636,27 @@ input.workspace-tab-name {
     flex: none;
     font-size: 0.6875rem;
     color: var(--text-color-muted);
+    font-variant-numeric: tabular-nums;
+  }
+
+  // Another workspace dragged here lands above or below this one
+  .workspace-row {
+    &.top {
+      box-shadow: 0 -2px 0 0 var(--accent-color);
+    }
+
+    &.bottom {
+      box-shadow: 0 2px 0 0 var(--accent-color);
+    }
+  }
+
+  input.label-text {
+    flex: 1;
+    min-width: 0;
+    height: 1.25rem;
+    margin-right: 0.5rem;
+    padding: 0 0.25rem;
+    font: inherit;
   }
 }
 
@@ -591,4 +724,122 @@ input.workspace-tab-name {
   height: 100%;
   border: 1px solid var(--border-color);
   box-sizing: border-box;
+}
+
+// Saving a workspace as a picture: like the folder creator, a small label above every control
+
+#save-picture {
+  --field-height: 2.25rem;
+
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  width: min(28rem, 80vw);
+
+  p {
+    margin: 0;
+    color: var(--text-color-muted);
+  }
+
+  .dialog-actions {
+    margin-top: 0.25rem;
+    padding-bottom: 0.5rem;
+  }
+}
+
+.save-picture-field {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.375rem;
+
+  > span {
+    color: var(--text-color-muted);
+    font-size: 0.8125rem;
+  }
+}
+
+// The name, with the extension of the format inside the same field, after it
+.save-picture-name {
+  display: flex;
+  align-items: center;
+  height: var(--field-height);
+  padding: 0 0.625rem;
+  border: 0.0625rem solid var(--border-color);
+  border-radius: 0.25rem;
+  background: var(--input-color);
+  transition: border-color 0.15s ease;
+
+  &:focus-within {
+    border-color: var(--accent-color);
+  }
+
+  &[data-invalid='true'] {
+    border-color: var(--warning-color, #e0a030);
+  }
+
+  input {
+    flex: 1;
+    min-width: 0;
+    height: 100%;
+    padding: 0;
+    border: none;
+    outline: none;
+    background: none;
+    // The field around it shows the focus, not this ring of every field
+    box-shadow: none;
+    font: inherit;
+  }
+
+  span {
+    flex: none;
+    color: var(--text-color-muted);
+  }
+}
+
+// The two formats as one switch of two halves, each with a line on what it is good for
+.save-picture-formats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+
+  label {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    grid-template-areas: 'radio name' 'radio detail';
+    align-items: center;
+    column-gap: 0.625rem;
+    row-gap: 0.125rem;
+    padding: 0.625rem 0.75rem;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.375rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background-color 0.15s ease;
+
+    &:hover {
+      background: var(--hover-color);
+    }
+
+    &[data-checked='true'] {
+      border-color: var(--accent-color);
+      box-shadow: inset 0 0 0 0.0625rem var(--accent-color);
+    }
+  }
+
+  input[type='radio'] {
+    grid-area: radio;
+    margin: 0;
+  }
+
+  strong {
+    grid-area: name;
+    color: var(--text-color-strong);
+    font-weight: 600;
+  }
+
+  small {
+    grid-area: detail;
+    color: var(--text-color-muted);
+    font-size: 0.75rem;
+  }
 }

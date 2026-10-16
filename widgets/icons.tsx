@@ -106,7 +106,8 @@ import LAYERS from 'resources/icons/layers.svg';
 import TEXT from 'resources/icons/text.svg';
 import ARRANGE from 'resources/icons/arrange.svg';
 import BACKGROUND from 'resources/icons/background.svg';
-import PRINT from 'resources/icons/print.svg';
+import EXPORT from 'resources/icons/export.svg';
+import GRID_DOTS from 'resources/icons/grid-dots.svg';
 import TAG_ADD from 'resources/icons/tag-add.svg';
 // import TAG_ADD_COLLECTION from 'resources/icons/tag-add-collection.svg';
 import TAG_BLANCO from 'resources/icons/tag-blanco.svg';
@@ -213,6 +214,7 @@ const IconSet = {
   SHUFFLE: toSvg(SHUFFLE),
   WORKSPACE: toSvg(WORKSPACE),
   GRID: toSvg(GRID),
+  GRID_DOTS: toSvg(GRID_DOTS),
   FIT: toSvg(FIT),
   LOCK: toSvg(LOCK),
   UNLOCK: toSvg(UNLOCK),
@@ -220,7 +222,7 @@ const IconSet = {
   TEXT: toSvg(TEXT),
   ARRANGE: toSvg(ARRANGE),
   BACKGROUND: toSvg(BACKGROUND),
-  PRINT: toSvg(PRINT),
+  EXPORT: toSvg(EXPORT),
   // SMALL_ARROW_DOWN: toSvg(SMALL_ARROW_DOWN),
   // SMALL_ARROW_RIGHT: toSvg(SMALL_ARROW_RIGHT),
   SORT: toSvg(SORT),
