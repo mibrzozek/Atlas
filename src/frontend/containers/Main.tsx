@@ -44,7 +44,8 @@ const Main = () => {
   }, []);
 
   const handleShortcuts = useAction((e: React.KeyboardEvent) => {
-    if ((e.target as HTMLElement).matches('input')) {
+    // These act on the images selected in the Library, which is not the one in front
+    if ((e.target as HTMLElement).matches('input') || uiStore.activeWorkspace !== undefined) {
       return;
     }
     const combo = getKeyCombo(e.nativeEvent);

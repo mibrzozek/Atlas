@@ -97,6 +97,16 @@ import SETTINGS from 'resources/icons/settings.svg';
 import SORT from 'resources/icons/sort.svg';
 import SORT_ALT from 'resources/icons/sort-alt.svg';
 import SHUFFLE from 'resources/icons/shuffle.svg';
+import WORKSPACE from 'resources/icons/workspace.svg';
+import GRID from 'resources/icons/grid.svg';
+import FIT from 'resources/icons/fit.svg';
+import LOCK from 'resources/icons/lock.svg';
+import UNLOCK from 'resources/icons/unlock.svg';
+import LAYERS from 'resources/icons/layers.svg';
+import TEXT from 'resources/icons/text.svg';
+import ARRANGE from 'resources/icons/arrange.svg';
+import BACKGROUND from 'resources/icons/background.svg';
+import PRINT from 'resources/icons/print.svg';
 import TAG_ADD from 'resources/icons/tag-add.svg';
 // import TAG_ADD_COLLECTION from 'resources/icons/tag-add-collection.svg';
 import TAG_BLANCO from 'resources/icons/tag-blanco.svg';
@@ -201,6 +211,16 @@ const IconSet = {
   SELECT_CHECKED: toSvg(SELECT_CHECKED),
   SETTINGS: toSvg(SETTINGS),
   SHUFFLE: toSvg(SHUFFLE),
+  WORKSPACE: toSvg(WORKSPACE),
+  GRID: toSvg(GRID),
+  FIT: toSvg(FIT),
+  LOCK: toSvg(LOCK),
+  UNLOCK: toSvg(UNLOCK),
+  LAYERS: toSvg(LAYERS),
+  TEXT: toSvg(TEXT),
+  ARRANGE: toSvg(ARRANGE),
+  BACKGROUND: toSvg(BACKGROUND),
+  PRINT: toSvg(PRINT),
   // SMALL_ARROW_DOWN: toSvg(SMALL_ARROW_DOWN),
   // SMALL_ARROW_RIGHT: toSvg(SMALL_ARROW_RIGHT),
   SORT: toSvg(SORT),

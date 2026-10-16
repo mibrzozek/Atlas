@@ -7,6 +7,8 @@ import { useStore } from '../contexts/StoreContext';
 import { SortCommand, ViewCommand } from './AppToolbar/Menus';
 import { CollageCommands, OutlinerToggle, ShuffleCommand } from './AppToolbar/PrimaryCommands';
 import SecondaryCommands from './AppToolbar/SecondaryCommands';
+import WorkspaceTabs from './Workspace/WorkspaceTabs';
+import WorkspaceTools from './Workspace/WorkspaceTools';
 
 /**
  * The bar across the top of the window, above the outliner and the gallery
@@ -43,10 +45,13 @@ const TopBar = observer(() => {
         pressed={uiStore.isTagManagerOpen}
       />
 
+      <WorkspaceTabs />
+
       <div className="spacer" />
 
       {/* While the bar above the gallery is hidden, what changes how the gallery looks moves up here */}
-      {isBarHidden && (
+      {isBarHidden && uiStore.activeWorkspace !== undefined && <WorkspaceTools />}
+      {isBarHidden && uiStore.activeWorkspace === undefined && (
         <>
           <CollageCommands />
           <ShuffleCommand />

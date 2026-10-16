@@ -273,52 +273,84 @@
   }
 }
 
-// PROGRESS OF THE START-UP SCAN
+// WORK IN THE BACKGROUND
 
-// A hairline along the foot of the outliner: how far the scan is, with a light that runs across it.
-// Only transforms and opacity are animated, so it keeps moving while the scan keeps the window busy
-#scan-progress {
+// Something going on in the background (see BackgroundProgress): a few words and a line, at the foot.
+// Only transforms and opacity are animated, so it keeps moving while the work keeps the window busy
+#background-progress {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  height: 2px;
-  overflow: hidden;
+  padding: 0.5rem 0.75rem 0.625rem;
+  background: linear-gradient(to top, var(--background-color-alt) 70%, transparent);
   pointer-events: none;
   opacity: 0;
-  // When done: fill up, then fade away
-  transition: opacity 0.6s ease 0.5s;
+  transform: translateY(0.5rem);
+  // When done: fill up, then glide away
+  transition: opacity 0.6s ease 0.6s, transform 0.6s ease 0.6s;
+
+  &[data-active='true'] {
+    opacity: 1;
+    transform: none;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+  }
+
+  // What it is, and under it how far: the side panel is too narrow for both on one line
+  .background-progress-text {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    margin-bottom: 0.375rem;
+    font-size: 0.6875rem;
+    white-space: nowrap;
+
+    .label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      color: var(--text-color);
+    }
+
+    .detail {
+      color: var(--text-color-muted);
+      font-variant-numeric: tabular-nums;
+    }
+  }
+
+  .track {
+    position: relative;
+    height: 3px;
+    border-radius: 3px;
+    overflow: hidden;
+    background: var(--border-color);
+  }
 
   .fill {
     height: 100%;
+    border-radius: 3px;
     background: var(--accent-color);
-    opacity: 0.4;
     transform-origin: left center;
-    transition: transform 0.5s ease;
+    transition: transform 0.4s ease;
   }
 
-  &::after {
+  // A glint running along it, so that it is clearly at work
+  .track::after {
     content: '';
     position: absolute;
     top: 0;
     bottom: 0;
     left: 0;
     width: 30%;
-    background: linear-gradient(90deg, transparent, var(--accent-color), transparent);
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.45), transparent);
     transform: translateX(-100%);
   }
 
-  &[data-active='true'] {
-    opacity: 1;
-    transition: opacity 0.2s ease;
-
-    &::after {
-      animation: scan-progress-sweep 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
-    }
+  &[data-active='true'] .track::after {
+    animation: background-progress-glint 1.6s cubic-bezier(0.45, 0, 0.55, 1) infinite;
   }
 }
 
-@keyframes scan-progress-sweep {
+@keyframes background-progress-glint {
   from {
     transform: translateX(-100%);
   }

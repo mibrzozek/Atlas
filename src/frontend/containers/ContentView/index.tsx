@@ -15,6 +15,7 @@ import { MoveFilesToTrashBin } from 'src/frontend/components/RemovalAlert';
 import { useAction } from 'src/frontend/hooks/mobx';
 import useIsWindowMaximized from 'src/frontend/hooks/useIsWindowMaximized';
 import { ManyOpenExternal } from 'src/frontend/components/WarningAlert';
+import WorkspaceView from '../Workspace/WorkspaceView';
 
 /** How far the wheel turns for one notch, as browsers report it */
 const WHEEL_NOTCH = 100;
@@ -22,6 +23,7 @@ const WHEEL_NOTCH = 100;
 const ContentView = observer(() => {
   const { uiStore, fileStore } = useStore();
   const { fileList } = fileStore;
+  const workspace = uiStore.activeWorkspace;
 
   return (
     <div
@@ -31,6 +33,8 @@ const ContentView = observer(() => {
       } ${fileStore.isCollageAnimating ? 'collage-animating' : ''}`}
     >
       {fileList.length === 0 ? <Placeholder /> : <Content />}
+      {/* Over the Library, which stays as it is underneath */}
+      {workspace !== undefined && <WorkspaceView key={workspace.id} workspace={workspace} />}
     </div>
   );
 });

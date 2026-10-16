@@ -1,0 +1,594 @@
+// WORKSPACES: endless surfaces on which images and texts are arranged by hand
+
+// The surface and its layers panel lie over the Library, which stays as it was underneath
+.workspace-area {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  // Solid: the Library underneath must not show through, also not while the layers panel slides in
+  background: var(--background-color);
+}
+
+.workspace {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  background: radial-gradient(
+      ellipse at 50% 40%,
+      var(--background-color) 0%,
+      var(--background-color) 55%,
+      var(--background-color-alt) 140%
+    ),
+    var(--background-color);
+  // A drag on empty space draws a selection box; Space held down, or a locked workspace, pans
+  cursor: default;
+  // Two fingers on a touchpad are the camera's, not the page's
+  touch-action: none;
+  outline: none;
+  contain: strict;
+
+  &[data-locked='true'],
+  &[data-space='true'] {
+    cursor: grab;
+  }
+
+  &[data-panning='true'] {
+    cursor: grabbing;
+  }
+}
+
+// Images and texts can be picked up, unless it is locked or Space is held for panning
+.workspace[data-locked='false']:not([data-space='true']) .workspace-object {
+  cursor: move;
+}
+
+// A box drawn with Shift + drag on empty space selects what it touches
+.workspace-marquee {
+  display: none;
+  position: absolute;
+  border: 1px solid var(--accent-color);
+  pointer-events: none;
+
+  // A light wash of the accent colour
+  &::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--accent-color);
+    opacity: 0.12;
+  }
+}
+
+// Where what is dragged lines up with something else: thin bright lines over everything
+.workspace-guides {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.workspace-guide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  background: var(--accent-color);
+  box-shadow: 0 0 0.25rem var(--accent-color);
+  opacity: 0.9;
+
+  &.line.x {
+    width: 1px;
+  }
+
+  &.line.y {
+    height: 1px;
+  }
+
+  // Gaps of the same size: a line across each, with a short bar at both ends
+  &.gap {
+    background: none;
+    box-shadow: none;
+
+    &::before {
+      content: '';
+      position: absolute;
+      background: var(--accent-color);
+    }
+  }
+
+  &.gap.x {
+    height: 9px;
+    margin-top: -4px;
+    border-left: 1px solid var(--accent-color);
+    border-right: 1px solid var(--accent-color);
+    box-sizing: border-box;
+
+    &::before {
+      left: 0;
+      right: 0;
+      top: 4px;
+      height: 1px;
+    }
+  }
+
+  &.gap.y {
+    width: 9px;
+    margin-left: -4px;
+    border-top: 1px solid var(--accent-color);
+    border-bottom: 1px solid var(--accent-color);
+    box-sizing: border-box;
+
+    &::before {
+      top: 0;
+      bottom: 0;
+      left: 4px;
+      width: 1px;
+    }
+  }
+}
+
+// A background: a sheet under the images, with the shadow of paper on a desk
+.workspace-background {
+  box-shadow: 0 0.25rem 1.5rem rgba(0, 0, 0, 0.45);
+}
+
+// The grid, and images too small on screen for an element of their own
+.workspace-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+// Everything on the workspace; moved and scaled as one by the camera
+.workspace-world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  transform-origin: 0 0;
+}
+
+// An image or a text, where it is
+.workspace-object {
+  position: absolute;
+  user-select: none;
+
+  // Selected: a ring of the same width at every zoom (set from WorkspaceObject), outside it
+  &[aria-selected='true'] {
+    outline-style: solid;
+    outline-color: var(--accent-color);
+  }
+}
+
+.workspace-image {
+  overflow: hidden;
+  background: var(--background-color-alt);
+  // Small: a large blur on many images is slow to draw
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  &[aria-selected='true'] {
+    overflow: visible;
+  }
+}
+
+// A text: its frame is measured around its letters (measureText.ts), in the same font
+.workspace-text {
+  white-space: pre;
+  color: var(--text-color);
+}
+
+// The handle in the corner of what is selected, for making it larger or smaller
+.workspace-resize {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  transform: translate(50%, 50%);
+  border-radius: 50%;
+  background: var(--accent-color);
+  box-shadow: 0 0 0 1px var(--background-color);
+  cursor: nwse-resize;
+}
+
+// An image whose file can not be shown: an empty frame with its name
+.workspace-image-name {
+  display: block;
+  padding: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--text-color-muted);
+  overflow-wrap: anywhere;
+}
+
+// The layers panel, on the right of the surface; folds away into its button in the bar above
+
+.workspace-layers {
+  display: flex;
+  flex-direction: column;
+  width: 16rem;
+  flex: none;
+  border-left: 0.0625rem solid var(--border-color);
+  background: var(--background-color-alt);
+  animation: workspace-layers-in 0.2s ease;
+
+  > header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.5rem 0.375rem 0.75rem;
+    border-bottom: 0.0625rem solid var(--border-color);
+
+    .title {
+      font-weight: 600;
+    }
+
+    .count {
+      flex: 1;
+      font-size: 0.6875rem;
+      color: var(--text-color-muted);
+    }
+
+    .btn-icon {
+      display: flex;
+      padding: 0.25rem;
+      border: none;
+      border-radius: 0.25rem;
+      background: none;
+      color: var(--text-color-muted);
+      cursor: pointer;
+
+      &:hover {
+        background: var(--hover-color);
+        color: var(--text-color-strong);
+      }
+    }
+  }
+}
+
+@keyframes workspace-layers-in {
+  from {
+    opacity: 0;
+    transform: translateX(1rem);
+  }
+}
+
+.workspace-layer-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.workspace-layer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0 0.625rem;
+  box-sizing: border-box;
+  cursor: pointer;
+  user-select: none;
+
+  &:hover {
+    background: var(--hover-color);
+  }
+
+  &[aria-selected='true'] {
+    background: var(--background-color-selected);
+    color: var(--text-color-strong);
+  }
+}
+
+.workspace-layer-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  border-radius: 0.1875rem;
+  overflow: hidden;
+  background: var(--background-color);
+
+  img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .custom-icon {
+    width: 0.6875rem;
+    height: 0.6875rem;
+    margin: 0;
+  }
+}
+
+.workspace-layer-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
+// Where the layers that are dragged would go
+.workspace-layer-drop {
+  position: absolute;
+  left: 0.5rem;
+  right: 0.5rem;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent-color);
+  box-shadow: 0 0 0.375rem var(--accent-color);
+  pointer-events: none;
+}
+
+.workspace-layers-note {
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-color-muted);
+}
+
+// The words, size and colour of the selected text
+.workspace-text-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border-top: 0.0625rem solid var(--border-color);
+
+  textarea {
+    resize: vertical;
+    min-height: 3.5rem;
+    font: inherit;
+  }
+
+  label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.8125rem;
+
+    input {
+      width: 4.5rem;
+    }
+  }
+}
+
+// The tabs in the top bar
+
+.workspace-tabs {
+  display: flex;
+  // The bar lays out what is in it in a column otherwise
+  flex-direction: row;
+  align-items: center;
+  gap: 0.125rem;
+  min-width: 0;
+  margin-left: 0.75rem;
+  overflow: hidden;
+}
+
+.workspace-tab {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  height: calc(var(--top-bar-height) - 0.5rem);
+  max-width: 12rem;
+  padding: 0 0.5rem;
+  border: none;
+  border-radius: 0.375rem;
+  background: none;
+  color: var(--text-color-muted);
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+  position: relative;
+
+  .custom-icon {
+    flex: none;
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  &:hover {
+    background: var(--hover-color);
+    color: var(--text-color);
+  }
+
+  &[aria-selected='true'] {
+    background: var(--background-color);
+    color: var(--text-color-strong);
+    box-shadow: inset 0 -0.125rem 0 var(--accent-color);
+  }
+
+  // Where a dragged tab would go
+  &[data-drop='before'] {
+    box-shadow: inset 0.1875rem 0 0 var(--accent-color);
+  }
+
+  &[data-drop='after'] {
+    box-shadow: inset -0.1875rem 0 0 var(--accent-color);
+  }
+}
+
+.workspace-tab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+input.workspace-tab-name {
+  width: 8rem;
+  padding: 0 0.25rem;
+  font: inherit;
+}
+
+.workspace-tab-close {
+  flex: none;
+  width: 1rem;
+  height: 1rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.25rem;
+  background: none;
+  color: inherit;
+  opacity: 0;
+  cursor: pointer;
+
+  .custom-icon {
+    width: 0.625rem;
+    height: 0.625rem;
+    margin: 0;
+  }
+
+  .workspace-tab:hover &,
+  .workspace-tab[aria-selected='true'] & {
+    opacity: 0.6;
+  }
+
+  &:hover {
+    opacity: 1 !important;
+    background: var(--hover-color-alt);
+  }
+}
+
+.workspace-tab-add {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.375rem;
+  background: none;
+  color: var(--text-color-muted);
+  cursor: pointer;
+
+  .custom-icon {
+    width: 0.75rem;
+    height: 0.75rem;
+    margin: 0;
+  }
+
+  &:hover {
+    background: var(--hover-color);
+    color: var(--text-color-strong);
+  }
+}
+
+// "1:1" in place of an icon on the 100% button
+.workspace-actual-size {
+  font-size: 0.6875rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+// The panel in the outliner
+
+#workspace-list {
+  [role='treeitem'] > .tree-content-label {
+    padding-left: calc(var(--treeitem-offset) - 0.25rem);
+    padding-right: 0.5rem;
+    box-sizing: border-box;
+    width: auto;
+
+    &:hover {
+      background-color: var(--hover-color);
+      color: var(--text-color-strong);
+    }
+  }
+
+  [role='treeitem'].searched > .tree-content-label {
+    color: var(--accent-color);
+
+    .label-text {
+      font-weight: bold;
+    }
+  }
+
+  .collection-count {
+    flex: none;
+    font-size: 0.6875rem;
+    color: var(--text-color-muted);
+  }
+}
+
+// While the images of a workspace are being prepared
+
+.workspace-spinner {
+  flex: none;
+  width: 1.75rem;
+  height: 1.75rem;
+  border-radius: 50%;
+  border: 0.1875rem solid var(--border-color);
+  border-top-color: var(--accent-color);
+  animation: workspace-spin 0.9s linear infinite;
+
+  // In a tab, in place of its icon
+  &.small {
+    width: 0.75rem;
+    height: 0.75rem;
+    border-width: 0.125rem;
+  }
+}
+
+@keyframes workspace-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+// In the middle of the surface; fades in only after a moment, so a workspace that is ready at once never
+// shows it, and fades out when the images are there
+.workspace-preparing {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1.25rem;
+  border-radius: 0.75rem;
+  background: var(--background-color-alt);
+  box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.4);
+  color: var(--text-color);
+  font-size: 0.8125rem;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.96);
+  transition: opacity 0.4s ease, transform 0.4s ease;
+
+  &[data-active='true'] {
+    opacity: 1;
+    transform: translate(-50%, -50%);
+    transition: opacity 0.3s ease 0.4s, transform 0.3s ease 0.4s;
+  }
+}
+
+.workspace-paper {
+  width: 100%;
+  height: 100%;
+}
+
+// The colour of a background, in its row of the layers panel
+.workspace-layer-swatch {
+  width: 100%;
+  height: 100%;
+  border: 1px solid var(--border-color);
+  box-sizing: border-box;
+}
