@@ -90,9 +90,7 @@ interface IRecoveryInfoProps {
 const RecoveryInfo = observer(({ location, status, match }: IRecoveryInfoProps) => {
   switch (status) {
     case Status.Ok:
-      return (
-        <p>The source has been recovered, all files were found in the specified directory!</p>
-      );
+      return <p>The source has been recovered, all files were found in the specified directory!</p>;
 
     case Status.InvalidPath:
       return (

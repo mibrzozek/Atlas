@@ -297,3 +297,16 @@ export class ClientDateSearchCriteria extends ClientFileSearchCriteria {
     this.value = date;
   }
 }
+
+/** The folders opened in the Sources panel are searched as "path starts with" */
+export const isFolderCriteria = (crit: unknown): crit is ClientStringSearchCriteria =>
+  crit instanceof ClientStringSearchCriteria &&
+  crit.key === 'absolutePath' &&
+  crit.operator === 'startsWith';
+
+/** "Has at least one tag" */
+export const isTaggedCriteria = (crit: unknown): crit is ClientTagSearchCriteria =>
+  crit instanceof ClientTagSearchCriteria && !crit.value && crit.operator === 'notContains';
+
+export const taggedCriteria = (): ClientTagSearchCriteria =>
+  new ClientTagSearchCriteria('tags', undefined, 'notContains');

@@ -31,6 +31,9 @@ export const TooltipLayer = ({ document }: { document: Document }) => {
     ],
   });
   const [isOpen, setIsOpen] = useState(false);
+  const tooltipElement = useRef<HTMLDivElement | null>(null);
+  /** Where the tooltip is in the page while it is not inside a dialog */
+  const home = useRef<HTMLElement | null>(null);
   const content = useRef<string>('');
   const timerID = useRef<number>();
 
@@ -47,12 +50,38 @@ export const TooltipLayer = ({ document }: { document: Document }) => {
   useEffect(() => {
     reference(virtualElement.current);
 
+    // The text of a tooltip can change while it is shown: a button that was just clicked says something else
+    const observer = new MutationObserver(() => {
+      const text = (virtualElement.current.contextElement as HTMLElement | null)?.dataset[
+        'tooltip'
+      ];
+      if (!text) {
+        setIsOpen(false);
+      } else if (text !== content.current) {
+        content.current = text;
+        setTextVersion((version) => version + 1);
+      }
+    });
+
     const handleShow = (e: MouseEvent | FocusEvent): HTMLElement | undefined => {
-      const target = e.target as any;
-      if (target === null || !('dataset' in target) || !(target.dataset as any)['tooltip']) {
+      // The pointer is usually over something inside the element with the tooltip: the icon of a button
+      const origin = e.target as { closest?: (selector: string) => HTMLElement | null } | null;
+      const target =
+        typeof origin?.closest === 'function' ? origin.closest('[data-tooltip]') : null;
+      if (target === null || !target.dataset['tooltip']) {
         return;
       }
       content.current = target.dataset['tooltip'];
+      // An open dialog is drawn over everything else on the page, whatever its z-index:
+      // a tooltip for something in it has to be inside it to be seen
+      const tooltip = tooltipElement.current;
+      if (tooltip !== null) {
+        home.current ??= tooltip.parentElement;
+        const host = target.closest<HTMLElement>('dialog[open]') ?? home.current;
+        if (host !== null && tooltip.parentElement !== host) {
+          host.appendChild(tooltip);
+        }
+      }
       if (virtualElement.current.contextElement !== target) {
         window.clearTimeout(timerID.current);
         timerID.current = window.setTimeout(() => {
@@ -65,6 +94,9 @@ export const TooltipLayer = ({ document }: { document: Document }) => {
       const boundingRect = target.getBoundingClientRect();
       virtualElement.current.getBoundingClientRect = () => boundingRect;
       virtualElement.current.contextElement = target;
+      // Only the element the tooltip belongs to is watched
+      observer.disconnect();
+      observer.observe(target, { attributes: true, attributeFilter: ['data-tooltip'] });
     };
 
     const handleHide = (e: MouseEvent | FocusEvent) => {
@@ -73,6 +105,7 @@ export const TooltipLayer = ({ document }: { document: Document }) => {
       }
       setIsOpen(false);
       virtualElement.current.contextElement = null;
+      observer.disconnect();
       window.clearTimeout(timerID.current);
       timerID.current = undefined;
     };
@@ -84,26 +117,16 @@ export const TooltipLayer = ({ document }: { document: Document }) => {
       }
     };
 
-    // The text of a tooltip can change while it is shown: a button that was just clicked says something else
-    const observer = new MutationObserver((mutations) => {
-      const target = virtualElement.current.contextElement as HTMLElement | null;
-      if (target === null || !mutations.some((mutation) => mutation.target === target)) {
-        return;
-      }
-      const text = target.dataset['tooltip'];
-      if (!text) {
-        setIsOpen(false);
-      } else if (text !== content.current) {
-        content.current = text;
-        setTextVersion((version) => version + 1);
-      }
-    });
-    observer.observe(document.body, {
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['data-tooltip'],
-    });
+    // A tooltip that stays behind while its element is dragged away is in the way
+    const handleDragStart = () => {
+      setIsOpen(false);
+      virtualElement.current.contextElement = null;
+      observer.disconnect();
+      window.clearTimeout(timerID.current);
+      timerID.current = undefined;
+    };
 
+    document.addEventListener('dragstart', handleDragStart, true);
     document.addEventListener('mouseover', handleShow, true);
     document.addEventListener('mouseout', handleHide, true);
     document.addEventListener('focus', handleShow, true);
@@ -112,6 +135,7 @@ export const TooltipLayer = ({ document }: { document: Document }) => {
 
     return () => {
       observer.disconnect();
+      document.removeEventListener('dragstart', handleDragStart, true);
       document.removeEventListener('mouseover', handleShow, true);
       document.removeEventListener('mouseout', handleHide, true);
       document.removeEventListener('focus', handleShow, true);
@@ -122,7 +146,10 @@ export const TooltipLayer = ({ document }: { document: Document }) => {
 
   return (
     <div
-      ref={floating}
+      ref={(element) => {
+        tooltipElement.current = element;
+        floating(element);
+      }}
       style={{
         position: strategy,
         top: 0,

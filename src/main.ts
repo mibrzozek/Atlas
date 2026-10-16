@@ -755,15 +755,19 @@ MainMessenger.onGetScreensaverDisplays(() => {
 });
 
 // For the screensaver: it starts when the whole system is idle while this window is the one in front
-MainMessenger.onGetIdleState(() => ({
-  systemIdleSeconds: powerMonitor.getSystemIdleTime(),
-  isWindowActive:
+MainMessenger.onGetIdleState(() => {
+  const isWindowOpen =
     mainWindow !== null &&
     !mainWindow.isDestroyed() &&
     mainWindow.isVisible() &&
-    !mainWindow.isMinimized() &&
-    mainWindow.isFocused(),
-}));
+    !mainWindow.isMinimized();
+  return {
+    systemIdleSeconds: powerMonitor.getSystemIdleTime(),
+    isWindowOpen,
+    isWindowInFront: isWindowOpen && mainWindow !== null && mainWindow.isFocused(),
+    isLocked: powerMonitor.getSystemIdleState(1) === 'locked',
+  };
+});
 
 MainMessenger.onSetFullScreen((isFullScreen) => mainWindow?.setFullScreen(isFullScreen));
 

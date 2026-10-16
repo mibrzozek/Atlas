@@ -20,7 +20,16 @@ const Tag = (props: TagProps) => {
   const { text, color, className, onClick, onRemove, tooltip } = props;
 
   const style = useMemo(
-    () => (color ? { backgroundColor: color, color: getColorFromBackground(color) } : undefined),
+    () =>
+      color
+        ? {
+            backgroundColor: color,
+            // A color of the theme is a name, not a value to work the contrast out from
+            color: color.startsWith('var(')
+              ? 'var(--text-color-alt)'
+              : getColorFromBackground(color),
+          }
+        : undefined,
     [color],
   );
 

@@ -16,6 +16,9 @@ import { useAction } from 'src/frontend/hooks/mobx';
 import useIsWindowMaximized from 'src/frontend/hooks/useIsWindowMaximized';
 import { ManyOpenExternal } from 'src/frontend/components/WarningAlert';
 
+/** How far the wheel turns for one notch, as browsers report it */
+const WHEEL_NOTCH = 100;
+
 const ContentView = observer(() => {
   const { uiStore, fileStore } = useStore();
   const { fileList } = fileStore;
@@ -66,6 +69,34 @@ const Content = observer(() => {
       setContentRect({ width, height });
     }),
   );
+
+  // Ctrl + mouse wheel makes the thumbnails larger or smaller, instead of zooming the whole window.
+  // Not through React: its wheel listeners cannot stop the browser's own zoom
+  useEffect(() => {
+    const element = container.current;
+    if (element === null) {
+      return;
+    }
+    // A touchpad sends many small amounts: they add up to a notch, until the wheel turns the other way
+    let pending = 0;
+    const handleWheel = (event: WheelEvent) => {
+      if (!(event.ctrlKey || event.metaKey) || uiStore.isSlideMode) {
+        return;
+      }
+      event.preventDefault();
+      if (Math.sign(pending) === Math.sign(event.deltaY)) {
+        pending = 0;
+      }
+      pending -= event.deltaY;
+      const notches = Math.trunc(pending / WHEEL_NOTCH);
+      if (notches !== 0) {
+        pending -= notches * WHEEL_NOTCH;
+        uiStore.growThumbnails(notches);
+      }
+    };
+    element.addEventListener('wheel', handleWheel, { passive: false });
+    return () => element.removeEventListener('wheel', handleWheel);
+  }, [uiStore]);
 
   useEffect(() => {
     const observer = resizeObserver.current;

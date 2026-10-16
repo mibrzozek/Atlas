@@ -187,21 +187,17 @@
   border: 2px solid transparent;
   margin-left: -2px;
 
+  // Something is being dragged onto this item (files onto a folder, a tag onto a collection)
   &[data-dnd-target='true'] {
     color: var(--accent-color);
-    border: 2px solid transparent;
+  }
 
-    &.center {
-      border: 2px solid var(--accent-color);
-    }
-
-    &.top {
-      border-top: 2px solid var(--accent-color);
-    }
-
-    &.bottom {
-      border-bottom: 2px solid var(--accent-color);
-    }
+  // What is being dragged would go inside this item: the whole item lights up, and stays lit.
+  // Above or below it is shown by a line between the items instead (.dnd-insertion-line)
+  &[data-dnd-target='true'].center {
+    color: var(--text-color-strong);
+    background: var(--background-color-selected);
+    border-radius: 0.25rem;
   }
 
   &[data-dnd-source='true'] {
@@ -342,4 +338,50 @@
   color: var(--accent-color-red);
   font-size: 0.75rem;
   margin-top: 0.25rem;
+}
+
+// DRAGGING ITEMS OF A LIST
+
+// Where the item that is being dragged would land: one line that glides from gap to gap
+.dnd-insertion-line {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 10;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent-color);
+  box-shadow: 0 0 0.375rem 0 var(--accent-color);
+  pointer-events: none;
+  opacity: 0;
+  transition: transform 0.09s ease-out, opacity 0.08s linear;
+
+  &[data-shown='true'] {
+    opacity: 1;
+  }
+
+  // A knob at its start, like the insertion mark of a file manager
+  &::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: -3px;
+    width: 8px;
+    height: 8px;
+    box-sizing: border-box;
+    border: 2px solid var(--accent-color);
+    border-radius: 50%;
+    background: var(--background-color-alt);
+  }
+}
+
+// A collection that is dragged in the side panel lands above or below another one
+#collection-list .collection-label {
+  &.top {
+    box-shadow: 0 -2px 0 0 var(--accent-color);
+  }
+
+  &.bottom {
+    box-shadow: 0 2px 0 0 var(--accent-color);
+  }
 }

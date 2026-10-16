@@ -4,12 +4,18 @@ export interface ScreensaverSettings {
   idleMinutes: number;
   /** How long every image is shown */
   secondsPerImage: number;
+  /**
+   * Whether it only starts while Atlas is the window being used. Off by default: it then starts whenever
+   * Atlas is open, whichever application was used last.
+   */
+  onlyWhenInFront: boolean;
 }
 
 export const DEFAULT_SCREENSAVER_SETTINGS: ScreensaverSettings = {
   isEnabled: true,
   idleMinutes: 5,
   secondsPerImage: 8,
+  onlyWhenInFront: false,
 };
 
 export const SCREENSAVER_LIMITS = {
@@ -38,9 +44,16 @@ export function clampSecondsPerImage(value: unknown): number {
 export interface IdleState {
   /** How long there has been no mouse or keyboard input in any application */
   systemIdleSeconds: number;
-  /** Whether the main window is the one in use: visible, not minimized and focused */
-  isWindowActive: boolean;
+  /** Whether the main window is open: visible and not minimized (to the taskbar or the tray) */
+  isWindowOpen: boolean;
+  /** Whether the main window is the one in use: open, and the one with the focus */
+  isWindowInFront: boolean;
+  /** Whether the computer is locked: nothing is to be shown on the lock screen */
+  isLocked: boolean;
 }
+
+/** After this little time without input, the computer is being used: the screensaver ends */
+export const SCREENSAVER_WAKE_IDLE_SECONDS = 2;
 
 /** A monitor the screensaver can cover */
 export interface ScreensaverDisplay {
@@ -59,8 +72,10 @@ export interface ScreensaverDisplay {
 export const SCREENSAVER_WINDOW_PREFIX = 'screensaver-';
 
 /**
- * The screensaver only takes over the screen when Atlas is the application in front,
- * so it does not cover a video or anything else that is running in another window.
+ * The screensaver starts when the computer has not been used for long enough while Atlas is open.
+ * It used to require Atlas to be the window in front, so as not to cover a video playing in another
+ * application; but then it did not start whenever something else had been clicked last, which is most
+ * of the time. That is now a setting (`onlyWhenInFront`).
  */
 export function shouldStartScreensaver(
   settings: ScreensaverSettings,
@@ -70,7 +85,9 @@ export function shouldStartScreensaver(
   return (
     settings.isEnabled &&
     !isAlreadyRunning &&
-    idle.isWindowActive &&
+    !idle.isLocked &&
+    idle.isWindowOpen &&
+    (idle.isWindowInFront || !settings.onlyWhenInFront) &&
     idle.systemIdleSeconds >= settings.idleMinutes * 60
   );
 }
@@ -278,6 +295,7 @@ export function estimateWallCount(
 /**
  * Decides what every screen shows, for the number of images there is to show.
  * Plenty of images: the usual wall. Fewer: walls with fewer, larger rows. Only several: a showcase.
+ * @param singleImage Always one large image per screen, whatever the number of images
  */
 export function planScreens(
   screens: readonly { width: number; height: number }[],
@@ -285,7 +303,11 @@ export function planScreens(
   meanAspectRatio: number,
   orientation: LaneOrientation,
   gap: number,
+  singleImage = false,
 ): ScreenPlan[] {
+  if (singleImage) {
+    return screens.map(() => ({ mode: 'showcase', groupSize: 1 }));
+  }
   const minLanes = orientation === 'rows' ? 2 : 3;
   const usual = screens.map((screen) => getLaneCount(orientation, screen.width));
   for (let fewer = 0; fewer <= Math.max(0, ...usual) - minLanes; fewer++) {

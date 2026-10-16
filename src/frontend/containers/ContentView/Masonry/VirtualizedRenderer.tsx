@@ -134,10 +134,6 @@ const VirtualizedRenderer = observer(
     // When layout updates, scroll to firstImage (e.g. resize or thumbnail size changed)
     // This also sets the initial scroll position on initial render, for when coming from another view mode
     useLayoutEffect(() => {
-      // Not after moving images by hand in collage mode: everything else stays exactly where it is
-      if (performance.now() - fileStore.lastCollageReorder < 1500) {
-        return;
-      }
       runInAction(() => {
         scrollToIndex(uiStore.firstItem, 'start'); // keep the first item in view aligned at the start
       });
@@ -151,7 +147,7 @@ const VirtualizedRenderer = observer(
     const [lingeringFiles, setLingeringFiles] = useState<ClientFile[]>([]);
     const lingerTimeout = useRef<number>();
     useLayoutEffect(() => {
-      if (performance.now() - fileStore.lastCollageToggle > COLLAGE_ANIMATION_DURATION * 2) {
+      if (!fileStore.isCollageAnimating) {
         return;
       }
       // The layout is updated more than once after a switch: what was on screen before the first update

@@ -1,5 +1,6 @@
 import {
   DEFAULT_SCREENSAVER_SETTINGS,
+  IdleState,
   ImagePool,
   MAX_TILE_TRIM,
   WALL_SPARE_FACTOR,
@@ -19,9 +20,12 @@ import {
 
 describe('shouldStartScreensaver', () => {
   const settings = { ...DEFAULT_SCREENSAVER_SETTINGS, idleMinutes: 5 };
-  const idleFor = (minutes: number, isWindowActive = true) => ({
+  const idleFor = (minutes: number, state: Partial<IdleState> = {}) => ({
     systemIdleSeconds: minutes * 60,
-    isWindowActive,
+    isWindowOpen: true,
+    isWindowInFront: true,
+    isLocked: false,
+    ...state,
   });
 
   it('starts once the system has been idle for the configured time', () => {
@@ -36,8 +40,24 @@ describe('shouldStartScreensaver', () => {
     );
   });
 
-  it('does not start when another application is in front', () => {
-    expect(shouldStartScreensaver(settings, idleFor(60, false), false)).toBe(false);
+  it('starts when another application was used last, as long as Atlas is open', () => {
+    expect(shouldStartScreensaver(settings, idleFor(60, { isWindowInFront: false }), false)).toBe(
+      true,
+    );
+  });
+
+  it('only starts in front of Atlas itself when that is asked for', () => {
+    const onlyInFront = { ...settings, onlyWhenInFront: true };
+    expect(
+      shouldStartScreensaver(onlyInFront, idleFor(60, { isWindowInFront: false }), false),
+    ).toBe(false);
+    expect(shouldStartScreensaver(onlyInFront, idleFor(60), false)).toBe(true);
+  });
+
+  it('does not start while Atlas is minimized or hidden, or the computer is locked', () => {
+    const closed = idleFor(60, { isWindowOpen: false, isWindowInFront: false });
+    expect(shouldStartScreensaver(settings, closed, false)).toBe(false);
+    expect(shouldStartScreensaver(settings, idleFor(60, { isLocked: true }), false)).toBe(false);
   });
 
   it('does not start again while it is running', () => {
@@ -388,6 +408,18 @@ describe('planScreens', () => {
         }
       }
     }
+  });
+
+  it('shows one image per screen when asked to, however many images there are', () => {
+    for (const images of [1, 5, 40, 5000]) {
+      expect(planScreens([hd, hd], images, 1.2, 'rows', 8, true)).toEqual([
+        { mode: 'showcase', groupSize: 1 },
+        { mode: 'showcase', groupSize: 1 },
+      ]);
+    }
+    expect(planScreens([hd], 5000, 1.2, 'columns', 8, true)).toEqual([
+      { mode: 'showcase', groupSize: 1 },
+    ]);
   });
 
   it('shows several images as a showcase, and shares them between the screens', () => {

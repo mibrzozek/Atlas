@@ -14,12 +14,21 @@ export interface CollectionData {
   index: number;
 }
 
-/** A row of the saved-searches table, as far as collections are concerned */
+/** How a collection is written to the saved-searches table: a search for any of its tags, with a mark */
 export interface CollectionRow {
   id: string;
   name: string;
-  criteria: { key: string; valueType: string; operator: string; value: unknown }[];
-  matchAny?: boolean;
+  criteria: { key: 'tags'; valueType: 'array'; operator: 'contains'; value: string[] }[];
+  matchAny: true;
+  index: number;
+  isCollection: true;
+}
+
+/** Any row of that table, as far as reading a collection from it is concerned */
+export interface SavedSearchRow {
+  id: string;
+  name: string;
+  criteria: readonly { key: string; value?: unknown }[];
   index: number;
   isCollection?: boolean;
 }
@@ -42,7 +51,7 @@ export function collectionToRow({ id, name, tagIds, index }: CollectionData): Co
 }
 
 /** Returns nothing for a row that is an ordinary saved search */
-export function collectionFromRow(row: CollectionRow): CollectionData | undefined {
+export function collectionFromRow(row: SavedSearchRow): CollectionData | undefined {
   if (row.isCollection !== true) {
     return undefined;
   }

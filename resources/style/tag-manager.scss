@@ -353,4 +353,161 @@ dialog:has(#tag-manager) {
   .tag-manager-row .tag-manager-add-selection:not(:disabled) {
     color: var(--accent-color);
   }
+
+  // Collections: small chips with a name and a plus, one under the other. A click opens one up
+  .tag-manager-collections {
+    padding: 0.5em;
+    display: flex;
+    flex-direction: column;
+    gap: 0.25em;
+  }
+
+  .tag-manager-collection {
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.875rem;
+    background: var(--background-color);
+    // Where a collection that is being dragged would land
+    &[data-drop-target='top'] {
+      box-shadow: 0 -0.1875rem 0 0 var(--accent-color);
+    }
+    &[data-drop-target='bottom'] {
+      box-shadow: 0 0.1875rem 0 0 var(--accent-color);
+    }
+    // Tags that are being dragged would be added to it
+    &[data-drop-target='tags'] {
+      outline: 0.125rem solid var(--accent-color);
+      outline-offset: -0.125rem;
+    }
+    &[data-expanded='true'] {
+      border-radius: 0.5rem;
+    }
+  }
+
+  .tag-manager-collection-chip {
+    display: flex;
+    align-items: center;
+    gap: 0.25em;
+    min-height: 1.75rem;
+    padding: 0 0.25em 0 0.75em;
+    cursor: pointer;
+
+    &:hover .tag-manager-collection-name {
+      color: var(--text-color-strong);
+    }
+
+    .btn-icon {
+      flex: none;
+      color: var(--text-color-muted);
+
+      &:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+    }
+
+    .tag-manager-name {
+      height: 1.5em;
+    }
+  }
+
+  .tag-manager-collection-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: bold;
+  }
+
+  .tag-manager-collection-body {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5em;
+    padding: 0.25em 0.25em 0.5em 0.75em;
+    border-top: 0.0625rem solid var(--border-color);
+
+    .tag-manager-chips {
+      flex: 1;
+      min-width: 0;
+      padding-inline-start: 0;
+    }
+  }
+
+  .tag-manager-collection-actions {
+    display: flex;
+    flex: none;
+
+    .btn-icon {
+      color: var(--text-color-muted);
+
+      &:hover {
+        color: var(--text-color-strong);
+      }
+    }
+  }
+}
+
+// The colors a tag can get: none, three of the theme, the ones that were kept, and any other
+.tag-color-picker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.3125rem;
+}
+
+.tag-color-swatch,
+.tag-color-custom {
+  flex: none;
+  appearance: none;
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  border: 0.0625rem solid var(--border-color);
+  border-radius: 50%;
+  cursor: pointer;
+
+  &:hover {
+    transform: scale(1.15);
+  }
+}
+
+.tag-color-swatch[aria-pressed='true'] {
+  outline: 0.125rem solid var(--text-color-strong);
+  outline-offset: 0.0625rem;
+}
+
+// No color: an empty ring with a line through it
+.tag-color-none {
+  background: linear-gradient(
+    to top right,
+    transparent calc(50% - 1px),
+    var(--text-color-muted) calc(50% - 1px),
+    var(--text-color-muted) calc(50% + 1px),
+    transparent calc(50% + 1px)
+  );
+}
+
+.tag-color-divider {
+  width: 0.0625rem;
+  height: 1rem;
+  background: var(--border-color);
+}
+
+// Any other color: opens the color picker of the system
+.tag-color-custom {
+  background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red);
+
+  &::-webkit-color-swatch-wrapper {
+    padding: 0;
+  }
+
+  &::-webkit-color-swatch {
+    border: none;
+    border-radius: 50%;
+    opacity: 0;
+  }
+}
+
+.tag-color-save {
+  color: var(--text-color-muted);
 }

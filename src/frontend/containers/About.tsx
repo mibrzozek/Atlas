@@ -7,6 +7,8 @@ import Logo_About from 'resources/logo/atlas/atlas-about-dark.jpg';
 import { RendererMessenger } from 'src/ipc/renderer';
 import ExternalLink from '../components/ExternalLink';
 
+const ATLAS_REPOSITORY = 'https://github.com/mibrzozek/Atlas';
+
 const About = observer(() => {
   const { uiStore } = useStore();
 
@@ -21,28 +23,27 @@ const About = observer(() => {
           Version <strong>{RendererMessenger.getVersion()}</strong>
         </small>
         <p>
-          Atlas is a fork of <b>Allusion</b>, which was made by a small team of individuals who
-          gathered due to common interest in art, design and software.
-          <br />
-          It&apos;s completely <b>free and open source</b> (GPL-3.0)! Find out more about the
-          original project at
+          Atlas is a place to browse, tag and arrange your photographs, digital and film. It only
+          reads your image folders: tags, collections and the order you put things in are kept by
+          Atlas, and your files are never changed.
+        </p>
+        <p>
+          It is <b>free and open source</b> (GPL-3.0). The source code, and the place to report a
+          problem, is
+        </p>
+        <ExternalLink url={ATLAS_REPOSITORY}>github.com/mibrzozek/Atlas</ExternalLink>
+        <p>
+          Atlas began as, and is a fork of, <b>Allusion</b>: the visual library manager made by a
+          small team who gathered around a common interest in art, design and software. Everything
+          here is built on their work.
         </p>
         <span>
-          <ExternalLink url="https://allusion-app.github.io/">allusion-app.github.io</ExternalLink>.
+          <ExternalLink url="https://allusion-app.github.io/">allusion-app.github.io</ExternalLink>
+          {' · '}
+          <ExternalLink url="https://github.com/allusion-app/Allusion">
+            github.com/allusion-app/Allusion
+          </ExternalLink>
         </span>
-        <ul>
-          <li>General information</li>
-          <li>Download the latest version</li>
-        </ul>
-        <ExternalLink url="https://github.com/allusion-app/Allusion">
-          github.com/allusion-app/Allusion
-        </ExternalLink>
-        <ul>
-          <li>🤓 View the source code</li>
-          <li>🐛 Provide feedback and report bugs</li>
-          <li>👥 Learn about contributing</li>
-        </ul>
-        {/* TODO: Licensing info here? */}
       </div>
     </PopupWindow>
   );

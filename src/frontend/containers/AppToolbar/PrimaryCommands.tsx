@@ -125,7 +125,8 @@ export const SlideModeCommand = observer(() => {
         tooltip="Back to content panel"
       />
 
-      <div className="spacer" />
+      {/* Searching from here goes back to the gallery, with what was found */}
+      <Searchbar />
 
       <FileTagEditor />
 

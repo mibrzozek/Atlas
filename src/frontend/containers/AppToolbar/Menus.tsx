@@ -5,7 +5,7 @@ import { OrderBy, OrderDirection } from 'src/api/data-storage-search';
 import { FileDTO } from 'src/api/file';
 import { IconSet, KeyCombo } from 'widgets';
 import { MenuButton, MenuRadioGroup, MenuRadioItem } from 'widgets/menus';
-import { getThumbnailSize } from '../ContentView/utils';
+import { MAX_THUMBNAIL_SIZE, MIN_THUMBNAIL_SIZE, getThumbnailSize } from '../ContentView/utils';
 import { MenuDivider, MenuSliderItem } from 'widgets/menus/menu-items';
 import { useStore } from 'src/frontend/contexts/StoreContext';
 
@@ -141,8 +141,8 @@ export const ThumbnailSizeSliderMenuItem = observer(() => {
       onChange={uiStore.setThumbnailSize}
       id="thumbnail-sizes"
       options={thumbnailSizeOptions}
-      min={thumbnailSizeOptions[0].value}
-      max={thumbnailSizeOptions[thumbnailSizeOptions.length - 1].value}
+      min={MIN_THUMBNAIL_SIZE}
+      max={MAX_THUMBNAIL_SIZE}
       step={20}
     />
   );

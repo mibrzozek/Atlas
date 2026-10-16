@@ -2,7 +2,12 @@ import { runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import { useEffect } from 'react';
 
-import { LaneOrientation, shouldStartScreensaver, withoutDuplicates } from 'common/screensaver';
+import {
+  LaneOrientation,
+  SCREENSAVER_WAKE_IDLE_SECONDS,
+  shouldStartScreensaver,
+  withoutDuplicates,
+} from 'common/screensaver';
 import { RendererMessenger } from '../../ipc/renderer';
 import { AppToaster } from '../components/Toaster';
 import { useStore } from '../contexts/StoreContext';
@@ -115,13 +120,17 @@ const Screensaver = observer(() => {
         wake();
         return;
       }
-      const { isScreensaverOnAllMonitors, method, screensaverSecondsPerImage } = runInAction(
-        () => ({
-          isScreensaverOnAllMonitors: uiStore.isScreensaverOnAllMonitors,
-          method: uiStore.method,
-          screensaverSecondsPerImage: uiStore.screensaverSecondsPerImage,
-        }),
-      );
+      const {
+        isScreensaverOnAllMonitors,
+        isScreensaverSingleImage,
+        method,
+        screensaverSecondsPerImage,
+      } = runInAction(() => ({
+        isScreensaverOnAllMonitors: uiStore.isScreensaverOnAllMonitors,
+        isScreensaverSingleImage: uiStore.isScreensaverSingleImage,
+        method: uiStore.method,
+        screensaverSecondsPerImage: uiStore.screensaverSecondsPerImage,
+      }));
       const opened = await openScreens(isScreensaverOnAllMonitors);
       if (!isRunning) {
         closeScreens(opened);
@@ -135,12 +144,30 @@ const Screensaver = observer(() => {
       listen(window, true);
       surfaces.forEach((surface) => listen(surface.win, false));
 
+      // The keyboard may belong to another application: Atlas does not have to be the window in front
+      // for the screensaver to start, and its own windows never take the focus. So the system is asked
+      // whether anything was used. With a timer of a screensaver window: those of the covered main
+      // window run once a second at best
+      const startedAt = performance.now();
+      const timerWindow = surfaces[0].win;
+      const inputCheck = timerWindow.setInterval(async () => {
+        const { systemIdleSeconds } = await RendererMessenger.getIdleState();
+        if (
+          performance.now() - startedAt > WAKE_GRACE_PERIOD &&
+          systemIdleSeconds < SCREENSAVER_WAKE_IDLE_SECONDS
+        ) {
+          wake();
+        }
+      }, 500);
+      stopListening.push(() => timerWindow.clearInterval(inputCheck));
+
       // Like the layout of the gallery: columns for the vertical masonry view, rows for the others
       const orientation: LaneOrientation =
         method === ViewMethod.MasonryVertical ? 'columns' : 'rows';
       director = new ScreensaverDirector(surfaces, images, {
         orientation,
         secondsPerStep: screensaverSecondsPerImage,
+        singleImage: isScreensaverSingleImage,
       });
       // For looking at it from the developer tools and from tests
       (window as any).__atlasScreensaver = { director, surfaces };

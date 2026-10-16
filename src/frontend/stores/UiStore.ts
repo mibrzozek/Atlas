@@ -21,9 +21,17 @@ import { AppToaster } from '../components/Toaster';
 import { ClientFile } from '../entities/File';
 import { ClientFileSearchCriteria, ClientTagSearchCriteria } from '../entities/SearchCriteria';
 import { ClientTag } from '../entities/Tag';
-import { ClientCollection } from './CollectionStore';
+import { ClientCollection } from '../entities/Collection';
 import { comboMatches, getKeyCombo, parseKeyCombo } from '../hotkeyParser';
+import {
+  MAX_THUMBNAIL_SIZE,
+  MIN_THUMBNAIL_SIZE,
+  getThumbnailSize,
+} from '../containers/ContentView/utils';
 import RootStore from './RootStore';
+
+/** How much one notch of the mouse wheel changes the size of the thumbnails, in pixels */
+const THUMBNAIL_SIZE_STEP = 40;
 
 export const enum ViewMethod {
   List,
@@ -130,6 +138,8 @@ type PersistentPreferenceFields =
   | 'screensaverIdleMinutes'
   | 'screensaverSecondsPerImage'
   | 'isScreensaverOnAllMonitors'
+  | 'isScreensaverSingleImage'
+  | 'isScreensaverOnlyInFront'
   | 'screensaverTagIds'
   | 'screensaverCollectionIds'
   | 'isSearchBarVisible'
@@ -169,6 +179,10 @@ class UiStore {
   @observable screensaverSecondsPerImage: number = DEFAULT_SCREENSAVER_SETTINGS.secondsPerImage;
   /** Whether the screensaver covers every monitor, or only the one Atlas is on */
   @observable isScreensaverOnAllMonitors: boolean = true;
+  /** Whether the screensaver always shows one large image per monitor, however many images there are */
+  @observable isScreensaverSingleImage: boolean = false;
+  /** Whether the screensaver only starts while Atlas is the window being used */
+  @observable isScreensaverOnlyInFront: boolean = DEFAULT_SCREENSAVER_SETTINGS.onlyWhenInFront;
   /** The tags whose images the screensaver shows. None picked: the home gallery */
   readonly screensaverTagIds = observable<ID>([]);
   /** The collections whose images the screensaver shows as well */
@@ -239,6 +253,12 @@ class UiStore {
 
   @action.bound setThumbnailSize(size: ThumbnailSize): void {
     this.thumbnailSize = size;
+  }
+
+  /** Larger (positive) or smaller (negative) thumbnails, in steps of the size slider: Ctrl + mouse wheel */
+  @action.bound growThumbnails(steps: number): void {
+    const size = getThumbnailSize(this.thumbnailSize) + steps * THUMBNAIL_SIZE_STEP;
+    this.thumbnailSize = clamp(size, MIN_THUMBNAIL_SIZE, MAX_THUMBNAIL_SIZE);
   }
 
   @action.bound setThumbnailShape(shape: ThumbnailShape): void {
@@ -435,7 +455,12 @@ class UiStore {
       isEnabled: this.isScreensaverEnabled,
       idleMinutes: this.screensaverIdleMinutes,
       secondsPerImage: this.screensaverSecondsPerImage,
+      onlyWhenInFront: this.isScreensaverOnlyInFront,
     };
+  }
+
+  @action.bound toggleScreensaverOnlyInFront(): void {
+    this.isScreensaverOnlyInFront = !this.isScreensaverOnlyInFront;
   }
 
   /** The tags picked for the screensaver that still exist */
@@ -459,10 +484,10 @@ class UiStore {
    * or the tag of the home gallery when nothing is picked
    */
   @computed get screensaverTags(): ClientTag[] {
-    const { tagStore, collectionStore } = this.rootStore;
+    const { tagStore } = this.rootStore;
     const tags = new Set(this.screensaverPickedTags);
     for (const collection of this.screensaverPickedCollections) {
-      collectionStore.getTags(collection).forEach((tag) => tags.add(tag));
+      collection.tags.forEach((tag) => tags.add(tag));
     }
     if (this.isScreensaverUsingHomeGallery && tagStore.homeTag !== undefined) {
       tags.add(tagStore.homeTag);
@@ -517,6 +542,10 @@ class UiStore {
 
   @action.bound toggleScreensaver(): void {
     this.isScreensaverEnabled = !this.isScreensaverEnabled;
+  }
+
+  @action.bound toggleScreensaverSingleImage(): void {
+    this.isScreensaverSingleImage = !this.isScreensaverSingleImage;
   }
 
   @action.bound toggleScreensaverOnAllMonitors(): void {
@@ -875,6 +904,13 @@ class UiStore {
     }
   }
 
+  /** Shows the images that have any of the given tags, or one of their sub-tags */
+  @action.bound viewAnyOfTags(tags: readonly ClientTag[]): void {
+    // Before the search is replaced: that is what loads the images
+    this.searchMatchAny = true;
+    this.replaceSearchCriterias(tags.map((tag) => new ClientTagSearchCriteria('tags', tag.id)));
+  }
+
   @action.bound removeSearchCriteriaByIndex(i: number): void {
     const removedCrits = this.searchCriteriaList.splice(i, 1);
 
@@ -1045,6 +1081,10 @@ class UiStore {
         this.screensaverIdleMinutes = clampIdleMinutes(prefs.screensaverIdleMinutes);
         this.screensaverSecondsPerImage = clampSecondsPerImage(prefs.screensaverSecondsPerImage);
         this.isScreensaverOnAllMonitors = Boolean(prefs.isScreensaverOnAllMonitors ?? true);
+        this.isScreensaverSingleImage = Boolean(prefs.isScreensaverSingleImage ?? false);
+        this.isScreensaverOnlyInFront = Boolean(
+          prefs.isScreensaverOnlyInFront ?? DEFAULT_SCREENSAVER_SETTINGS.onlyWhenInFront,
+        );
         this.isSearchBarVisible = Boolean(prefs.isSearchBarVisible ?? true);
         if (Array.isArray(prefs.screensaverCollectionIds)) {
           this.screensaverCollectionIds.replace(
@@ -1114,6 +1154,8 @@ class UiStore {
       screensaverIdleMinutes: this.screensaverIdleMinutes,
       screensaverSecondsPerImage: this.screensaverSecondsPerImage,
       isScreensaverOnAllMonitors: this.isScreensaverOnAllMonitors,
+      isScreensaverSingleImage: this.isScreensaverSingleImage,
+      isScreensaverOnlyInFront: this.isScreensaverOnlyInFront,
       screensaverTagIds: this.screensaverTagIds.slice(),
       screensaverCollectionIds: this.screensaverCollectionIds.slice(),
       isSearchBarVisible: this.isSearchBarVisible,

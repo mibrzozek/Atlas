@@ -79,6 +79,8 @@ class FileStore {
   @observable numTotalFiles = 0;
   @observable numUntaggedFiles = 0;
   @observable numMissingFiles = 0;
+  /** Counts up whenever changes to images are in the database: what is counted there can be counted again */
+  @observable numSaves = 0;
   /**
    * Collage mode: the images are shown in the order made by hand for this view, instead of sorted,
    * and can be dragged to another place
@@ -88,10 +90,6 @@ class FileStore {
   /** For a moment after collage mode is switched on or off: the images glide to their new places */
   @observable isCollageAnimating = false;
   private collageAnimationTimeout: number | undefined;
-  /** When collage mode was last switched (`performance.now()`): what was on screen is kept while it glides away */
-  lastCollageToggle = -Infinity;
-  /** When images were last moved by hand: the gallery must not scroll for that */
-  lastCollageReorder = -Infinity;
 
   debouncedRefetch: () => void;
   debouncedSaveFilesToSave: () => Promise<void>;
@@ -800,7 +798,6 @@ class FileStore {
   @action private setCollageMode(isCollageMode: boolean): void {
     this.isCollageMode = isCollageMode;
     localStorage.setItem(COLLAGE_MODE_KEY, String(isCollageMode));
-    this.lastCollageToggle = performance.now();
     this.isCollageAnimating = true;
     window.clearTimeout(this.collageAnimationTimeout);
     this.collageAnimationTimeout = window.setTimeout(
@@ -830,13 +827,12 @@ class FileStore {
     if (files.length !== this.fileList.length) {
       return;
     }
-    // Every image has a place of the same size in collage mode: the others stay where they are,
-    // and so does what part of the gallery is in view
-    this.lastCollageReorder = performance.now();
+    // Every image has a place of the same size in collage mode, so the layout stays as it is:
+    // `fileListLastModified` is left alone on purpose. Setting it would lay out the gallery again,
+    // which scrolls the first image back to the top
     this.fileList.clear();
     this.fileList.push(...files);
     this.updateFileListState();
-    this.fileListLastModified = new Date();
     try {
       localStorage.setItem(this.collageStorageKey, JSON.stringify(ids));
     } catch (e) {
@@ -939,6 +935,7 @@ class FileStore {
   private async saveFilesToSave() {
     await this.backend.saveFiles(Array.from(this.filesToSave.values()));
     this.filesToSave.clear();
+    runInAction(() => this.numSaves++);
   }
 
   @action recoverPersistentPreferences(): void {

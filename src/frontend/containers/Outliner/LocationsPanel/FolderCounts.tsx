@@ -1,24 +1,16 @@
 import { observer } from 'mobx-react-lite';
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback } from 'react';
 
 import { IconSet } from 'widgets';
 import { Toolbar, ToolbarButton } from 'widgets/toolbar';
 import { useStore } from '../../../contexts/StoreContext';
 import {
-  ClientFileSearchCriteria,
   ClientStringSearchCriteria,
-  ClientTagSearchCriteria,
+  isFolderCriteria,
+  isTaggedCriteria,
+  taggedCriteria,
 } from '../../../entities/SearchCriteria';
-
-/** The folders picked in the Locations panel are searched as "path starts with" criteria */
-const isLocationCriteria = (crit: ClientFileSearchCriteria): crit is ClientStringSearchCriteria =>
-  crit instanceof ClientStringSearchCriteria &&
-  crit.key === 'absolutePath' &&
-  crit.operator === 'startsWith';
-
-/** "Has at least one tag" */
-const isTaggedCriteria = (crit: ClientFileSearchCriteria) =>
-  crit instanceof ClientTagSearchCriteria && !crit.value && crit.operator === 'notContains';
+import useDatabaseCount from '../../../hooks/useDatabaseCount';
 
 /**
  * At the foot of the Locations panel: how many images are in the folder that is open (in the whole library
@@ -28,38 +20,22 @@ const FolderCounts = observer(() => {
   const { fileStore, uiStore } = useStore();
 
   const criterias = uiStore.searchCriteriaList;
-  const locationCrits = criterias.filter(isLocationCriteria);
-  const otherCrits = criterias.filter((crit) => !isLocationCriteria(crit));
+  const locationCrits = criterias.filter(isFolderCriteria);
+  const otherCrits = criterias.filter((crit) => !isFolderCriteria(crit));
   const inFolder = locationCrits.length > 0;
   // "Tagged in A or B" cannot be expressed as a search query, only "tagged in A"
   const canScopeTagged = locationCrits.length <= 1;
 
   // Counted in the database for the open folders; the library's numbers are kept by the file store
-  const pathsKey = locationCrits.map((crit) => crit.value).join('\n');
-  const [folderCounts, setFolderCounts] = useState<{ total: number; tagged: number }>();
-  const { numTotalFiles, numUntaggedFiles, fileListLastModified } = fileStore;
-  useEffect(() => {
-    if (pathsKey.length === 0) {
-      setFolderCounts(undefined);
-      return;
-    }
-    let isCurrent = true;
-    const count = () =>
-      fileStore
-        .countFilesInFolders(pathsKey.split('\n'))
-        .then(([total, tagged]) => isCurrent && setFolderCounts({ total, tagged }))
-        .catch(console.error);
-    // Tagging a row of images changes the numbers many times in a moment. And once more a little later:
-    // a tag that was just added or removed is written to the database with a delay
-    const handles = [window.setTimeout(count, 200), window.setTimeout(count, 2000)];
-    return () => {
-      isCurrent = false;
-      handles.forEach((handle) => window.clearTimeout(handle));
-    };
-  }, [fileStore, pathsKey, numTotalFiles, numUntaggedFiles, fileListLastModified]);
+  const paths = locationCrits.map((crit) => crit.value);
+  const folderCounts = useDatabaseCount(
+    () => fileStore.countFilesInFolders(paths),
+    inFolder ? paths.join('\n') : undefined,
+  );
 
-  const total = inFolder ? folderCounts?.total : numTotalFiles;
-  const tagged = inFolder ? folderCounts?.tagged : numTotalFiles - numUntaggedFiles;
+  const { numTotalFiles, numUntaggedFiles } = fileStore;
+  const total = inFolder ? folderCounts?.[0] : numTotalFiles;
+  const tagged = inFolder ? folderCounts?.[1] : numTotalFiles - numUntaggedFiles;
   const percent =
     total !== undefined && tagged !== undefined && total > 0
       ? Math.round((100 * tagged) / total)
@@ -68,7 +44,7 @@ const FolderCounts = observer(() => {
   // The existing criteria are disposed when the search is replaced, so they are re-created
   const copyLocationCrits = () =>
     uiStore.searchCriteriaList
-      .filter(isLocationCriteria)
+      .filter(isFolderCriteria)
       .map((crit) => new ClientStringSearchCriteria('absolutePath', crit.value, 'startsWith'));
 
   const handleAllClick = useCallback(() => {
@@ -90,10 +66,7 @@ const FolderCounts = observer(() => {
     if (uiStore.searchMatchAny) {
       uiStore.toggleSearchMatchAny();
     }
-    uiStore.replaceSearchCriterias([
-      ...locations,
-      new ClientTagSearchCriteria('tags', undefined, 'notContains'),
-    ]);
+    uiStore.replaceSearchCriterias([...locations, taggedCriteria()]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

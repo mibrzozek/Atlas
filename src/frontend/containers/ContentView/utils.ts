@@ -10,6 +10,10 @@ export interface GalleryProps {
   select: (file: ClientFile, selectAdditive: boolean, selectRange: boolean) => void;
 }
 
+/** The smallest and the largest thumbnails, in pixels: the ends of the slider in the View menu */
+export const MIN_THUMBNAIL_SIZE = 128;
+export const MAX_THUMBNAIL_SIZE = 608;
+
 const PADDING = 8;
 const CELL_SIZE_SMALL = 160 + PADDING;
 const CELL_SIZE_MEDIUM = 240 + PADDING;

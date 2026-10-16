@@ -1,22 +1,17 @@
-import { runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 
 import { sortedByName } from 'common/collections';
-import { formatTagCountText } from 'common/fmt';
 import { IconSet, Tree } from 'widgets';
 import { ITreeItem, TreeLabel, createBranchOnKeyDown, createLeafOnKeyDown } from 'widgets/tree';
 import { ROOT_TAG_ID } from '../../api/tag';
 import { useStore } from '../contexts/StoreContext';
-import { DnDTagType, useTagDnD } from '../contexts/TagDnDContext';
+import { useTagDnD } from '../contexts/TagDnDContext';
 import { ClientTag } from '../entities/Tag';
 import { useAction } from '../hooks/mobx';
 import UiStore from '../stores/UiStore';
-import { HOVER_TIME_TO_EXPAND } from './Outliner/LocationsPanel/useFileDnD';
-import { createDragReorderHelper } from './Outliner/TreeItemDnD';
+import { useTagItemDnD } from './Outliner/TagsPanel/useTagItemDnD';
 import { IExpansionState } from './types';
-
-const DnDHelper = createDragReorderHelper('tag-manager-dnd-preview', DnDTagType);
 
 interface ITreeData {
   expansion: IExpansionState;
@@ -38,116 +33,23 @@ interface TagItemProps {
 
 const TagItem = observer(({ tag, pos, treeData }: TagItemProps) => {
   const { expansion, setExpansion, editableId, setEditableId, select } = treeData;
-  const { uiStore, collectionStore } = useStore();
-  const dndData = useTagDnD();
+  const { collectionStore } = useStore();
   const isEditing = editableId === tag.id;
-  const collections = collectionStore.getCollectionsOf(tag);
+  const collections = collectionStore.collectionsOf(tag);
 
-  const handleDragStart = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      runInAction(() => {
-        let name = tag.name;
-        if (tag.isSelected) {
-          const ctx = uiStore.getTagContextItems(tag.id);
-          if (ctx.length === 1) {
-            name = ctx[0].name;
-          } else {
-            const extraText = formatTagCountText(ctx.length);
-            if (extraText.length > 0) {
-              name += ` (${extraText})`;
-            }
-          }
-        }
-        DnDHelper.onDragStart(event, name, uiStore.theme, dndData, tag);
-      });
-    },
-    [dndData, tag, uiStore],
-  );
-
-  // Don't expand immediately on drag-over, only after hovering over it for a second or so
-  const expandTimeout = useRef<number>();
-  const clearExpandTimeout = () => {
-    window.clearTimeout(expandTimeout.current);
-    expandTimeout.current = undefined;
-  };
-
-  const handleDragOver = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      runInAction(() => {
-        const source = dndData.source;
-        if (
-          treeData.isFlat ||
-          source === undefined ||
-          (source.isSelected && tag.isSelected) ||
-          tag.isAncestor(source)
-        ) {
-          return;
-        }
-        if (DnDHelper.onDragOver(event, dndData)) {
-          return;
-        }
-        // Don't expand when hovering over top/bottom border
-        const targetClasses = event.currentTarget.classList;
-        if (targetClasses.contains('top') || targetClasses.contains('bottom')) {
-          clearExpandTimeout();
-        } else if (!expansion[tag.id] && expandTimeout.current === undefined) {
-          expandTimeout.current = window.setTimeout(() => {
-            expandTimeout.current = undefined;
-            setExpansion((val) => ({ ...val, [tag.id]: true }));
-          }, HOVER_TIME_TO_EXPAND);
-        }
-      });
-    },
-    [dndData, expansion, setExpansion, tag, treeData.isFlat],
-  );
-
-  const handleDragLeave = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      if (runInAction(() => dndData.source !== undefined)) {
-        DnDHelper.onDragLeave(event);
-        clearExpandTimeout();
-      }
-    },
-    [dndData],
-  );
-
-  const handleDrop = useCallback(
-    (event: React.DragEvent<HTMLDivElement>) => {
-      runInAction(() => {
-        const relativeMovePos = DnDHelper.onDrop(event);
-        const source = dndData.source;
-        if (source === undefined || treeData.isFlat) {
-          return;
-        }
-        if (relativeMovePos === 'middle') {
-          setExpansion((val) => ({ ...val, [tag.id]: true }));
-        }
-        // Note: 'pos' does not start from 0! It is +1'd. So, here we -1 it again
-        if (source.isSelected) {
-          if (relativeMovePos === 'middle') {
-            uiStore.moveSelectedTagItems(tag.id);
-          } else {
-            uiStore.moveSelectedTagItems(tag.parent.id, pos + relativeMovePos);
-          }
-        } else if (relativeMovePos === 'middle') {
-          tag.insertSubTag(source, 0);
-        } else {
-          tag.parent.insertSubTag(source, pos + relativeMovePos);
-        }
-      });
-      clearExpandTimeout();
-    },
-    [dndData, pos, setExpansion, tag, treeData.isFlat, uiStore],
-  );
+  const dnd = useTagItemDnD({
+    tag,
+    pos,
+    canReorder: !treeData.isFlat,
+    isExpanded: !!expansion[tag.id],
+    expand: () => setExpansion((val) => ({ ...val, [tag.id]: true })),
+  });
 
   return (
     <div
       className="tree-content-label"
       draggable={!isEditing}
-      onDragStart={handleDragStart}
-      onDragOver={handleDragOver}
-      onDragLeave={handleDragLeave}
-      onDrop={handleDrop}
+      {...dnd}
       onClick={(event) => {
         event.stopPropagation();
         select(event, tag);
@@ -395,7 +297,7 @@ const TagManagerTree = observer((props: TagManagerTreeProps) => {
     ? (tag: ClientTag) =>
         tag.id === editableId ||
         (tag.name.toLowerCase().includes(query) &&
-          (!onlyLoose || collectionStore.getCollectionsOf(tag).length === 0))
+          (!onlyLoose || collectionStore.collectionsOf(tag).length === 0))
     : undefined;
   let items: ITreeItem[];
   if (isFlat) {

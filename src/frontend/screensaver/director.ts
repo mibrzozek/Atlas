@@ -9,6 +9,8 @@ export interface DirectorOptions {
   orientation: LaneOrientation;
   /** How long a screen stands still between two changes */
   secondsPerStep: number;
+  /** One large image per screen, also when there are enough images for a wall */
+  singleImage?: boolean;
 }
 
 type Presenter = WallPresenter | ShowcasePresenter;
@@ -40,6 +42,7 @@ export class ScreensaverDirector {
       meanAspectRatio,
       options.orientation,
       WALL_GAP,
+      options.singleImage,
     );
   }
 

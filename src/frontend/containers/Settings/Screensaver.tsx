@@ -49,10 +49,7 @@ const ScreensaverTagPicker = observer(() => {
                   value={collection.name}
                   selected={selected}
                   icon={IconSet.TAG_GROUP}
-                  tooltip={collectionStore
-                    .getTags(collection)
-                    .map((tag) => tag.name)
-                    .join(', ')}
+                  tooltip={collection.tags.map((tag) => tag.name).join(', ')}
                   onClick={() => {
                     if (selected) {
                       uiStore.removeScreensaverCollection(collection);
@@ -87,16 +84,23 @@ export const Screensaver = observer(() => {
   return (
     <div id="screensaver-settings" className="vstack">
       <Callout icon={IconSet.INFO}>
-        When you have not used your computer for a while and Atlas is the window in front, it fills
-        your monitors with the images of the tags and collections you pick below: your home gallery,
-        unless you pick something else. With plenty of images they are laid out like the masonry
-        view you use, in rows or in columns, and slowly move through the screen. With only a few,
-        they are shown large, a couple at a time. Moving the mouse or pressing a key brings you
-        back.
+        When you have not used your computer for a while and Atlas is open, it fills your monitors
+        with the images of the tags and collections you pick below: your home gallery, unless you
+        pick something else. With plenty of images they are laid out like the masonry view you use,
+        in rows or in columns, and slowly move through the screen. With only a few, they are shown
+        large, a couple at a time; switch on &ldquo;Show one large image per monitor&rdquo; to
+        always show them one at a time. Moving the mouse or pressing a key brings you back.
       </Callout>
 
       <Toggle checked={uiStore.isScreensaverEnabled} onChange={uiStore.toggleScreensaver}>
         Start the screensaver when the computer is not used
+      </Toggle>
+
+      <Toggle
+        checked={uiStore.isScreensaverOnlyInFront}
+        onChange={uiStore.toggleScreensaverOnlyInFront}
+      >
+        Only while Atlas is the window in front (so it never covers a film in another application)
       </Toggle>
 
       <ScreensaverTagPicker />
@@ -127,6 +131,13 @@ export const Screensaver = observer(() => {
         />
         seconds
       </label>
+
+      <Toggle
+        checked={uiStore.isScreensaverSingleImage}
+        onChange={uiStore.toggleScreensaverSingleImage}
+      >
+        Show one large image per monitor
+      </Toggle>
 
       <Toggle
         checked={uiStore.isScreensaverOnAllMonitors}

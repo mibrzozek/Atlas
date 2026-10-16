@@ -164,6 +164,9 @@ dialog[role='alertdialog'] {
       }
     }
     animation: show 0.1s linear;
+    // It only tells something: a click goes to what is underneath it.
+    // In here, because an open popover takes clicks, and that rule is the more specific one
+    pointer-events: none;
   }
 
   &[data-open='false'] {

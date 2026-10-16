@@ -1,16 +1,18 @@
 import { action, observable, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 import { sortedByName } from 'common/collections';
 import { Button, IconButton, IconSet, Tag } from 'widgets';
 import { Alert, Dialog, DialogButton } from 'widgets/popovers';
 import { ROOT_TAG_ID } from '../../api/tag';
 import { TagRemoval } from '../components/RemovalAlert';
+import TagColorPicker from '../components/TagColorPicker';
 import { useStore } from '../contexts/StoreContext';
-import { DnDAttribute, TagDnDProvider, useTagDnD } from '../contexts/TagDnDContext';
+import { DnDAttribute, TagDnDProvider } from '../contexts/TagDnDContext';
 import { ClientTag } from '../entities/Tag';
-import { ClientCollection } from '../stores/CollectionStore';
+import { ClientCollection } from '../entities/Collection';
+import { useCollectionDnD } from './Outliner/CollectionsPanel/useCollectionDnD';
 import { TagMerge } from './Outliner/TagsPanel/TagMerge';
 import useLocalStorage from '../hooks/useLocalStorage';
 import TagManagerTree, { TagManagerSort } from './TagManagerTree';
@@ -21,11 +23,14 @@ const NameField = ({
   onRename,
   label,
   autoFocus,
+  onDone,
 }: {
   name: string;
   onRename: (name: string) => void;
   label: string;
   autoFocus?: boolean;
+  /** When the field is left, whether the name was changed or not */
+  onDone?: () => void;
 }) => {
   const [text, setText] = useState(name);
   // Renamed somewhere else, or put back
@@ -49,7 +54,13 @@ const NameField = ({
       autoFocus={autoFocus}
       onFocus={autoFocus ? (e) => e.target.select() : undefined}
       onChange={(e) => setText(e.target.value)}
-      onBlur={commit}
+      onBlur={() => {
+        commit();
+        onDone?.();
+      }}
+      // Typing a name is not a click on what the field is in
+      onClick={(e) => e.stopPropagation()}
+      onDoubleClick={(e) => e.stopPropagation()}
       onKeyDown={(e) => {
         if (e.key === 'Enter') {
           e.currentTarget.blur();
@@ -99,51 +110,7 @@ const AddPicker = <T extends { id: string }>({
 
 const tagPath = (tag: ClientTag) => tag.path.join(' › ');
 
-/**
- * A row of tags that takes up one line. When they do not fit on it, a button at the end shows them all,
- * on as many lines as it takes, and brings it back to one line.
- */
-const CollapsibleChips = ({ count, children }: { count: number; children: React.ReactNode }) => {
-  const ref = useRef<HTMLDivElement>(null);
-  const [isExpanded, setIsExpanded] = useState(false);
-  const [needsMoreLines, setNeedsMoreLines] = useState(false);
-
-  useLayoutEffect(() => {
-    const element = ref.current;
-    if (element === null) {
-      return;
-    }
-    // More than one line when a tag starts lower than the first one: true whether it is expanded or not
-    const measure = () => {
-      const [first, ...others] = Array.from(element.children) as HTMLElement[];
-      setNeedsMoreLines(
-        first !== undefined && others.some((child) => child.offsetTop > first.offsetTop + 4),
-      );
-    };
-    measure();
-    const observer = new ResizeObserver(measure);
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, [count]);
-
-  return (
-    <div className="tag-manager-chips-row">
-      <div ref={ref} className="tag-manager-chips" data-collapsed={!isExpanded}>
-        {children}
-      </div>
-      {needsMoreLines && (
-        <IconButton
-          icon={isExpanded ? IconSet.ARROW_UP : IconSet.ARROW_DOWN}
-          className="tag-manager-expand"
-          text={isExpanded ? 'Show one line of tags' : `Show all ${count} tags`}
-          onClick={() => setIsExpanded(!isExpanded)}
-        />
-      )}
-    </div>
-  );
-};
-
-interface CollectionCardProps {
+interface CollectionChipProps {
   collection: ClientCollection;
   /** All tags, in the order they are offered */
   allTags: ClientTag[];
@@ -151,49 +118,51 @@ interface CollectionCardProps {
   onDelete: (collection: ClientCollection) => void;
 }
 
-const CollectionCard = observer(({ collection, allTags, isNew, onDelete }: CollectionCardProps) => {
-  const { collectionStore, uiStore } = useStore();
-  const tagDnD = useTagDnD();
-  const tags = collectionStore.getTags(collection);
-  const available = allTags.filter((tag) => !collection.tagIds.includes(tag.id));
-  const [isDropTarget, setIsDropTarget] = useState(false);
-  // For the plus button: the selected tags that are not in this collection yet
+/**
+ * A collection as a small chip: its name, and a plus that adds the selected tags to it.
+ * Clicking it shows what is in it; dragging it puts it somewhere else in the list.
+ */
+const CollectionChip = observer(({ collection, allTags, isNew, onDelete }: CollectionChipProps) => {
+  const { uiStore } = useStore();
+  // A new one opens up with its name ready to be typed
+  const [isExpanded, setIsExpanded] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  useEffect(() => {
+    if (isNew) {
+      setIsExpanded(true);
+      setIsRenaming(true);
+    }
+  }, [isNew]);
+  const { target, props: dnd } = useCollectionDnD(collection, !isRenaming);
+  const tags = collection.tags;
+  // For the plus: the selected tags that are not in this collection yet
   const numSelected = uiStore.tagSelection.size;
-  const numToAdd = Array.from(uiStore.tagSelection).filter(
-    (tag) => !collection.tagIds.includes(tag.id),
-  ).length;
+  const numToAdd = Array.from(uiStore.tagSelection).filter((tag) => !collection.has(tag)).length;
 
   return (
-    <li
-      className="tag-manager-card"
-      data-drop-target={isDropTarget || undefined}
-      onDragOver={(event) => {
-        if (tagDnD.source !== undefined) {
-          event.preventDefault();
-          event.dataTransfer.dropEffect = 'link';
-          setIsDropTarget(true);
+    <li className="tag-manager-collection" data-expanded={isExpanded} data-drop-target={target}>
+      <div
+        className="tag-manager-collection-chip"
+        {...dnd}
+        onClick={() => setIsExpanded(!isExpanded)}
+        onDoubleClick={() => setIsRenaming(true)}
+        data-tooltip={
+          isExpanded
+            ? 'Click to close. Drag to move it. Double-click to rename'
+            : `${tags.length} ${tags.length === 1 ? 'tag' : 'tags'}. Click to open, drag to move it`
         }
-      }}
-      onDragLeave={() => setIsDropTarget(false)}
-      onDrop={action((event: React.DragEvent) => {
-        event.preventDefault();
-        setIsDropTarget(false);
-        const tag = tagDnD.source;
-        if (tag !== undefined) {
-          // All selected tags when the dragged one is part of the selection
-          const dropped = tag.isSelected ? Array.from(uiStore.tagSelection) : [tag];
-          dropped.forEach((t) => collectionStore.addTag(collection, t));
-        }
-      })}
-    >
-      <div className="tag-manager-row">
-        <span className="tag-manager-icon">{IconSet.TAG_GROUP}</span>
-        <NameField
-          name={collection.name}
-          onRename={(name) => collectionStore.rename(collection, name)}
-          label="Name of the collection"
-          autoFocus={isNew}
-        />
+      >
+        {isRenaming ? (
+          <NameField
+            name={collection.name}
+            onRename={collection.rename}
+            label="Name of the collection"
+            autoFocus
+            onDone={() => setIsRenaming(false)}
+          />
+        ) : (
+          <span className="tag-manager-collection-name">{collection.name}</span>
+        )}
         <IconButton
           icon={IconSet.PLUS}
           className="tag-manager-add-selection"
@@ -208,46 +177,55 @@ const CollectionCard = observer(({ collection, allTags, isNew, onDelete }: Colle
           }
           disabled={numToAdd === 0}
           // A tag that is already in it is skipped
-          onClick={action(() =>
-            uiStore.tagSelection.forEach((tag) => collectionStore.addTag(collection, tag)),
-          )}
-        />
-        <IconButton
-          icon={IconSet.DELETE}
-          text="Delete this collection"
-          onClick={() => onDelete(collection)}
+          onClick={action((event: React.MouseEvent) => {
+            event.stopPropagation();
+            uiStore.tagSelection.forEach(collection.add);
+          })}
         />
       </div>
-      <CollapsibleChips count={tags.length}>
-        {/* In front, so that it is there too while only one line of tags is shown */}
-        <AddPicker
-          placeholder={tags.length === 0 ? 'Add a tag to this collection...' : 'Add a tag...'}
-          options={available}
-          labelOf={tagPath}
-          onPick={(tag) => collectionStore.addTag(collection, tag)}
-        />
-        {tags.map((tag) => (
-          <Tag
-            key={tag.id}
-            text={tag.name}
-            color={tag.viewColor}
-            tooltip={tagPath(tag)}
-            onRemove={() => collectionStore.removeTag(collection, tag)}
-          />
-        ))}
-      </CollapsibleChips>
+      {isExpanded && (
+        <div className="tag-manager-collection-body">
+          <div className="tag-manager-chips">
+            {tags.map((tag) => (
+              <Tag
+                key={tag.id}
+                text={tag.name}
+                color={tag.viewColor}
+                tooltip={tagPath(tag)}
+                onRemove={() => collection.remove(tag)}
+              />
+            ))}
+            <AddPicker
+              placeholder={tags.length === 0 ? 'Add a tag to this collection...' : 'Add a tag...'}
+              options={allTags.filter((tag) => !collection.has(tag))}
+              labelOf={tagPath}
+              onPick={collection.add}
+            />
+          </div>
+          <div className="tag-manager-collection-actions">
+            <IconButton icon={IconSet.EDIT} text="Rename" onClick={() => setIsRenaming(true)} />
+            <IconButton
+              icon={IconSet.DELETE}
+              text="Delete this collection. Its tags stay"
+              onClick={() => onDelete(collection)}
+            />
+          </div>
+        </div>
+      )}
     </li>
   );
 });
 
 interface SelectionBarProps {
+  /** Tags can only be moved up and down where they are listed in the order they are kept in */
+  canReorder: boolean;
   onRename: (tag: ClientTag) => void;
   onDelete: (tag: ClientTag) => void;
   onMerge: (tag: ClientTag) => void;
 }
 
 /** What can be done with the tags that are selected in the tree */
-const SelectionBar = observer(({ onRename, onDelete, onMerge }: SelectionBarProps) => {
+const SelectionBar = observer(({ canReorder, onRename, onDelete, onMerge }: SelectionBarProps) => {
   const { collectionStore, tagStore, uiStore } = useStore();
   const tags = Array.from(uiStore.tagSelection);
 
@@ -263,66 +241,82 @@ const SelectionBar = observer(({ onRename, onDelete, onMerge }: SelectionBarProp
   }
 
   const [first] = tags;
-  const hasColor = first.color !== '' && first.color !== 'inherit';
+  const isOne = tags.length === 1;
+  const siblings = first.parent.subTags;
+  const position = siblings.indexOf(first);
   const allHidden = tags.every((tag) => tag.isHidden);
   const canMerge = tags.every((tag) => tag.subTags.length === 0);
-  const canMoveOut = tags.some((tag) => tag.parent !== tagStore.root);
+  const isInsideAnother = tags.some((tag) => tag.parent !== tagStore.root);
   // The collections any of them is in, and the ones not all of them are in
   const memberships = collectionStore.sortedByName.filter((collection) =>
-    tags.some((tag) => collection.tagIds.includes(tag.id)),
+    tags.some(collection.has),
   );
-  const joinable = collectionStore.sortedByName.filter(
-    (collection) => !tags.every((tag) => collection.tagIds.includes(tag.id)),
-  );
+  const joinable = collectionStore.sortedByName.filter((collection) => !tags.every(collection.has));
 
   const setColor = action((color: string) => tags.forEach((tag) => tag.setColor(color)));
   const setHidden = action((isHidden: boolean) =>
     tags.forEach((tag) => tag.isHidden !== isHidden && tag.toggleHidden()),
   );
+  // `insertSubTag` takes the place the tag has before it is taken out of the list
+  const moveUp = () => first.parent.insertSubTag(first, position - 1);
+  const moveDown = () => first.parent.insertSubTag(first, position + 2);
+  const whyNotMove = !canReorder
+    ? 'Sort the tags by hierarchy to move them'
+    : !isOne
+    ? 'Select one tag to move it'
+    : undefined;
 
   return (
     <div className="tag-manager-selection">
       <div className="tag-manager-row">
         <span className="tag-manager-selection-title">
-          {tags.length === 1 ? first.name : `${tags.length} tags selected`}
+          {isOne ? first.name : `${tags.length} tags selected`}
         </span>
-        <input
-          type="color"
-          className="tag-manager-color"
-          data-empty={!hasColor}
-          aria-label="Color"
-          title={hasColor ? 'Change the color' : 'Give a color'}
-          value={hasColor ? first.color : '#808080'}
-          onChange={(e) => setColor(e.target.value)}
-        />
-        {tags.some((tag) => tag.color !== '') && (
-          <IconButton icon={IconSet.COLOR} text="Remove the color" onClick={() => setColor('')} />
-        )}
         <IconButton
           icon={IconSet.EDIT}
-          text={tags.length === 1 ? 'Rename' : 'Select one tag to rename it'}
-          disabled={tags.length !== 1}
+          text={isOne ? 'Rename' : 'Select one tag to rename it'}
+          disabled={!isOne}
           onClick={() => onRename(first)}
         />
+        <IconButton
+          icon={IconSet.ARROW_UP}
+          text={whyNotMove ?? 'Move up'}
+          disabled={whyNotMove !== undefined || position <= 0}
+          onClick={moveUp}
+        />
+        <IconButton
+          icon={IconSet.ARROW_DOWN}
+          text={whyNotMove ?? 'Move down'}
+          disabled={whyNotMove !== undefined || position >= siblings.length - 1}
+          onClick={moveDown}
+        />
+        {/* Only there when there is something to take it out of */}
+        {isInsideAnother && (
+          <IconButton
+            icon={IconSet.ARROW_LEFT}
+            text={
+              isOne
+                ? `Take it out of ${first.parent.name}, to the top level`
+                : 'Take them out of the tags they are inside, to the top level'
+            }
+            onClick={() => uiStore.moveSelectedTagItems(ROOT_TAG_ID, tagStore.root.subTags.length)}
+          />
+        )}
         <IconButton
           icon={allHidden ? IconSet.HIDDEN : IconSet.PREVIEW}
           text={
             allHidden
-              ? 'Their images are hidden. Click to show them'
-              : 'Their images are shown. Click to hide them'
+              ? 'Images with this tag are hidden everywhere. Click to show them again'
+              : 'Images with this tag are shown. Click to hide them everywhere'
           }
           onClick={() => setHidden(!allHidden)}
         />
         <IconButton
-          icon={IconSet.ARROW_LEFT}
-          text="Take out of the tag it is inside"
-          disabled={!canMoveOut}
-          onClick={() => uiStore.moveSelectedTagItems(ROOT_TAG_ID, tagStore.root.subTags.length)}
-        />
-        <IconButton
           icon={IconSet.TAG_GROUP}
           text={
-            canMerge ? 'Merge into another tag...' : 'A tag with tags inside it cannot be merged'
+            canMerge
+              ? 'Merge: pick another tag, the images of this one get that tag, and this one is removed'
+              : 'A tag with tags inside it cannot be merged: take those out first'
           }
           disabled={!canMerge}
           onClick={() => onMerge(first)}
@@ -334,20 +328,21 @@ const SelectionBar = observer(({ onRename, onDelete, onMerge }: SelectionBarProp
           onClick={uiStore.clearTagSelection}
         />
       </div>
+      <TagColorPicker color={first.color === 'inherit' ? '' : first.color} onPick={setColor} />
       <div className="tag-manager-chips">
         {memberships.map((collection) => (
           <Tag
             key={collection.id}
             text={collection.name}
             tooltip="Collection"
-            onRemove={() => tags.forEach((tag) => collectionStore.removeTag(collection, tag))}
+            onRemove={() => tags.forEach(collection.remove)}
           />
         ))}
         <AddPicker
           placeholder="Add to a collection..."
           options={joinable}
           labelOf={(collection) => collection.name}
-          onPick={(collection) => tags.forEach((tag) => collectionStore.addTag(collection, tag))}
+          onPick={(collection) => tags.forEach(collection.add)}
         />
       </div>
     </div>
@@ -378,7 +373,8 @@ const TagManagerContent = observer(() => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [tagList, tagList.map((tag) => tag.name).join('\n')],
   );
-  const collections = collectionStore.sortedByName;
+  // In the order they were put in by hand: the same as in the side panel
+  const collections = collectionStore.collectionList.slice();
 
   const query = filter.trim().toLowerCase();
   const matches = (name: string) => query.length === 0 || name.toLowerCase().includes(query);
@@ -386,7 +382,7 @@ const TagManagerContent = observer(() => {
     (collection) =>
       collection.id === newId ||
       matches(collection.name) ||
-      collectionStore.getTags(collection).some((tag) => matches(tag.name)),
+      collection.tags.some((tag) => matches(tag.name)),
   );
 
   // The tag whose name is being typed in the tree
@@ -452,9 +448,9 @@ const TagManagerContent = observer(() => {
                   : 'No collection matches.'}
               </p>
             ) : (
-              <ul>
+              <ul className="tag-manager-collections">
                 {shownCollections.map((collection) => (
-                  <CollectionCard
+                  <CollectionChip
                     key={collection.id}
                     collection={collection}
                     allTags={allTags}
@@ -500,6 +496,7 @@ const TagManagerContent = observer(() => {
               />
             </header>
             <SelectionBar
+              canReorder={sort === 'hierarchy'}
               onRename={(tag) => setEditableTagId(tag.id)}
               onDelete={setDeletableTag}
               onMerge={setMergableTag}
