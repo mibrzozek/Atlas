@@ -10,6 +10,8 @@ module.exports = {
   ],
   // The same absolute imports as the webpack build
   moduleNameMapper: {
+    // Stylesheets that components import: first, before their path is mapped below
+    '\\.s?css$': '<rootDir>/tests/setup/style.js',
     '^(common|src|widgets|resources)/(.*)$': '<rootDir>/$1/$2',
   },
 };

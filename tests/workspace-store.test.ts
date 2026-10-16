@@ -4,7 +4,14 @@ import { WorkspaceItem } from '../common/workspace';
 import { DataStorage } from '../src/api/data-storage';
 import { WorkspaceDatabase } from '../src/backend/workspace-db';
 import RootStore from '../src/frontend/stores/RootStore';
-import WorkspaceStore from '../src/frontend/stores/WorkspaceStore';
+import WorkspaceStore, { LARGE_WORKSPACE } from '../src/frontend/stores/WorkspaceStore';
+
+// The messages the store shows (`AppToaster`) time out with the timers of `window`; those must not keep
+// the tests from ending
+(globalThis as any).window ??= {
+  setTimeout: (handler: () => void, ms: number) => setTimeout(handler, ms).unref(),
+  clearTimeout,
+};
 
 let databaseCounter = 0;
 
@@ -14,8 +21,15 @@ const measure = (line: string, fontSize: number) => line.length * fontSize * 0.5
 /** A store on a database of its own, and a second store that reads the same database back */
 function setup() {
   const name = `Test_Workspaces_${databaseCounter++}`;
+  // A Library laid out in the default way, with no workspace open
+  const rootStore = { uiStore: { galleryLayout: undefined, activeWorkspace: undefined } };
   const open = () =>
-    new WorkspaceStore({} as DataStorage, new WorkspaceDatabase(name), {} as RootStore, measure);
+    new WorkspaceStore(
+      {} as DataStorage,
+      new WorkspaceDatabase(name),
+      rootStore as unknown as RootStore,
+      measure,
+    );
   const store = open();
   const reopen = async () => {
     const again = open();
@@ -31,8 +45,8 @@ const texts = (workspace: { items: readonly WorkspaceItem[] }) =>
 
 const images = (...ids: string[]) => ids.map((fileId) => ({ fileId, width: 300, height: 200 }));
 
-/** Lets the writes that were started finish */
-const settle = () => new Promise((resolve) => setTimeout(resolve, 50));
+/** Lets the writes that are waiting (`saveSoon`) be started and finish */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 500));
 
 describe('WorkspaceStore', () => {
   it('creates a workspace with a batch per source, and stores it', async () => {
@@ -215,6 +229,25 @@ describe('WorkspaceStore', () => {
     expect(texts(workspace)).toEqual(['Film']);
   });
 
+  it('redoes what was undone, until something else changes', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b', 'c') }]);
+    runInAction(() => {
+      workspace.removeItems(new Set(['b']));
+      workspace.removeItems(new Set(['c']));
+      workspace.undo();
+      workspace.undo();
+    });
+    expect(workspace.fileIds).toEqual(['a', 'b', 'c']);
+    runInAction(() => workspace.redo());
+    expect(workspace.fileIds).toEqual(['a', 'c']);
+    runInAction(() => {
+      workspace.removeItems(new Set(['a']));
+      workspace.redo(); // nothing left to redo after a change
+    });
+    expect(workspace.fileIds).toEqual(['c']);
+  });
+
   it('starts a new workspace with nothing to undo', async () => {
     const { store } = setup();
     const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
@@ -243,6 +276,58 @@ describe('WorkspaceStore', () => {
     expect([...workspace.selection]).toEqual(['a', 'b', 'c']);
     runInAction(() => workspace.selectMany(['c'], false));
     expect([...workspace.selection]).toEqual(['c']);
+  });
+
+  it('puts a dropped batch where it was dropped, selected, and only the images not there yet', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a') }]);
+    await store.addBatch(
+      workspace,
+      { label: 'Dropped', images: images('a', 'b', 'c') },
+      { x: 5000, y: 0 },
+    );
+    expect(workspace.fileIds).toEqual(['a', 'b', 'c']);
+    expect(texts(workspace)).toEqual(['Film', 'Dropped']);
+    expect([...workspace.selection]).toEqual(['b', 'c']);
+    const b = workspace.items.find((i) => i.id === 'b')!;
+    expect(b.x).toBe(5000);
+  });
+
+  it('asks first before adding a dropped batch of many images, and adds it once confirmed', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a') }]);
+    const many = images(...Array.from({ length: LARGE_WORKSPACE }, (_, i) => `many${i}`));
+    await store.addBatch(workspace, { label: 'Everything', images: many });
+    expect(workspace.fileIds).toEqual(['a']);
+    expect(store.largeWorkspaceRequest).toMatchObject({
+      imageCount: LARGE_WORKSPACE,
+      adding: { label: 'Everything', workspaceName: 'Workspace' },
+    });
+    runInAction(() => store.confirmLargeWorkspace());
+    expect(workspace.fileIds).toHaveLength(LARGE_WORKSPACE + 1);
+    expect(store.largeWorkspaceRequest).toBeUndefined();
+  });
+
+  it('adds nothing to a locked workspace', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a') }]);
+    runInAction(() => workspace.toggleLock());
+    await store.addBatch(workspace, { label: 'Dropped', images: images('b') });
+    expect(workspace.fileIds).toEqual(['a']);
+  });
+
+  it('copies from one workspace to another, selected, and an image only once', async () => {
+    const { store } = setup();
+    const from = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    const to = await store.create([{ label: 'Other', images: images('b') }]);
+    runInAction(() => from.selectAll());
+    store.copy(from);
+    store.paste(to, { x: 0, y: 0 });
+    expect(to.fileIds).toEqual(['b', 'a']);
+    expect(texts(to)).toEqual(['Other', 'Film']);
+    expect(to.selection.size).toBe(2); // "a" and the copy of the name
+    runInAction(() => to.undo());
+    expect(to.fileIds).toEqual(['b']);
   });
 
   it('lists the layers from the top down', async () => {

@@ -208,6 +208,7 @@ class RootStore {
   }
 
   async close(): Promise<void> {
+    this.workspaceStore.saveAll();
     // TODO: should be able to be done more reliably by running exiftool as a child process
     return this.exifTool.close();
   }

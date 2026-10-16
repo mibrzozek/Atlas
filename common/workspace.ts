@@ -83,6 +83,13 @@ export const MAX_ZOOM = 32;
 
 export const START_CAMERA: Camera = { x: 0, y: 0, zoom: 1 };
 
+/**
+ * Whether the camera is still where a new workspace starts: it was never looked at, and opens with
+ * everything in view. By value, as it is read back from the database after a restart
+ */
+export const isStartCamera = (camera: Camera): boolean =>
+  camera.x === START_CAMERA.x && camera.y === START_CAMERA.y && camera.zoom === START_CAMERA.zoom;
+
 /** How much one pixel of wheel turns the zoom: a notch of a mouse wheel (100) is about a fifth */
 const ZOOM_PER_WHEEL_PIXEL = 0.002;
 
@@ -214,7 +221,11 @@ export function defaultLayout(shapes: readonly Size[]): WorkspaceLayout {
       sum + (GROUP_ROW_HEIGHT * aspectOf(shape) + LAYOUT_GAP) * (GROUP_ROW_HEIGHT + LAYOUT_GAP),
     0,
   );
-  const widest = Math.max(0, ...shapes.map((shape) => GROUP_ROW_HEIGHT * aspectOf(shape)));
+  // Not Math.max(...list): that throws beyond some 100,000 values
+  const widest = shapes.reduce(
+    (max, shape) => Math.max(max, GROUP_ROW_HEIGHT * aspectOf(shape)),
+    0,
+  );
   return {
     kind: 'rows',
     width: Math.max(Math.sqrt((area * 16) / 9), widest),
@@ -244,8 +255,9 @@ export function placeGroup(
 }
 
 /**
- * A batch of images added next to what is there, in front of everything, with a text above them: the
- * name of where they came from, an object of its own that can be moved, changed or taken off.
+ * A batch of images added in front of everything, with a text above them: the name of where they came
+ * from, an object of its own that can be moved, changed or taken off. Its top left is at `origin` (where
+ * it was dropped), or else next to what is there.
  */
 export function addGroup(
   items: readonly WorkspaceItem[],
@@ -254,8 +266,8 @@ export function addGroup(
   textId: string,
   measure: MeasureText,
   layout?: WorkspaceLayout,
+  origin: Point = nextGroupOrigin(items),
 ): WorkspaceItem[] {
-  const origin = nextGroupOrigin(items);
   const placed = placeGroup(images, origin, frontZ(items), layout);
   const z = frontZ([...items, ...placed]);
   const name = createText(textId, label, origin, z, measure, GROUP_NAME_FONT_SIZE);
@@ -433,7 +445,8 @@ export function arrangeItems(
     const rowHeight = median(chosen.map((item) => item.height));
     const widths = shapes.map((shape) => rowHeight * aspectOf(shape));
     const total = widths.reduce((sum, width) => sum + width + gap, 0);
-    layout = { kind, gap, rowHeight, width: Math.max(total / n - gap, ...widths) };
+    const widest = widths.reduce((max, width) => Math.max(max, width), 0);
+    layout = { kind, gap, rowHeight, width: Math.max(total / n - gap, widest) };
   } else if (kind === 'columns') {
     layout = { kind, gap, columns: n, columnWidth: median(chosen.map((item) => item.width)) };
   } else {
@@ -545,6 +558,60 @@ export function groupUnder(sheet: Rect, others: readonly WorkspaceItem[]): Rect 
   return under.length >= 2 ? boundsOf(under) : undefined;
 }
 
+/** Letters on a light sheet, and on a dark one */
+export const DARK_INK = '#1c1c1c';
+export const LIGHT_INK = '#f4f4f4';
+
+/**
+ * The colour a text is drawn in: its own, or, without one, dark on a light sheet and light on a dark one,
+ * so a text on white paper is readable and prints dark. Elsewhere undefined: the theme's text colour.
+ * `resolve` turns a colour of the theme (`var(--…)`) into one that is known; one that stays unknown
+ * leaves it to the theme too, which reads well on the theme's own colours.
+ */
+export function textInk(
+  text: WorkspaceTextItem,
+  items: readonly WorkspaceItem[],
+  resolve: (color: string) => string = (color) => color,
+): string | undefined {
+  if (text.color !== '') {
+    return text.color;
+  }
+  const middle = { x: text.x + text.width / 2, y: text.y + text.height / 2 };
+  let sheet: WorkspaceBackgroundItem | undefined;
+  for (const item of items) {
+    if (item.kind === 'background' && (sheet === undefined || item.z > sheet.z)) {
+      const isUnder =
+        middle.x >= item.x &&
+        middle.y >= item.y &&
+        middle.x <= item.x + item.width &&
+        middle.y <= item.y + item.height;
+      sheet = isUnder ? item : sheet;
+    }
+  }
+  const lightness = sheet === undefined ? undefined : lightnessOf(resolve(sheet.color));
+  return lightness === undefined ? undefined : lightness > 0.55 ? DARK_INK : LIGHT_INK;
+}
+
+/** How light a colour written as #rgb, #rrggbb or rgb(…) looks, 0 to 1; undefined for anything else */
+function lightnessOf(color: string): number | undefined {
+  const value = color.trim();
+  let channels: number[] | undefined;
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(value)?.[1];
+  if (hex !== undefined) {
+    const full = hex.length === 3 ? [...hex].map((c) => c + c).join('') : hex;
+    channels = [0, 2, 4].map((i) => parseInt(full.slice(i, i + 2), 16));
+  } else {
+    const rgb = /^rgba?\(\s*(\d+)[\s,]+(\d+)[\s,]+(\d+)/i.exec(value);
+    channels = rgb === null ? undefined : rgb.slice(1, 4).map(Number);
+  }
+  if (channels === undefined) {
+    return undefined;
+  }
+  // The weights of how bright each looks to the eye (Rec. 709)
+  const [r, g, b] = channels.map((c) => c / 255);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
 /** Whether `inner` lies wholly within `outer` */
 export function contains(outer: Rect, inner: Rect): boolean {
   return (
@@ -626,32 +693,83 @@ export function snapMove(
   const snappedX = snapAxis('x', dx);
   const snappedY = snapAxis('y', dy);
   const moved = { ...moving, x: moving.x + snappedX, y: moving.y + snappedY };
-
-  // The lines things now share, reaching from one end of them to the other
-  const guides: SnapGuide[] = [];
   const epsilon = threshold / 100;
+  const guides = sharedLines(moved, targets, epsilon);
   for (const axis of ['x', 'y'] as const) {
-    const across = axis === 'x' ? 'y' : 'x';
-    for (const at of lines(startOf(moved, axis), sizeOf(moved, axis))) {
-      const sharing = targets.filter((other) =>
-        lines(startOf(other, axis), sizeOf(other, axis)).some(
-          (line) => Math.abs(line - at) <= epsilon,
-        ),
-      );
-      if (sharing.length > 0) {
-        const all = [moved, ...sharing];
-        guides.push({
-          kind: 'line',
-          axis,
-          at,
-          from: Math.min(...all.map((r) => startOf(r, across))),
-          to: Math.max(...all.map((r) => startOf(r, across) + sizeOf(r, across))),
-        });
-      }
-    }
     guides.push(...evenGaps(axis, moved, others, epsilon));
   }
   return { dx: snappedX, dy: snappedY, guides };
+}
+
+/**
+ * The lines `rect` now shares with others (an edge or the middle, within `epsilon`), each reaching from
+ * one end of them to the other
+ */
+function sharedLines(rect: Rect, others: readonly Rect[], epsilon: number): SnapGuide[] {
+  const guides: SnapGuide[] = [];
+  for (const axis of ['x', 'y'] as const) {
+    for (const at of linesOf(rect, axis)) {
+      const sharing = others.filter((other) =>
+        linesOf(other, axis).some((line) => Math.abs(line - at) <= epsilon),
+      );
+      if (sharing.length > 0) {
+        const across = axis === 'x' ? 'y' : 'x';
+        let from = Infinity;
+        let to = -Infinity;
+        for (const r of [rect, ...sharing]) {
+          from = Math.min(from, across === 'x' ? r.x : r.y);
+          to = Math.max(to, across === 'x' ? r.x + r.width : r.y + r.height);
+        }
+        guides.push({ kind: 'line', axis, at, from, to });
+      }
+    }
+  }
+  return guides;
+}
+
+/** The start, middle and end of a rectangle along one direction */
+function linesOf(rect: Rect, axis: 'x' | 'y'): [number, number, number] {
+  const start = axis === 'x' ? rect.x : rect.y;
+  const size = axis === 'x' ? rect.width : rect.height;
+  return [start, start + size / 2, start + size];
+}
+
+/**
+ * Sizing `item` by its lower right corner to `width` (its shape stays), snapped so that its right or
+ * lower edge lines up with an edge or the middle of one of the `others`, or it becomes as wide or as high
+ * as one of them, when that is within `threshold`. Returns the width and the lines things now share.
+ */
+export function snapSize(
+  item: Rect,
+  others: readonly Rect[],
+  width: number,
+  threshold: number,
+): { width: number; guides: SnapGuide[] } {
+  const aspect = item.width / item.height;
+  const height = width / aspect;
+  let best: { width: number; distance: number } | undefined;
+  const consider = (candidate: number, distance: number) => {
+    if (
+      candidate > 0 &&
+      Math.abs(distance) <= threshold &&
+      (best === undefined || Math.abs(distance) < best.distance)
+    ) {
+      best = { width: candidate, distance: Math.abs(distance) };
+    }
+  };
+  for (const other of others) {
+    for (const line of linesOf(other, 'x')) {
+      consider(line - item.x, line - (item.x + width));
+    }
+    for (const line of linesOf(other, 'y')) {
+      consider((line - item.y) * aspect, line - (item.y + height));
+    }
+    consider(other.width, other.width - width);
+    consider(other.height * aspect, other.height - height);
+  }
+  const snapped = best?.width ?? width;
+  const sized = { ...item, width: snapped, height: snapped / aspect };
+  return { width: snapped, guides: sharedLines(sized, others, threshold / 100) };
 }
 
 /**
@@ -810,6 +928,55 @@ export function frontZ(items: readonly WorkspaceItem[]): number {
     max = Math.max(max, item.z);
   }
   return max + 1;
+}
+
+/**
+ * Objects copied from this or another workspace, put with their middle at `at`, as they lay to each other:
+ * in front of everything, sheets under everything. An image is on a workspace once, so the ones already
+ * there are left out, and when that is all of them nothing is pasted; texts and sheets get new ids
+ * (`newId`). Returns everything, and what was pasted.
+ */
+export function pasteItems(
+  items: readonly WorkspaceItem[],
+  copied: readonly WorkspaceItem[],
+  at: Point,
+  newId: () => string,
+): { items: WorkspaceItem[]; pasted: WorkspaceItem[] } {
+  const present = new Set<string>();
+  for (const item of items) {
+    if (item.kind === 'image') {
+      present.add(item.fileId);
+    }
+  }
+  const kept = copied
+    .filter((item) => item.kind !== 'image' || !present.has(item.fileId))
+    .sort((a, b) => a.z - b.z);
+  // Images of which none are new: their name and sheet alone would be no copy of them
+  const hadImages = copied.some((item) => item.kind === 'image');
+  if (hadImages && !kept.some((item) => item.kind === 'image')) {
+    return { items: [...items], pasted: [] };
+  }
+  const bounds = boundsOf(kept);
+  if (bounds === undefined) {
+    return { items: [...items], pasted: [] };
+  }
+  const dx = at.x - (bounds.x + bounds.width / 2);
+  const dy = at.y - (bounds.y + bounds.height / 2);
+  let front = frontZ(items);
+  // Sheets under the lowest there is, in the order they had
+  let lowest = 0;
+  for (const item of items) {
+    lowest = Math.min(lowest, item.z);
+  }
+  let back = lowest - kept.filter((item) => item.kind === 'background').length;
+  const pasted = kept.map((item) => ({
+    ...item,
+    id: item.kind === 'image' ? item.id : newId(),
+    x: item.x + dx,
+    y: item.y + dy,
+    z: item.kind === 'background' ? back++ : front++,
+  }));
+  return { items: [...items, ...pasted], pasted };
 }
 
 /**
@@ -993,20 +1160,28 @@ export class SpatialIndex {
 
 // The grid
 
+/** How the endless grid under a workspace is drawn: lines, or dots where lines would cross */
+export type WorkspaceGridStyle = 'lines' | 'dots';
+
 /** Each level of the grid is this many times finer than the one above it */
 const GRID_STEP = 4;
 /** Lines closer together than this on the screen are not drawn: they would be a grey wash */
 const MIN_GRID_SPACING = 12;
+/** Dots further apart: a field of dots as close as lines can be looks like a texture, not a grid */
+export const MIN_DOT_SPACING = 20;
 
 /**
  * The two levels of the grid at a zoom: fine lines, which fade in as they spread apart, and the stronger
  * lines every `GRID_STEP` fine ones. Spacing is in world units; on the screen the fine lines are between
- * `MIN_GRID_SPACING` and `GRID_STEP` times that apart, at every zoom.
+ * `minSpacing` and `GRID_STEP` times that apart, at every zoom.
  */
-export function gridLevels(zoom: number): { fine: number; fineOpacity: number; major: number } {
-  const level = Math.ceil(Math.log(MIN_GRID_SPACING / zoom) / Math.log(GRID_STEP) - 1e-9);
+export function gridLevels(
+  zoom: number,
+  minSpacing = MIN_GRID_SPACING,
+): { fine: number; fineOpacity: number; major: number } {
+  const level = Math.ceil(Math.log(minSpacing / zoom) / Math.log(GRID_STEP) - 1e-9);
   const fine = Math.pow(GRID_STEP, level);
-  const fineOpacity = Math.log((fine * zoom) / MIN_GRID_SPACING) / Math.log(GRID_STEP);
+  const fineOpacity = Math.log((fine * zoom) / minSpacing) / Math.log(GRID_STEP);
   return { fine, fineOpacity: Math.min(1, Math.max(0, fineOpacity)), major: fine * GRID_STEP };
 }
 
@@ -1098,7 +1273,7 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
   for (const group of (Array.isArray(groups) ? groups : []) as Partial<
     Point & { label: string }
   >[]) {
-    if (typeof group?.label === 'string' && isNumber(group.x) && isNumber(group.y)) {
+    if (typeof group.label === 'string' && isNumber(group.x) && isNumber(group.y)) {
       // Its foot where the images begin, as it was drawn
       const at = {
         x: group.x,

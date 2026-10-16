@@ -23,7 +23,7 @@ import { ClientFileSearchCriteria, ClientTagSearchCriteria } from '../entities/S
 import { ClientTag } from '../entities/Tag';
 import { ClientCollection } from '../entities/Collection';
 import { ClientWorkspace } from '../entities/Workspace';
-import { LAYOUT_GAP, WorkspaceLayout } from 'common/workspace';
+import { LAYOUT_GAP, WorkspaceGridStyle, WorkspaceLayout } from 'common/workspace';
 import { comboMatches, getKeyCombo, parseKeyCombo } from '../hotkeyParser';
 import {
   MAX_THUMBNAIL_SIZE,
@@ -74,6 +74,16 @@ export interface IHotkeyMap {
   shuffle: string;
   switchCollageImages: string;
 
+  // Workspace (while one is open; Delete and select all are the ones above)
+  workspaceAddText: string;
+  workspaceLock: string;
+  workspaceGrid: string;
+  workspaceFitAll: string;
+  workspaceActualSize: string;
+  workspaceSwap: string;
+  undo: string;
+  redo: string;
+
   // Other
   openPreviewWindow: string;
   openExternal: string;
@@ -99,6 +109,15 @@ export const defaultHotkeyMap: IHotkeyMap = {
   advancedSearch: 'mod + shift + f',
   shuffle: 'alt + r',
   switchCollageImages: 'alt + s',
+  workspaceAddText: 't',
+  workspaceLock: 'l',
+  workspaceGrid: 'g',
+  workspaceFitAll: 'f',
+  workspaceActualSize: 'mod + 0',
+  // The same as swapping two images in the collage
+  workspaceSwap: 'alt + s',
+  undo: 'mod + z',
+  redo: 'mod + shift + z',
   openPreviewWindow: 'space',
   openExternal: 'mod + enter',
 };
@@ -149,6 +168,7 @@ type PersistentPreferenceFields =
   | 'screensaverCollectionIds'
   | 'isSearchBarVisible'
   | 'isWorkspaceGridShown'
+  | 'workspaceGridStyle'
   | 'isWorkspaceLayersOpen'
   // the following are only restored when isRememberSearchEnabled is enabled
   | 'isSlideMode'
@@ -181,8 +201,15 @@ class UiStore {
   @observable isTagManagerOpen: boolean = false;
   /** The workspace whose tab is open instead of the Library: see `activeWorkspace` */
   @observable private activeWorkspaceId: ID | undefined = undefined;
+  /**
+   * How wide the gallery is, told by the gallery whenever it changes (it stays in the page under a
+   * workspace); not observable: nothing is drawn from it, a new workspace is laid out by it
+   */
+  galleryWidth = 1600;
   /** Whether workspaces have a grid behind their images */
   @observable isWorkspaceGridShown: boolean = true;
+  /** Lines or dots: what the grid is when it is shown */
+  @observable workspaceGridStyle: WorkspaceGridStyle = 'lines';
   /** Whether the layers panel is open next to a workspace, or folded away into its button */
   @observable isWorkspaceLayersOpen: boolean = true;
   /** A text on a workspace whose words are to be changed in the layers panel: it gets the focus */
@@ -487,9 +514,7 @@ class UiStore {
    */
   get galleryLayout(): WorkspaceLayout {
     const cell = getThumbnailSize(this.thumbnailSize);
-    // The gallery stays in the page underneath a workspace, so it can always be measured
-    const galleryWidth = document.getElementById('gallery-content')?.clientWidth ?? 1600;
-    const width = Math.max(cell, galleryWidth - GALLERY_EDGES);
+    const width = Math.max(cell, this.galleryWidth - GALLERY_EDGES);
     const columns = Math.max(1, Math.floor(width / cell));
     const columnStep = Math.floor(width / columns);
     switch (this.method) {
@@ -510,6 +535,19 @@ class UiStore {
 
   @action.bound toggleWorkspaceGrid(): void {
     this.isWorkspaceGridShown = !this.isWorkspaceGridShown;
+  }
+
+  /** The grid as lines or as dots, shown; or none */
+  @action.bound setWorkspaceGrid(style: WorkspaceGridStyle | 'none'): void {
+    this.isWorkspaceGridShown = style !== 'none';
+    if (style !== 'none') {
+      this.workspaceGridStyle = style;
+    }
+  }
+
+  /** The grid as it is drawn now, or undefined when it is hidden */
+  get workspaceGrid(): WorkspaceGridStyle | undefined {
+    return this.isWorkspaceGridShown ? this.workspaceGridStyle : undefined;
   }
 
   @action.bound toggleWorkspaceLayers(): void {
@@ -1068,6 +1106,10 @@ class UiStore {
       this.toggleSettings();
     } else if (matches(hotkeyMap.toggleHelpCenter)) {
       this.toggleHelpCenter();
+    } else if (this.activeWorkspace !== undefined) {
+      // The rest act on the Library, which is hidden under the workspace: Space would open the preview
+      // of what is selected there while it pans, Enter its viewer. The workspace has keys of its own
+      isMatch = false;
     } else if (matches(hotkeyMap.openPreviewWindow)) {
       this.openPreviewWindow();
       e.preventDefault(); // prevent scrolling with space when opening the preview window
@@ -1179,6 +1221,7 @@ class UiStore {
         );
         this.isSearchBarVisible = Boolean(prefs.isSearchBarVisible ?? true);
         this.isWorkspaceGridShown = Boolean(prefs.isWorkspaceGridShown ?? true);
+        this.workspaceGridStyle = prefs.workspaceGridStyle === 'dots' ? 'dots' : 'lines';
         this.isWorkspaceLayersOpen = Boolean(prefs.isWorkspaceLayersOpen ?? true);
         if (Array.isArray(prefs.screensaverCollectionIds)) {
           this.screensaverCollectionIds.replace(
@@ -1254,6 +1297,7 @@ class UiStore {
       screensaverCollectionIds: this.screensaverCollectionIds.slice(),
       isSearchBarVisible: this.isSearchBarVisible,
       isWorkspaceGridShown: this.isWorkspaceGridShown,
+      workspaceGridStyle: this.workspaceGridStyle,
       isWorkspaceLayersOpen: this.isWorkspaceLayersOpen,
       isSlideMode: this.isSlideMode,
       firstItem: this.firstItem,

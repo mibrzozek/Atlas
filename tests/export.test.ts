@@ -1,7 +1,7 @@
 import * as fse from 'fs-extra';
 import * as path from 'path';
 
-import { exportFilesToDirectory } from '../common/export';
+import { exportFilesToDirectory, fileNameOf, writeNewFile } from '../common/export';
 
 describe('exportFilesToDirectory', () => {
   let root: string;
@@ -62,5 +62,41 @@ describe('exportFilesToDirectory', () => {
 
     expect(result).toEqual({ copied: 1, skipped: 0, failed: [missing] });
     expect(progress).toEqual([1, 2]);
+  });
+});
+
+describe('fileNameOf', () => {
+  it('leaves out what a Windows file name cannot have', () => {
+    expect(fileNameOf('Spring: series 2/3')).toBe('Spring series 2 3');
+    expect(fileNameOf('  moodboard...  ')).toBe('moodboard');
+    expect(fileNameOf('a\tb?')).toBe('a b');
+    expect(fileNameOf('***')).toBe('');
+  });
+
+  it('keeps clear of the names Windows keeps for devices, and of names too long', () => {
+    expect(fileNameOf('CON')).toBe('CON_');
+    expect(fileNameOf('com1')).toBe('com1_');
+    expect(fileNameOf('Console')).toBe('Console');
+    expect(fileNameOf('a'.repeat(300))).toHaveLength(200);
+  });
+});
+
+describe('writeNewFile', () => {
+  let root: string;
+
+  beforeEach(async () => {
+    root = await fse.mkdtemp(path.join(__dirname, 'tmp-export-test-'));
+  });
+
+  afterEach(() => fse.remove(root));
+
+  it('writes a new file, and next to one of the same name under another name', async () => {
+    await fse.outputFile(path.join(root, 'Sheet.png'), 'already there');
+    const first = await writeNewFile(root, 'sheet.png', Buffer.from('new'));
+    const second = await writeNewFile(root, 'sheet.png', Buffer.from('newer'));
+    expect(path.basename(first)).toBe('sheet (2).png');
+    expect(path.basename(second)).toBe('sheet (3).png');
+    expect(await fse.readFile(path.join(root, 'Sheet.png'), 'utf8')).toBe('already there');
+    expect(await fse.readFile(second, 'utf8')).toBe('newer');
   });
 });

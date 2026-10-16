@@ -46,6 +46,12 @@ import {
   snapMove,
   suggestedCount,
   swapItems,
+  DARK_INK,
+  LIGHT_INK,
+  textInk,
+  pasteItems,
+  snapSize,
+  isStartCamera,
 } from '../common/workspace';
 
 const item = (fileId: string, x: number, y: number, z: number, size = 100): WorkspaceImageItem => ({
@@ -195,6 +201,20 @@ describe('placing images', () => {
     // Above the images, in the room left for it
     expect(items[2].y + items[2].height).toBeLessThanOrEqual(items[1].y);
   });
+
+  it('puts a dropped batch where it was dropped, its name at the top left', () => {
+    const items = addGroup(
+      [item('a', 0, 0, 7)],
+      'Dropped',
+      [{ fileId: 'b', width: 1, height: 1 }],
+      'name',
+      measure,
+      undefined,
+      { x: -500, y: 300 },
+    );
+    expect(items[2]).toMatchObject({ kind: 'text', x: -500, y: 300 });
+    expect(items[1]).toMatchObject({ x: -500, y: 300 + GROUP_LABEL_SPACE });
+  });
 });
 
 describe('layouts, like the views of the Library', () => {
@@ -286,6 +306,31 @@ describe('layouts, like the views of the Library', () => {
     expect(suggestedCount('grid', 16)).toBe(5);
     expect(suggestedCount('rows', 16)).toBe(4);
     expect(suggestedCount('columns', 2)).toBe(2);
+  });
+});
+
+describe('snapping while sizing', () => {
+  const sized = { x: 0, y: 0, width: 100, height: 50 };
+
+  it('lines the right edge up with an edge nearby, keeping the shape', () => {
+    const other = { x: 300, y: 500, width: 100, height: 100 };
+    const { width, guides } = snapSize(sized, [other], 297, 5);
+    expect(width).toBe(300);
+    expect(guides).toContainEqual(expect.objectContaining({ kind: 'line', axis: 'x', at: 300 }));
+  });
+
+  it('lines the lower edge up, or takes the height or width of a neighbour', () => {
+    const below = { x: 500, y: 103, width: 20, height: 20 };
+    expect(snapSize(sized, [below], 200, 5).width).toBe(206); // bottom at 103
+    const tall = { x: 900, y: 900, width: 37, height: 80 };
+    expect(snapSize(sized, [tall], 158, 5).width).toBe(160); // as high as it
+  });
+
+  it('leaves the size alone when nothing is near', () => {
+    expect(snapSize(sized, [{ x: 900, y: 900, width: 10, height: 10 }], 222, 5)).toEqual({
+      width: 222,
+      guides: [],
+    });
   });
 });
 
@@ -584,7 +629,73 @@ describe('swapping', () => {
   });
 });
 
+describe('the levels of a dot grid', () => {
+  it('keep dots further apart on the screen than lines', () => {
+    for (const zoom of [0.01, 0.3, 1, 7]) {
+      const { fine } = gridLevels(zoom, 20);
+      expect(fine * zoom).toBeGreaterThanOrEqual(20 - 1e-6);
+      expect(fine * zoom).toBeLessThan(80 + 1e-6);
+    }
+  });
+});
+
+describe('the camera of a new workspace', () => {
+  it('is known by its value, also when read back from the database', () => {
+    expect(isStartCamera({ x: 0, y: 0, zoom: 1 })).toBe(true);
+    expect(isStartCamera({ x: 0, y: 0, zoom: 0.5 })).toBe(false);
+  });
+});
+
+describe('pasting', () => {
+  it('puts copies around a point as they lay, in front, sheets under, images only once', () => {
+    const there = [item('a', 0, 0, 3)];
+    const text = createText('t', 'Hi', { x: 100, y: 0 }, 1, measure, 20);
+    const sheet = createBackground('s', { x: 100, y: 50 }, 100, -1);
+    const copied = [item('a', 0, 0, 0), item('b', 100, 100, 2), text, sheet];
+    let n = 0;
+    const { items, pasted } = pasteItems(there, copied, { x: 1000, y: 1000 }, () => `new${n++}`);
+    // "a" is there already
+    expect(pasted.map((i) => i.kind)).toEqual(['background', 'text', 'image']);
+    expect(items).toHaveLength(4);
+    const bounds = boundsOf(pasted)!;
+    expect(bounds.x + bounds.width / 2).toBeCloseTo(1000);
+    expect(bounds.y + bounds.height / 2).toBeCloseTo(1000);
+    // As they lay to each other
+    const b = pasted.find((i) => i.id === 'b')!;
+    const t = pasted.find((i) => i.kind === 'text')!;
+    expect(b.x - t.x).toBe(0);
+    expect(b.y - t.y).toBe(100);
+    expect(t.id).toBe('new1');
+    expect(pasted.find((i) => i.kind === 'background')!.z).toBeLessThan(0);
+    expect(t.z).toBeGreaterThan(3);
+    expect(b.z).toBeGreaterThan(t.z);
+  });
+
+  it('pastes nothing when every image is there already, not even their name', () => {
+    const there = [item('a', 0, 0, 0)];
+    const name = createText('t', 'Film', { x: 0, y: -50 }, 1, measure, 20);
+    expect(pasteItems(there, [...there, name], { x: 0, y: 0 }, () => 'x').pasted).toEqual([]);
+    // A text alone is pasted
+    expect(pasteItems(there, [name], { x: 0, y: 0 }, () => 'x').pasted).toHaveLength(1);
+  });
+});
+
 describe('backgrounds', () => {
+  it('make a text without a colour of its own dark on light paper and light on dark, else the theme', () => {
+    const text = createText('t', 'Moodboard', { x: -50, y: -20 }, 5, measure, 20);
+    const white = createBackground('w', { x: 0, y: 0 }, 400, -2);
+    const black = { ...createBackground('b', { x: 0, y: 0 }, 200, -1), color: '#111' };
+    expect(textInk(text, [white])).toBe(DARK_INK);
+    // The top sheet under its middle counts
+    expect(textInk(text, [white, black])).toBe(LIGHT_INK);
+    expect(textInk(text, [{ ...white, color: 'rgb(250, 240, 220)' }])).toBe(DARK_INK);
+    // Away from the paper, a colour of the theme on it, or a colour of its own
+    expect(textInk({ ...text, x: 5000 }, [white])).toBeUndefined();
+    expect(textInk(text, [{ ...white, color: 'var(--background-color)' }])).toBeUndefined();
+    expect(textInk(text, [{ ...white, color: 'var(--x)' }], () => '#000000')).toBe(LIGHT_INK);
+    expect(textInk({ ...text, color: 'red' }, [white])).toBe('red');
+  });
+
   it('are a white sheet of A4 by default, around a middle, and change format keeping their width', () => {
     const sheet = createBackground('s', { x: 0, y: 0 }, 297, -1);
     expect(sheet).toMatchObject({

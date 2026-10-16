@@ -6,6 +6,7 @@ import {
   arrangeItems,
   bringToFront,
   Camera,
+  pasteItems,
   changeBackground,
   changeText,
   createBackground,
@@ -34,7 +35,7 @@ const MAX_UNDO = 100;
 
 /**
  * An endless surface with images and texts arranged on it by hand, each a layer of its own. Every change
- * is stored right away, except the camera, which changes with every frame of a pan or zoom.
+ * is stored a moment after the last one (`WorkspaceStore.saveSoon`).
  *
  * While it is locked, nothing on it is moved, sized, reordered, changed or taken off.
  */
@@ -54,6 +55,8 @@ export class ClientWorkspace {
   camera: Camera;
   /** How it was before each change, for undoing them; not stored */
   private readonly history: (readonly WorkspaceItem[])[] = [];
+  /** How it was before each undo, for redoing them, until the next change */
+  private readonly future: (readonly WorkspaceItem[])[] = [];
   /** What the last arrangement was laid out from: one Arrange session is one change to undo */
   private arrangedFrom: readonly WorkspaceItem[] | undefined;
 
@@ -113,7 +116,7 @@ export class ClientWorkspace {
     const trimmed = name.trim();
     if (trimmed.length > 0 && trimmed !== this.name) {
       this.name = trimmed;
-      this.store.save(this);
+      this.store.saveSoon(this);
     }
   }
 
@@ -122,26 +125,33 @@ export class ClientWorkspace {
     if (this.isLocked) {
       this.selection.clear();
     }
-    this.store.save(this);
+    this.store.saveSoon(this);
   }
 
   /**
-   * Puts a batch of images next to what is there, with the name of where they came from above them. An
-   * image is on a workspace once: the ones that are already there are left where they are.
+   * Puts a batch of images at `at`, or next to what is there, with the name of where they came from above
+   * them; they are selected, so Arrange can change them at once. An image is on a workspace once: the ones
+   * that are already there are left where they are. Returns how many were added.
    */
   @action.bound addGroup(
     label: string,
     images: readonly WorkspaceImage[],
     layout?: WorkspaceLayout,
-  ): void {
+    at?: Point,
+  ): number {
+    if (this.isLocked) {
+      return 0;
+    }
     const present = new Set(this.fileIds);
     const newImages = images.filter((image) => !present.has(image.fileId));
     if (newImages.length === 0) {
-      return;
+      return 0;
     }
     this.change(
-      addGroup(this.items, label, newImages, generateId(), this.store.measureText, layout),
+      addGroup(this.items, label, newImages, generateId(), this.store.measureText, layout, at),
     );
+    this.selection.replace(newImages.map((image) => image.fileId));
+    return newImages.length;
   }
 
   /**
@@ -180,7 +190,7 @@ export class ClientWorkspace {
     if (this.isLocked) {
       return;
     }
-    const lowest = Math.min(0, ...this.items.map((item) => item.z));
+    const lowest = this.items.slice().reduce((min, item) => Math.min(min, item.z), 0);
     const background = createBackground(generateId(), center, height, lowest - 1);
     this.change([...this.items, background]);
     this.selection.replace([background.id]);
@@ -261,6 +271,27 @@ export class ClientWorkspace {
     this.change(moveLayers(this.items, ids, toIndex));
   }
 
+  /** Copies of what is selected, to be pasted here or on another workspace */
+  get selectedItems(): WorkspaceItem[] {
+    return this.items.slice().filter((item) => this.selection.has(item.id));
+  }
+
+  /**
+   * Puts copies of objects around `at`, selected; images that are on it already are left out. Returns
+   * how many were pasted.
+   */
+  @action.bound paste(copied: readonly WorkspaceItem[], at: Point): number {
+    if (this.isLocked || copied.length === 0) {
+      return 0;
+    }
+    const { items, pasted } = pasteItems(this.items, copied, at, generateId);
+    if (pasted.length > 0) {
+      this.change(items);
+      this.selection.replace(pasted.map((item) => item.id));
+    }
+    return pasted.length;
+  }
+
   /** Takes things off the workspace. Only off the workspace: the files of images are not touched */
   @action.bound removeItems(ids: ReadonlySet<string>): void {
     if (this.isLocked || ids.size === 0) {
@@ -276,19 +307,12 @@ export class ClientWorkspace {
 
   /** Puts back how it was before the last change */
   @action.bound undo(): void {
-    if (this.isLocked) {
-      return;
-    }
-    const previous = this.history.pop();
-    if (previous !== undefined) {
-      this.arrangedFrom = undefined;
-      this.items.replace([...previous]);
-      const present = new Set(previous.map((item) => item.id));
-      [...this.selection]
-        .filter((id) => !present.has(id))
-        .forEach((id) => this.selection.delete(id));
-      this.store.save(this);
-    }
+    this.travel(this.history, this.future);
+  }
+
+  /** Does again what the last undo took back */
+  @action.bound redo(): void {
+    this.travel(this.future, this.history);
   }
 
   /** Selects one thing, or with `additive` adds it to (or takes it out of) what is selected */
@@ -327,7 +351,7 @@ export class ClientWorkspace {
   @action.bound setIndex(index: number): void {
     if (this.index !== index) {
       this.index = index;
-      this.store.save(this);
+      this.store.saveSoon(this);
     }
   }
 
@@ -352,13 +376,29 @@ export class ClientWorkspace {
     this.remember(this.items.slice());
     this.arrangedFrom = undefined;
     this.items.replace(items);
-    this.store.save(this);
+    this.store.saveSoon(this);
   }
 
+  /** A change made after an undo leaves nothing to redo */
   private remember(items: readonly WorkspaceItem[]) {
     this.history.push(items);
     if (this.history.length > MAX_UNDO) {
       this.history.shift();
     }
+    this.future.length = 0;
+  }
+
+  /** Back (from the history to the future) or forward again (the other way) by one change */
+  private travel(from: (readonly WorkspaceItem[])[], to: (readonly WorkspaceItem[])[]) {
+    const items = this.isLocked ? undefined : from.pop();
+    if (items === undefined) {
+      return;
+    }
+    to.push(this.items.slice());
+    this.arrangedFrom = undefined;
+    this.items.replace([...items]);
+    const present = new Set(items.map((item) => item.id));
+    [...this.selection].filter((id) => !present.has(id)).forEach((id) => this.selection.delete(id));
+    this.store.saveSoon(this);
   }
 }

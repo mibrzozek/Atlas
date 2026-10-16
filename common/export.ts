@@ -1,7 +1,7 @@
 // Needed for test:
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const path = require('path');
-import { copy, ensureDir, readdir } from 'fs-extra';
+import { copy, ensureDir, readdir, writeFile } from 'fs-extra';
 
 export interface ExportResult {
   copied: number;
@@ -61,4 +61,50 @@ export async function exportFilesToDirectory(
     onProgress?.(i + 1, sources.length);
   }
   return result;
+}
+
+/** Names Windows keeps for devices: a file called so can not be opened or deleted in Explorer */
+const RESERVED_NAMES = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
+/** Long enough for any name, short enough for the folder and an extension to fit in a path */
+const MAX_NAME_LENGTH = 200;
+
+/**
+ * A name someone typed, as a file name: without the letters Windows does not allow in one, nor the dots
+ * and spaces it drops from the end, not one of the names it keeps for devices, and not too long. Empty
+ * when nothing is left.
+ */
+export function fileNameOf(name: string): string {
+  const cleaned = name
+    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .slice(0, MAX_NAME_LENGTH)
+    .replace(/[. ]+$/, '')
+    .trim();
+  return RESERVED_NAMES.test(cleaned) ? `${cleaned}_` : cleaned;
+}
+
+/**
+ * Writes a new file into a directory, never over another: when the name is taken it becomes like
+ * "name (2).png". The write itself refuses a file that exists (`wx`), also one made in the meantime.
+ * Returns the path it was written to.
+ */
+export async function writeNewFile(
+  targetDir: string,
+  fileName: string,
+  data: Uint8Array,
+): Promise<string> {
+  const takenNames = new Set((await readdir(targetDir)).map(nameKey));
+  for (;;) {
+    const name = getAvailableName(fileName, takenNames);
+    const filePath = path.join(targetDir, name);
+    try {
+      await writeFile(filePath, data, { flag: 'wx' });
+      return filePath;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST') {
+        throw e;
+      }
+      takenNames.add(nameKey(name));
+    }
+  }
 }
