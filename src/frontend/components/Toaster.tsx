@@ -1,14 +1,14 @@
 import { action, makeObservable, observable } from 'mobx';
-import { observer } from 'mobx-react-lite';
-import React from 'react';
-
-import { Button } from 'widgets/button';
-import { Toast } from 'widgets/notifications';
 import { generateWidgetId } from 'widgets/utility';
 import { ID } from '../../api/id';
 
+/**
+ * The messages of the app: shown one above the other in the status footer at the bottom left, never
+ * anywhere else. A message with a `timeout` goes after that long; one without (0) is work going on, and
+ * stays until it is replaced (same `id`) or dismissed.
+ */
 class ToastManager {
-  readonly toastList = observable(new Array<IdentifiableToast>());
+  readonly toastList = observable(new Array<Toast>());
   private timeouts = new Map<ID, number>();
 
   constructor() {
@@ -30,7 +30,7 @@ class ToastManager {
       }
     }
 
-    const toastWithKey: IdentifiableToast = {
+    const toastWithKey: Toast = {
       ...toast,
       id: id ?? generateWidgetId('__toast'),
     };
@@ -43,6 +43,9 @@ class ToastManager {
   }
 
   @action dismiss(id: string): boolean {
+    // Its timer goes too: else it would take away a new message of the same id before its time
+    window.clearTimeout(this.timeouts.get(id));
+    this.timeouts.delete(id);
     const instance = this.toastList.find((t) => t.id === id);
     if (instance !== undefined) {
       return this.toastList.remove(instance);
@@ -64,20 +67,5 @@ interface IToastProps {
   timeout: number;
 }
 
-type IdentifiableToast = IToastProps & { id: ID };
-
-export const Toaster = observer(() => (
-  <div id="toast-container">
-    {AppToaster.toastList.map(({ id, message, clickAction, timeout }) => (
-      <Toast
-        key={id}
-        message={message}
-        clickAction={
-          clickAction && <Button text={clickAction.label} onClick={clickAction.onClick} />
-        }
-        timeout={timeout}
-        onDismiss={() => AppToaster.dismiss(id)}
-      />
-    ))}
-  </div>
-));
+/** A message, as the status footer shows it (`StatusFooter.tsx`) */
+export type Toast = IToastProps & { id: ID };

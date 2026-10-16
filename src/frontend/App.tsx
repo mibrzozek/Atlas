@@ -6,10 +6,10 @@ import { useStore } from './contexts/StoreContext';
 
 import ErrorBoundary from './containers/ErrorBoundary';
 import HelpCenter from './containers/HelpCenter';
-import { Toaster as CustomToaster } from './components/Toaster';
 
 import AdvancedSearchDialog from './containers/AdvancedSearch';
 import Settings from './containers/Settings';
+import StatusFooter from './containers/StatusFooter';
 
 import { ThumbnailTarget, useWorkerListener } from './image/ThumbnailGeneration';
 import WindowTitlebar from './containers/WindowTitlebar';
@@ -115,7 +115,7 @@ const App = observer(() => {
 
             <AdvancedSearchDialog />
 
-            <CustomToaster />
+            <StatusFooter />
 
             <Screensaver />
           </ErrorBoundary>

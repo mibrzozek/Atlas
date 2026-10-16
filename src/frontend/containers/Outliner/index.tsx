@@ -52,64 +52,8 @@ const Outliner = () => {
           <SavedSearchesPanel fitContent />
         </MultiSplit>
       </div>
-      <BackgroundProgress />
     </nav>
   );
 };
-
-/**
- * A bar at the foot of the outliner while something is going on in the background: the sources being
- * checked for new and changed images at start-up, or the images of a workspace being prepared. It is
- * always there, and glides in and out of sight; the last words stay while it fades away.
- */
-const BackgroundProgress = observer(() => {
-  const { locationStore, workspaceStore } = useStore();
-  const scan = locationStore.scanProgress;
-  const preparing = workspaceStore.preparing?.progress;
-  const preparingName = workspaceStore.preparing?.workspace.name;
-
-  const current =
-    scan !== undefined
-      ? {
-          label: 'Looking for new images',
-          detail: `${scan.done} of ${scan.total} sources`,
-          // Halfway into the source that is being looked at
-          fraction: (scan.done + 0.5) / scan.total,
-        }
-      : preparing !== undefined
-      ? {
-          label: `Preparing ${preparingName}`,
-          detail: `${preparing.done.toLocaleString()} of ${preparing.total.toLocaleString()} images`,
-          fraction: preparing.total > 0 ? preparing.done / preparing.total : 0,
-        }
-      : undefined;
-  const last = useRef(current);
-  if (current !== undefined) {
-    last.current = current;
-  }
-  const shown = current ?? last.current;
-
-  return (
-    <div
-      id="background-progress"
-      role="progressbar"
-      aria-label={shown?.label}
-      aria-hidden={current === undefined}
-      aria-valuemin={0}
-      aria-valuemax={1}
-      aria-valuenow={current?.fraction ?? 1}
-      data-active={current !== undefined}
-    >
-      <div className="background-progress-text">
-        <span className="label">{shown?.label}</span>
-        <span className="detail">{shown?.detail}</span>
-      </div>
-      <div className="track">
-        {/* All the way when done, while it fades out */}
-        <div className="fill" style={{ transform: `scaleX(${current?.fraction ?? 1})` }} />
-      </div>
-    </div>
-  );
-});
 
 export default observer(Outliner);
