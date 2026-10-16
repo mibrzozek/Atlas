@@ -236,6 +236,12 @@ Probe pitfalls that cost time:
   a few moves, then replay the `Input.dragIntercepted` data with `Input.dispatchDragEvent`
   (dragEnter, dragOver, drop). A capture-phase listener that logs `mousedown`/`click` targets shows at once
   what really got the click.
+- **Everything the app tells the user is in the status footer** at the bottom left
+  (`containers/StatusFooter.tsx`, `status-footer.scss`): the messages of `AppToaster` as small cards
+  (with their action and a ×; one with `timeout: 0` is work going on and gets the running line), and under
+  them the progress of work in the background. At the foot of the side panel and as wide as it; with the
+  side panel hidden, on its own. Nothing pops up bottom right any more (the user asked for that): show a
+  message with `AppToaster.show`, never a corner of its own.
 - Tooltips: the element with `data-tooltip` is found with `closest`, an open tooltip never takes clicks, and
   for something inside an open `<dialog>` the tooltip element is moved into that dialog (a modal dialog is
   drawn over everything else, whatever the z-index).
@@ -328,8 +334,8 @@ Probe pitfalls that cost time:
   the page and stored once on release. Images get the pixels they cover once the camera stops (the
   `SharpImages` workers), and the file itself from its full size on. Tiles are prepared in the background
   per workspace (`WorkspaceImages`, kept for the last 3 opened); from 2,000 images on, + asks first and
-  does not open the workspace. Progress shows at the foot of the outliner (`BackgroundProgress`, shared
-  with the start-up scan). Pointer capture makes the surface the target of clicks and double clicks:
+  does not open the workspace. Progress shows in the status footer (`BackgroundProgress`, shared with
+  the start-up scan). Pointer capture makes the surface the target of clicks and double clicks:
   remember the pressed image, or use `elementFromPoint`.
   Everything on a workspace is an object (`WorkspaceItem`: an image, whose id is its file id, or a text)
   with its own `z`, its layer. The name of a batch is a text object; rows stored before that have a
@@ -337,8 +343,20 @@ Probe pitfalls that cost time:
   (`measureText.ts`, same font and weight as `.workspace-text`) so their frame fits the letters; the store
   takes the measuring as a parameter so tests can pass their own. Texts are always elements, never tiles.
   The layers panel (`LayersPanel.tsx`, right of the surface, folds into the Layers button) draws only the
-  rows in sight; dragging rows calls `moveLayers`, which numbers every `z` anew. Typing in a text is
-  stored a moment after the last key, not per key: every change saves the whole workspace row.
+  rows in sight; dragging rows calls `moveLayers`, which numbers every `z` anew. Every change is stored
+  0.4 s after the last one (`saveSoon`; `saveAll` from `RootStore.close` on unload): a save writes the
+  whole row, 56 ms of blocked window at 30,000 objects.
+  A box, a drag or a sizing is held by where it was pressed on the workspace (`Press.startInWorld`) and
+  brought up to date whenever the camera moves too (`follow`): the wheel or a zoom during a drag, or
+  scrolling by itself at an edge (`scrollAtEdge`). What is dragged is also looked for at its moved place
+  when deciding what gets an element, and its elements are found again when they change mid-drag.
+  Tiles are kept in the `tiles` table of `Atlas_Workspaces` (version 2 of that database, not of the
+  library's) with each image's average colour, checked against the file's modified date; far out an
+  image without its tile is drawn in that colour. Save as picture (`SavePictureDialog.tsx`,
+  `workspacePicture.ts`) asks for a name (`fileNameOf`) and a format, then a folder, and writes with
+  `writeNewFile` (`common/export.ts`), which never overwrites. Printing was taken out for now.
+  The grid is lines or dots (`UiStore.workspaceGridStyle`, the Grid menu; G shows or hides it); dots
+  use `gridLevels` with a wider `MIN_DOT_SPACING`, each level drawn as one path.
   A new workspace is laid out as the Library shows it (`UiStore.galleryLayout`, mirroring
   `wasm/masonry/src/layout.rs` in whole pixels; grid with square thumbnails cuts to 1:1) and starts with
   its batch selected. Arrange (a menu that stays open) lays a selection out in rows, columns or a grid,
@@ -347,13 +365,26 @@ Probe pitfalls that cost time:
   (`snapMove`, guides drawn over everything); Alt drags freely. Swap trades two places. A background is a
   sheet (default white A4) drawn in its own layer under the tiles canvas, so small images stay visible on
   it; a drag on an unselected sheet draws a selection box, a click selects it, and a selected sheet is
-  dragged on its own: what lies on it stays where it is (the user asked for that). Print (`printWorkspace.ts`) draws the selected
-  sheet, the selection or everything at the full resolution of its photos, capped at 8,192 px (127 MP
-  never reached the dialog), and prints the canvas itself from a hidden iframe.
+  dragged on its own: what lies on it stays where it is (the user asked for that). The picture
+  (`workspacePicture.ts`) is the selected sheet, the selection or everything at the full resolution of
+  its photos, capped at 8,192 px (127 MP took over half a minute).
   An Arrange session lays out from a snapshot of how things were (sizes never drift, one undo step, stored
   once it rests), one step per frame. **Never read an observable array item by item** (`for...of`, `[i]`,
   spread): in this development build every read is checked (`observableRequiresReaction`), which cost 65 ms
   per slider step at 2,000 images. Take `.slice()` once and loop over the copy.
+  Things of the Library are added by dropping them (`libraryDrop.ts` reads the drag, `WorkspaceStore.addBatch`
+  searches the database like the gallery and places them): a tag, a collection, a source or a folder of
+  it (subfolders drag as `DnDFolderType`, their path), or gallery images, which leave as a native file
+  drag and are matched by path. On the surface the batch lands where it was dropped; on a tab or a row of
+  the Workspaces panel next to what is there, and held there 0.7 s that workspace opens
+  (`useWorkspaceDrop.ts`, shared by both, which also reorders them). Ctrl+C / Ctrl+V copy objects within
+  and between workspaces (`pasteItems`); an image is on a workspace once, so there is no duplicate key.
+  A text without a colour of its own is drawn dark on a light sheet and light on a dark one (`textInk`,
+  also in a saved picture). The workspace keys are in `hotkeyMap` (Settings, Shortcuts), with Ctrl+0 for 100%
+  and Ctrl+Shift+Z for redo; the page takes Ctrl+0 before the menu's window zoom.
+  The tabs are as flat as the toolbar buttons; the open one has an accent line on the bar's lower edge.
+  The settings window's `[role='tablist']` / `[role='tab']` rules are global: anything with those roles
+  has to undo them (`.workspace-tabs` does).
 - The viewer (one image open) keeps the search bar in its toolbar; searching from there goes back to the
   gallery with the results.
 - Dragging in the lists of the side panel (`Outliner/TreeItemDnD.ts`): one shared line that glides between
@@ -374,7 +405,8 @@ small "of my mind" underneath, which is what the user asked for.
 
 ## Known open items
 
-- **Workspaces**: what is left is under "Next steps" in `docs/workspaces-roadmap.md` (first: try it on the real library, screen and printer; then dropping tags and folders onto a workspace).
+- **Workspaces**: what is left is under "Next steps" in `docs/workspaces-roadmap.md` (first: try it on the real library and screen). Animating a workspace into a video: plan in
+  `docs/workspace-video-plan.md`, not started.
 - A "Date taken" sort from Exif capture date: discussed, user said not yet.
 - Camera raw files (CR2/CR3) are not recognised at all; most of the user's shoots are raw + JPEG pairs.
 - PSD and EXR thumbnails, and their full-size conversion, are still done on the main thread.

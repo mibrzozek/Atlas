@@ -36,9 +36,11 @@ on their work, and it is released under the same licence, GPL-3.0.
   collections. Tag colours can follow the theme.
 - **Home gallery**: the images tagged `Home`, shown when Atlas starts.
 - **Workspaces**: endless canvases, one per tab, made from what the Library shows and laid out the same
-  way. Move, stack and size images, add texts and paper sheets, snap to edges, middles and even gaps,
-  arrange a selection in rows, columns or a grid (whole or cut to 1:1 or 4:5), reorder layers, and print
-  at the full resolution of the photos. Zoom from thousands of images at a glance to one at full size.
+  way, or filled by dragging tags, collections, folders and images onto them. Move, stack and size
+  images, add texts and paper sheets, snap to edges, middles and even gaps, arrange a selection in rows,
+  columns or a grid (whole or cut to 1:1 or 4:5), copy between workspaces, reorder layers, and save as a
+  picture at the full resolution of the photos. Zoom from thousands of images at a glance to one at full
+  size.
 - **Collage mode**: put the images of any view in your own order by dragging them, or switch two.
 - **Export**: copy selected or tagged images to a folder you pick.
 - **Folder creator**: make a run of numbered or dated folders, continuing the numbering already there.
@@ -58,6 +60,10 @@ A collection open in the horizontal masonry view:
 Collage mode, where every image has a slot of its own and can be dragged to another place:
 
 ![Collage mode: images whole inside equal slots](./resources/images/readme/collage.png)
+
+A workspace: a grid cut to 4:5 on a sheet of paper, a second batch beside it, and the layers on the right:
+
+![A workspace with a grid of images on a white sheet, a batch in rows next to it, and the layers panel](./resources/images/readme/workspace.png)
 
 The page for editing tags and collections:
 

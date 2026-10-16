@@ -4,8 +4,9 @@ Status (2026-10-16): built, checked with real input in a hidden copy of the app,
 is under **Next steps** at the end.
 
 A workspace is an endless surface on which images and texts are arranged by hand: moved, stacked, laid
-over each other, sized, laid out in rows, columns or grids, on sheets of paper, and printed. The rest of
-Atlas does not change around it.
+over each other, sized, laid out in rows, columns or grids, on sheets of paper, and saved as a picture.
+The rest of Atlas does not change around it. Animating a workspace into a video is planned in
+`docs/workspace-video-plan.md`.
 
 ## What there is
 
@@ -14,9 +15,16 @@ workspace of what the Library shows, laid out exactly as the Library shows it (j
 or a grid, cut to squares when the grid shows square thumbnails), with its name (the tag, collection or
 folder) written large above it; the new batch starts selected. From 2,000 images on, + asks first and
 prepares the workspace in the background while the Library stays in front; a bar at the foot of the side
-panel shows how far it got, the tab a spinner. Tabs rename (double click), reorder (drag) and close (×,
-asked). The **Workspaces** panel in the side panel lists them. Any change to what the Library shows brings
-the Library tab back.
+panel shows how far it got, the tab a spinner. Tabs rename (double click), reorder (drag) and close
+(the × on the open one, asked). The **Workspaces** panel in the side panel lists them with their number
+of images, and does what the tabs do: click opens, double click renames, drag reorders. Any change to
+what the Library shows brings the Library tab back.
+
+**Adding from the Library.** Drag a tag, a collection, a source or one of its folders from the side panel,
+or images from the gallery, onto a workspace: on the surface they land as a named batch where they are
+dropped; on a tab or a row of the Workspaces panel next to what is there (a message says so, with
+Open). Held over a tab for a moment, that workspace opens, to drop in place. They come in the order the
+Library sorts them, laid out as the Library shows them, selected; images already there are left out.
 
 **Moving around.** The wheel pans (Shift sideways); **Ctrl + wheel and touchpad pinch zoom toward the
 pointer**, 1/2000 to 32 times. Space + drag, the middle button, or any drag on a locked workspace pans.
@@ -27,11 +35,17 @@ at full resolution; on a text, opens it for editing.
 - A drag on empty space draws a box that selects what it touches (Shift or Ctrl adds). A click brings an
   image to the front, also one that only shows from under another. Selected objects move together and
   land on top. A handle in the corner sizes the one selected (a text's letters grow along).
+- While a box is drawn or something is dragged or sized, the wheel and a zoom move the view under it:
+  the box keeps its start on the workspace, what is dragged stays under the pointer. Held near an edge
+  of the view, the view scrolls that way by itself.
 - **Snapping** while dragging: edges and middles line up with those of nearby objects, gaps even out with
   the gaps between neighbours in the same row or column, and a sheet lines up with the images it lies
-  under as one block (the middle of an even grid is in a gap). Guides show what lines up; Alt drags freely.
+  under as one block (the middle of an even grid is in a gap). While sizing, the right and lower edges
+  line up the same way, or the size becomes that of a neighbour. Guides show what lines up; Alt drags
+  and sizes freely.
 - **Texts**: the **T** button or key adds one, readable at the current zoom. Words, size and colour are
-  changed in the layers panel.
+  changed in the layers panel. Without a colour of its own a text is dark on a light sheet and light on
+  a dark one, on screen and in a saved picture.
 - **Backgrounds**: the Background button lays a sheet (white A4 by default) under what is selected, or
   in the middle, and the camera glides to show all of it. Colour and paper format are changed in the
   layers panel. A sheet is always drawn under the images and stays the bottom layer; a drag on a sheet
@@ -39,14 +53,19 @@ at full resolution; on a text, opens it for editing.
 - **Arrange** (two or more selected): rows, columns or a grid; whole images or cut to 1:1 or 4:5; the
   number of rows or columns and the spacing on sliders. The menu stays open; each change shows at once,
   sizes never drift, and the whole session is one undo step.
-- **Swap** (two selected) trades their places. **Delete** takes objects off (never the files),
-  **Ctrl+Z** undoes, **Ctrl+A** selects all, **Escape** lets go, **L** locks, **G** toggles the grid.
+- **Copy and paste** (Ctrl+C, Ctrl+V) within a workspace and between them, pasted in the middle of the
+  view; an image is on a workspace once, so images already there are left out.
+- **Swap** (two selected, **Alt+S** as in the collage) trades their places. **Delete** takes objects off (never the files),
+  **Ctrl+Z** undoes, **Ctrl+Shift+Z** redoes, **Ctrl+A** selects all, **Escape** lets go, **L** locks,
+  **G** shows or hides the grid (lines or dots, picked in the Grid menu), **Ctrl+0** zooms to 100%. All but Escape can be changed in Settings, Shortcuts.
 - **Layers panel** on the right (folds into the Layers button): everything from the top layer down, only
   the rows in sight drawn; click selects, drag changes the layer, double click glides to it.
 
-**Print.** The selected sheet, or else the selection, or else everything, composed at the full resolution
-of its photos (capped at 8,192 px on the longest side, some 700 dpi on A4) and handed to the system's
-print dialog.
+**Save as picture.** The selected sheet, or else the selection, or else everything, composed at the full
+resolution of its photos (capped at 8,192 px on the longest side, some 700 dpi on A4) and saved as a PNG
+or JPEG under a name of your own (the workspace's to begin with) in a folder you pick, the last one
+offered first; never over another file, a taken name gets a number. Printing was taken out for now
+(2026-10-16); it is in the history (commit d9083410, `printPicture`) to bring back.
 
 ## How it stays fast
 
@@ -62,7 +81,12 @@ Measured in the hidden copy with real input. See the Workspaces section of CLAUD
 - Images get the pixels they cover once the camera rests: thumbnail, a version drawn to size by the
   `SharpImages` workers, or the file itself.
 - Arrange works from a snapshot, one step per frame, stored once the slider rests: 60 frames per second
-  with 2,000 images selected.
+  with 2,000 images selected (4 to 12 ms a step with 2,000 of 30,000 selected, 46 to 59 ms with all).
+- Every change is stored 0.4 s after the last one, and what is waiting when the window closes: a save of
+  30,000 objects blocks the window for some 56 ms, which a move of one image used to pay each time (now
+  15 ms).
+- The tiny versions are kept in the database with the average colour of each image, for all workspaces:
+  2,000 images were ready in 0.8 s after a restart instead of 6.9 s, their colours after 0.3 s.
 
 ## Model and storage
 
@@ -76,7 +100,7 @@ Measured in the hidden copy with real input. See the Workspaces section of CLAUD
 | `containers/Workspace/WorkspaceView.tsx`, `WorkspaceObject.tsx` | what is in view, as elements |
 | `containers/Workspace/LayersPanel.tsx`, `WorkspaceTools.tsx`, `WorkspaceTabs.tsx` | panel, bar, tabs |
 | `containers/Workspace/WorkspaceImages.ts`, `TileImages.ts` | where images are, tiny versions in the background |
-| `containers/Workspace/printWorkspace.ts`, `measureText.ts` | printing; measuring texts |
+| `containers/Workspace/workspacePicture.ts`, `SavePictureDialog.tsx`, `measureText.ts` | the picture and saving it; measuring texts |
 | `containers/Outliner/WorkspacesPanel.tsx` | the panel in the side panel |
 
 Workspaces are **not in backups** (decided; revisit). Images are read as plain rows, never as
@@ -87,38 +111,13 @@ Workspaces are **not in backups** (decided; revisit). Images are read as plain r
 In order of how much they matter:
 
 1. **Try it on the real library and screen.** Nothing here has been seen on the user's GPU and monitors,
-   with 20-megapixel photos (preparing a large workspace will take longer than the 16 s measured with
-   small test images), or with a real print dialog and printer.
-2. **Dropping from the side panel** (step 5 of the plan): drag a tag, collection or source folder onto a
-   workspace to add its images as a named batch where it is dropped; drag images from the Library onto a
-   workspace tab.
-3. **Texts on paper**: a text's default colour is the theme's light text, hard to read on a white sheet
-   and printed light. Default to dark on sheets, or pick the colour by what is underneath.
-4. **Keys in Settings → Shortcuts**: the workspace keys (T, L, G, F, Alt to drag freely) are hard-coded in
-   `WorkspaceView`; put them in `hotkeyMap` so they show and can be changed. Add Ctrl+0 for 100% and
-   Ctrl+Shift+Z for redo.
-5. **Duplicating and copying** objects (Ctrl+D, Ctrl+C / Ctrl+V within and between workspaces).
-6. **Export a sheet to a file** (PNG or JPEG in a folder the user picks, never overwriting): the picture
-   `renderForPrint` makes, saved instead of printed.
-7. **Snapping while sizing** (to edges and to the sizes of neighbours), and snapping texts by their
-   baseline.
-8. **Faster reopening of very large workspaces**: keep the tiny tiles in the `Atlas_Workspaces` database
-   (one picture of all of them), so 12,000 images do not have to be prepared again after a restart.
-9. **Colours far out before tiles arrive**: the average colour of each image instead of grey dots.
-10. **The Workspaces panel**: reorder by dragging, rename there, show the image count of each.
-11. **Backups**: decide whether workspaces belong in them (needs a second file next to the backup, or a
-    database version; the user has not agreed to a schema change).
-12. **README**: a section on workspaces with a screenshot of generated pictures (never the user's photos).
-13. **Left over from the code review** (2026-10-16; its bugs were fixed before committing):
-    - Every committed change writes the whole workspace row; with tens of thousands of objects a drop may
-      stall. Debounce all saves like the camera's, and flush when the window closes.
-    - An Arrange step still does whole-workspace work (the image ids joined, all objects sorted and
-      indexed again); fine at 2,000, unmeasured at 30,000.
-    - `UiStore.galleryLayout` reads the gallery's width from the page; pass it in. The Print button finds
-      the surface with `querySelector`; give the surface a `print()`.
-    - "Fit on first open" relies on the camera being the very `START_CAMERA` object: a large workspace
-      prepared in the background and never opened loses it after a restart. Use an explicit flag.
-    - Zooming with the wheel while dragging makes the dragged objects drift (offsets are in screen pixels
-      from the press).
-    - `Math.max(...list)` and the like throw beyond about 100,000 values; use loops.
-    - Printing: confirm on the real app that the page is not removed before the printer has it.
+   with 20-megapixel photos (preparing a large workspace will take longer than measured with small test
+   images, the first time). Also: dropping a tag of thousands of images (it is not asked about first, as
+   + is), and whether the menu's Ctrl+0 stays off the window in the real app (checked only in the hidden
+   copy).
+2. **Backups**: decide whether workspaces belong in them (needs a second file next to the backup, or a
+   database version; the user has not agreed to a schema change).
+3. **Kept tiles of images that are gone**: the `tiles` table is never cleaned up. Some 3 KB per image;
+   remove the rows of files that left the library, for instance after the start-up scan.
+4. **Snapping texts by their baseline**: texts of different sizes line up by their frames, not by where
+   their letters stand.
