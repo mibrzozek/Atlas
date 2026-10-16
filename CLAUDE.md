@@ -52,6 +52,28 @@ install and library). Put temporary scripts in the repo root as `tmp-*` and dele
 - Ask before committing or pushing. `origin` is the user's public fork (`mibrzozek/Atlas`), `upstream` is the
   original project. Before any push, check that no library folder names, shoot names or machine paths are included.
 
+## How the code should read
+
+Write to the standard of David Heinemeier Hansson, and in his style. Concretely:
+
+- **Clarity over cleverness.** Code is read far more often than it is written. Pick the name that makes a
+  comment unnecessary; when a comment is needed, it says why, not what.
+- **Conceptual compression.** One concept gets one name and one home. Before adding a helper, look for the
+  place that already answers the question, and put the question there (a question about a search criteria
+  is asked of the criteria; showing tags is something the UI store does).
+- **Rich models, thin glue.** Behaviour lives on the thing it is about (the entity, the store), not in the
+  component that happens to need it. A component that reaches into a store to set two fields in the right
+  order is a missing method on that store.
+- **No speculative abstraction.** Extract on the second real use, not the first imagined one. Three similar
+  lines beat a premature framework; a duplicated rule does not.
+- **Delete.** Code that is no longer reached goes, in the same change that made it unreachable. Less code
+  is the feature.
+- **Small, whole steps.** A change should leave the app working and be easy to describe in one sentence.
+- **Convention over configuration.** Follow the patterns already in this codebase (stores, entities,
+  `common/` for pure logic with a test) rather than introducing a second way to do the same thing.
+- **Programmer happiness counts.** If something is awkward to read or to call, that is a defect worth fixing,
+  not a matter of taste.
+
 ## Commands
 
 Node 20 is a per-user install in `%LOCALAPPDATA%\Programs\nodejs`; add it to `PATH` in each shell first.
@@ -153,7 +175,8 @@ Probe pitfalls that cost time:
     black bands. With fewer images than 1.5 times what fits (`WALL_SPARE_FACTOR`) it uses 2 rows.
   - `showcase.ts`: with only several images, one to three whole images per monitor, as large as fits, over a
     blurred glow of their colours, fading over to the next ones. With as many images as monitors they swap;
-    with fewer, monitors show the same.
+    with fewer, monitors show the same. "Show one large image per monitor" in the settings
+    (`UiStore.isScreensaverSingleImage`) forces this mode with one image, however many there are.
   - `tile.ts` and `workers/screensaverImage.worker.ts`: **sharpness**. The worker decodes the image file
     itself (not the thumbnail) and draws it at exactly the device pixels it covers; the frame and the canvas
     are snapped to whole device pixels, and at rest nothing is scaled. Every time a tile changes size it is
@@ -170,9 +193,12 @@ Probe pitfalls that cost time:
   A collection is a named group of tags; a tag can be in several. `stores/CollectionStore.ts` keeps them in
   the **saved-searches table** as rows marked `isCollection` ("any of these tags"), converted in
   `common/collections.ts` (tested). That avoids a schema change, puts them in backups, and Allusion shows
-  them as working saved searches. `SearchStore` skips those rows. The store's `getTags`, `getCollectionsOf`
-  and `isViewed` are deliberately not MobX actions: inside an action nothing is tracked, and the panels
-  stopped updating.
+  them as working saved searches. `SearchStore` skips those rows. A collection does its own work
+  (`entities/Collection.ts`: `collection.tags`, `.has(tag)`, `.add(tag)`, `.remove(tag)`, `.rename()`,
+  `.view()`, `.isViewed`); the store only keeps the list, its order, and the saving. `tags`, `isViewed` and
+  the store's `collectionsOf` are deliberately not MobX actions: inside an action nothing is tracked, and
+  the panels stopped updating.
+  Both trees of tags (side panel and editing page) drag and drop through `TagsPanel/useTagItemDnD.ts`.
   Per-tag image counts come from the database index (`countFilesByTag`), because the loaded files are only
   the ones shown, which at start-up is the home gallery.
   The tag list in the editing page is a tree like the side panel used to be (`TagManagerTree.tsx`): click,
@@ -182,7 +208,10 @@ Probe pitfalls that cost time:
 - All outliner panels are exactly as tall as their content (`fitContent` on `MultiSplitPane`); the outliner
   scrolls as a whole. The image counters live at the foot of the Locations panel (`FolderCounts.tsx`): all
   images and tagged images with a percentage, for the open folder (counted in the database with
-  `countFilesInFolders`) or the whole library. "Tagged" is the search `tags notContains []`.
+  `countFilesInFolders`) or the whole library. "Tagged" is the search `tags notContains []`
+  (`taggedCriteria()` / `isTaggedCriteria` in `SearchCriteria.ts`). Counts from the database go through
+  `hooks/useDatabaseCount.ts`, which counts again when `FileStore.numSaves` goes up: that is when a tag
+  change is really in the database. Do not go back to counting on a timer.
 - Collage mode (`FileStore.isCollageMode`, toolbar button): the gallery shows the order made by hand for the
   current view instead of the sort order. The order is a list of image ids in `localStorage` under
   `Atlas_CollageOrder:<view>`, one per tag/folder/search, for views of up to 5,000 images; logic in
@@ -192,11 +221,31 @@ Probe pitfalls that cost time:
   dragged image lands is an element of its own, appended to the gallery and positioned by measuring.
   While collage mode is on the gallery uses the grid layout whatever the view is set to, with every image
   shown whole inside a slot of the same size: a move or a switch then changes nothing but the images
-  involved (measured: 34 other images did not move a pixel, scroll position unchanged). After a reorder the
-  renderer must not run its usual "scroll the first image to the top" (`FileStore.lastCollageReorder`).
+  involved (measured: 36 other images did not move a pixel, scroll position unchanged). A reorder
+  deliberately leaves `fileListLastModified` alone: setting it lays the gallery out again, which scrolls
+  the first image back to the top.
   The cells are drawn in a fixed DOM order (sorted by id) because React moving an element cancels its
   transition, and for about a second after switching the mode the images that were on screen stay mounted
   (`lingeringFiles` in `VirtualizedRenderer.tsx`) so they glide out instead of vanishing.
+- **Test drags and hovers with the real input pipeline, not with events made in the page.** Events dispatched
+  from JavaScript hit the element you name and carry whatever you put in them, so they passed while the real
+  thing failed three times: a tooltip never opened because the pointer is over the icon inside a button, a
+  drop was refused because its `dropEffect` ('copy') was not among what the drag allowed ('linkMove'), and an
+  open tooltip swallowed clicks on the buttons underneath it. Over the DevTools protocol:
+  `Input.dispatchMouseEvent` for moves and clicks, and for a drag `Input.setInterceptDrags`, mouse down and
+  a few moves, then replay the `Input.dragIntercepted` data with `Input.dispatchDragEvent`
+  (dragEnter, dragOver, drop). A capture-phase listener that logs `mousedown`/`click` targets shows at once
+  what really got the click.
+- Tooltips: the element with `data-tooltip` is found with `closest`, an open tooltip never takes clicks, and
+  for something inside an open `<dialog>` the tooltip element is moved into that dialog (a modal dialog is
+  drawn over everything else, whatever the z-index).
+- Tag colors can be a color of the theme, stored as `var(--accent-color)` and the like
+  (`components/TagColorPicker.tsx`): the tag then changes with the theme. Anything that works out a contrast
+  from a tag color must expect that (`widgets/tag.tsx` does). Kept colors are in `localStorage` (`tag-colors`).
+- Collections in the editing page are small chips (name and a plus); a click opens one, a drag moves it. Both
+  lists of collections drag and drop through `CollectionsPanel/useCollectionDnD.ts`. A new one goes on top.
+- Collage: while an image is dragged the browser sends no wheel events, so the gallery scrolls by itself when
+  the image is held within 90 px of its top or bottom edge (`collageDnD.ts`).
 - Tooltips of buttons in `#toolbar` and `#top-bar` are always placed underneath the whole bar
   (`widgets/popovers/Tooltip.tsx`), so they never cover neighbouring buttons. Keep tooltip texts short.
 - The arrow next to the gear hides the whole bar above the gallery (`UiStore.isSearchBarVisible`); it stays
@@ -254,6 +303,24 @@ Probe pitfalls that cost time:
   ring is a rule of its own in `content.scss`, because the collage gives every cell a background that
   covers the usual one.
 
+- **The screensaver starts whenever Atlas is open** (visible, not minimized) and the computer has been idle,
+  not only when Atlas is the focused window: that rule meant it hardly ever started. "Only while Atlas is the
+  window in front" is a setting, off by default. It never starts on the lock screen. Because the keyboard
+  can then belong to another application, the running screensaver also asks the system every half second
+  whether anything was used (`SCREENSAVER_WAKE_IDLE_SECONDS`), with a timer of a screensaver window.
+- Ctrl + mouse wheel over the gallery makes the thumbnails larger or smaller (`UiStore.growThumbnails`, 40 px
+  a notch, between the ends of the View menu slider) instead of zooming the window. The listener is a native
+  non-passive one in `ContentView/index.tsx`: a React `onWheel` cannot stop the browser's zoom. Touchpad
+  amounts add up to a notch; what is left over is dropped when the wheel turns the other way. Not in the viewer.
+- The viewer (one image open) keeps the search bar in its toolbar; searching from there goes back to the
+  gallery with the results.
+- Dragging in the lists of the side panel (`Outliner/TreeItemDnD.ts`): one shared line that glides between
+  the rows shows "above/below", a steady highlight shows "inside". A `dragleave` to a child of the same row
+  is not leaving it (clearing the mark there was the flicker). The line is appended inside the element that
+  carries the theme class: CSS variables of the theme do not exist on `body`.
+- The README screenshots (`resources/images/readme/`) show generated pictures, never the user's photographs:
+  the repository is public. Regenerate them the same way, in a hidden copy with its own profile.
+
 ## Deliberately not rebranded
 
 The web clipper extension (`src/clipper/web-extension`, upstream's published extension), upstream links,
@@ -265,6 +332,7 @@ small "of my mind" underneath, which is what the user asked for.
 
 ## Known open items
 
+- **Workspaces** (tabs with an infinite, pannable canvas): agreed plan in `docs/workspaces-roadmap.md`, not started.
 - A "Date taken" sort from Exif capture date: discussed, user said not yet.
 - Camera raw files (CR2/CR3) are not recognised at all; most of the user's shoots are raw + JPEG pairs.
 - PSD and EXR thumbnails, and their full-size conversion, are still done on the main thread.
