@@ -13,6 +13,8 @@ import ImageLoader from '../image/ImageLoader';
 import { RendererMessenger } from 'src/ipc/renderer';
 import SearchStore from './SearchStore';
 import CollectionStore from './CollectionStore';
+import WorkspaceStore from './WorkspaceStore';
+import { WorkspaceDatabase } from '../../backend/workspace-db';
 
 // This will throw exceptions whenever we try to modify the state directly without an action
 // Actions will batch state modifications -> better for performance
@@ -39,6 +41,7 @@ class RootStore {
   readonly uiStore: UiStore;
   readonly searchStore: SearchStore;
   readonly collectionStore: CollectionStore;
+  readonly workspaceStore: WorkspaceStore;
   readonly exifTool: ExifIO;
   readonly imageLoader: ImageLoader;
   readonly getWindowTitle: () => string;
@@ -54,6 +57,7 @@ class RootStore {
     this.uiStore = new UiStore(this);
     this.searchStore = new SearchStore(backend, this);
     this.collectionStore = new CollectionStore(backend, this);
+    this.workspaceStore = new WorkspaceStore(backend, new WorkspaceDatabase(), this);
     this.#backend = backend;
     this.#backup = backup;
     this.exifTool = new ExifIO(localStorage.getItem('hierarchical-separator') || undefined);
@@ -84,6 +88,7 @@ class RootStore {
       rootStore.imageLoader.init(),
       rootStore.searchStore.init(),
       rootStore.collectionStore.init(),
+      rootStore.workspaceStore.init(),
     ]);
 
     // A new user starts out with the tag of the home gallery, which the home button opens

@@ -1,6 +1,6 @@
 import { shell } from 'electron';
 import fse from 'fs-extra';
-import { action, computed, makeObservable, observable, runInAction } from 'mobx';
+import { action, computed, makeObservable, observable, reaction, runInAction } from 'mobx';
 
 import {
   READ_ONLY_MESSAGE,
@@ -22,6 +22,8 @@ import { ClientFile } from '../entities/File';
 import { ClientFileSearchCriteria, ClientTagSearchCriteria } from '../entities/SearchCriteria';
 import { ClientTag } from '../entities/Tag';
 import { ClientCollection } from '../entities/Collection';
+import { ClientWorkspace } from '../entities/Workspace';
+import { LAYOUT_GAP, WorkspaceLayout } from 'common/workspace';
 import { comboMatches, getKeyCombo, parseKeyCombo } from '../hotkeyParser';
 import {
   MAX_THUMBNAIL_SIZE,
@@ -29,6 +31,9 @@ import {
   getThumbnailSize,
 } from '../containers/ContentView/utils';
 import RootStore from './RootStore';
+
+/** The scroll bar and the padding of the gallery, which its images do not use (MasonryRenderer) */
+const GALLERY_EDGES = 16;
 
 /** How much one notch of the mouse wheel changes the size of the thumbnails, in pixels */
 const THUMBNAIL_SIZE_STEP = 40;
@@ -143,6 +148,8 @@ type PersistentPreferenceFields =
   | 'screensaverTagIds'
   | 'screensaverCollectionIds'
   | 'isSearchBarVisible'
+  | 'isWorkspaceGridShown'
+  | 'isWorkspaceLayersOpen'
   // the following are only restored when isRememberSearchEnabled is enabled
   | 'isSlideMode'
   | 'firstItem'
@@ -172,6 +179,14 @@ class UiStore {
   @observable isSearchBarVisible: boolean = true;
   /** The page where tags and collections are edited */
   @observable isTagManagerOpen: boolean = false;
+  /** The workspace whose tab is open instead of the Library: see `activeWorkspace` */
+  @observable private activeWorkspaceId: ID | undefined = undefined;
+  /** Whether workspaces have a grid behind their images */
+  @observable isWorkspaceGridShown: boolean = true;
+  /** Whether the layers panel is open next to a workspace, or folded away into its button */
+  @observable isWorkspaceLayersOpen: boolean = true;
+  /** A text on a workspace whose words are to be changed in the layers panel: it gets the focus */
+  @observable workspaceTextToEdit: string | undefined = undefined;
   /** Whether the screensaver is being shown right now */
   @observable isScreensaverActive: boolean = false;
   @observable isScreensaverEnabled: boolean = DEFAULT_SCREENSAVER_SETTINGS.isEnabled;
@@ -232,6 +247,20 @@ class UiStore {
   constructor(rootStore: RootStore) {
     this.rootStore = rootStore;
     makeObservable(this);
+
+    // Whatever changes what the Library shows (a click in the outliner, a search, the home button)
+    // also brings the Library back in front of a workspace
+    const { fileStore } = rootStore;
+    reaction(
+      () => [
+        ...this.searchCriteriaList,
+        this.searchMatchAny,
+        fileStore.showsQueryContent,
+        fileStore.showsUntaggedContent,
+        fileStore.showsMissingContent,
+      ],
+      () => this.openLibrary(),
+    );
   }
 
   /////////////////// UI Actions ///////////////////
@@ -432,6 +461,69 @@ class UiStore {
 
   @action.bound closeFolderCreator(): void {
     this.isFolderCreatorOpen = false;
+  }
+
+  /** The workspace whose tab is open; none means the Library */
+  @computed get activeWorkspace(): ClientWorkspace | undefined {
+    const id = this.activeWorkspaceId;
+    return id === undefined
+      ? undefined
+      : this.rootStore.workspaceStore.workspaceList.find((workspace) => workspace.id === id);
+  }
+
+  @action.bound openWorkspace(workspace: ClientWorkspace): void {
+    this.rootStore.workspaceStore.prepareImages(workspace);
+    this.activeWorkspaceId = workspace.id;
+  }
+
+  @action.bound openLibrary(): void {
+    this.activeWorkspaceId = undefined;
+  }
+
+  /**
+   * How the Library lays its images out right now, to lay them out the same on a workspace: the view
+   * (rows, columns or grid), the size of the thumbnails, and as wide as the gallery is on screen.
+   * Mirrors the masonry layout (wasm/masonry/src/layout.rs).
+   */
+  get galleryLayout(): WorkspaceLayout {
+    const cell = getThumbnailSize(this.thumbnailSize);
+    // The gallery stays in the page underneath a workspace, so it can always be measured
+    const galleryWidth = document.getElementById('gallery-content')?.clientWidth ?? 1600;
+    const width = Math.max(cell, galleryWidth - GALLERY_EDGES);
+    const columns = Math.max(1, Math.floor(width / cell));
+    const columnStep = Math.floor(width / columns);
+    switch (this.method) {
+      case ViewMethod.MasonryVertical:
+        return { kind: 'columns', columns, columnWidth: columnStep - LAYOUT_GAP };
+      case ViewMethod.Grid:
+        // Square thumbnails are cut to the square; letterboxed ones are shown whole
+        return {
+          kind: 'grid',
+          columns,
+          cell: columnStep - LAYOUT_GAP,
+          crop: this.thumbnailShape === 'square' ? '1:1' : undefined,
+        };
+      default:
+        return { kind: 'rows', width, rowHeight: cell };
+    }
+  }
+
+  @action.bound toggleWorkspaceGrid(): void {
+    this.isWorkspaceGridShown = !this.isWorkspaceGridShown;
+  }
+
+  @action.bound toggleWorkspaceLayers(): void {
+    this.isWorkspaceLayersOpen = !this.isWorkspaceLayersOpen;
+  }
+
+  /** Opens the layers panel with the words of a text ready to be changed */
+  @action.bound editWorkspaceText(id: string): void {
+    this.isWorkspaceLayersOpen = true;
+    this.workspaceTextToEdit = id;
+  }
+
+  @action.bound clearWorkspaceTextToEdit(): void {
+    this.workspaceTextToEdit = undefined;
   }
 
   @action.bound toggleSearchBar(): void {
@@ -1086,6 +1178,8 @@ class UiStore {
           prefs.isScreensaverOnlyInFront ?? DEFAULT_SCREENSAVER_SETTINGS.onlyWhenInFront,
         );
         this.isSearchBarVisible = Boolean(prefs.isSearchBarVisible ?? true);
+        this.isWorkspaceGridShown = Boolean(prefs.isWorkspaceGridShown ?? true);
+        this.isWorkspaceLayersOpen = Boolean(prefs.isWorkspaceLayersOpen ?? true);
         if (Array.isArray(prefs.screensaverCollectionIds)) {
           this.screensaverCollectionIds.replace(
             prefs.screensaverCollectionIds.filter((id: unknown) => typeof id === 'string'),
@@ -1159,6 +1253,8 @@ class UiStore {
       screensaverTagIds: this.screensaverTagIds.slice(),
       screensaverCollectionIds: this.screensaverCollectionIds.slice(),
       isSearchBarVisible: this.isSearchBarVisible,
+      isWorkspaceGridShown: this.isWorkspaceGridShown,
+      isWorkspaceLayersOpen: this.isWorkspaceLayersOpen,
       isSlideMode: this.isSlideMode,
       firstItem: this.firstItem,
       searchMatchAny: this.searchMatchAny,

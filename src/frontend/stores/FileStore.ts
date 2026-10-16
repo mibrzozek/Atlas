@@ -23,7 +23,13 @@ import { AppToaster } from '../components/Toaster';
 import { ThumbnailTarget } from '../image/ThumbnailGeneration';
 import { ClientFile, mergeMovedFile } from '../entities/File';
 import { ClientLocation } from '../entities/Location';
-import { ClientStringSearchCriteria, ClientTagSearchCriteria } from '../entities/SearchCriteria';
+import {
+  ClientStringSearchCriteria,
+  ClientTagSearchCriteria,
+  CustomKeyDict,
+  isFolderCriteria,
+  isTaggedCriteria,
+} from '../entities/SearchCriteria';
 import { ClientTag } from '../entities/Tag';
 import RootStore from './RootStore';
 
@@ -236,6 +242,40 @@ class FileStore {
 
   @computed get showsQueryContent(): boolean {
     return this.content === Content.Query;
+  }
+
+  /**
+   * What the images that are shown are, in as few words as possible: the name of the collection, of the
+   * tags or of the folder, or else the search as it reads in the search bar
+   */
+  get viewName(): string {
+    const { collectionStore, uiStore } = this.rootStore;
+    if (this.showsUntaggedContent) {
+      return 'Untagged images';
+    } else if (this.showsMissingContent) {
+      return 'Missing images';
+    } else if (!this.showsQueryContent) {
+      return 'All images';
+    }
+    const collection = collectionStore.collectionList.find((c) => c.isViewed);
+    if (collection !== undefined) {
+      return collection.name;
+    }
+    const { tagStore } = this.rootStore;
+    return uiStore.searchCriteriaList
+      .map((criteria) => {
+        if (isTaggedCriteria(criteria)) {
+          return 'Tagged images';
+        } else if (criteria instanceof ClientTagSearchCriteria && criteria.value !== undefined) {
+          return (
+            tagStore.get(criteria.value)?.name ?? criteria.getLabel(CustomKeyDict, this.rootStore)
+          );
+        } else if (isFolderCriteria(criteria)) {
+          return criteria.value.split(/[\\/]/).filter(Boolean).pop() ?? criteria.value;
+        }
+        return criteria.getLabel(CustomKeyDict, this.rootStore);
+      })
+      .join(uiStore.searchMatchAny ? ' or ' : ', ');
   }
 
   @action.bound switchOrderDirection(): void {
