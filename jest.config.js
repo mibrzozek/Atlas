@@ -8,4 +8,8 @@ module.exports = {
     // Crypto module is not stable in the node version we use, nor can we use the browser.
     '<rootDir>/tests/setup/jest.crypto.js',
   ],
+  // The same absolute imports as the webpack build
+  moduleNameMapper: {
+    '^(common|src|widgets|resources)/(.*)$': '<rootDir>/$1/$2',
+  },
 };
