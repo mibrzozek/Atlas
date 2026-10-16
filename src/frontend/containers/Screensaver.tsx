@@ -4,8 +4,8 @@ import { useEffect } from 'react';
 
 import {
   LaneOrientation,
-  SCREENSAVER_WAKE_IDLE_SECONDS,
   shouldStartScreensaver,
+  wasUsedSinceStart,
   withoutDuplicates,
 } from 'common/screensaver';
 import { RendererMessenger } from '../../ipc/renderer';
@@ -152,10 +152,7 @@ const Screensaver = observer(() => {
       const timerWindow = surfaces[0].win;
       const inputCheck = timerWindow.setInterval(async () => {
         const { systemIdleSeconds } = await RendererMessenger.getIdleState();
-        if (
-          performance.now() - startedAt > WAKE_GRACE_PERIOD &&
-          systemIdleSeconds < SCREENSAVER_WAKE_IDLE_SECONDS
-        ) {
+        if (wasUsedSinceStart(systemIdleSeconds, (performance.now() - startedAt) / 1000)) {
           wake();
         }
       }, 500);

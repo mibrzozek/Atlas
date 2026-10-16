@@ -198,6 +198,7 @@ function createWindow() {
           childWindow.setAlwaysOnTop(true, 'screen-saver');
           childWindow.showInactive();
           childWindow.moveTop();
+          hideCursorOver(childWindow, screensaverDisplay.bounds);
         }
       };
       claimTop();
@@ -826,6 +827,26 @@ const MIN_ZOOM_FACTOR = 0.5;
 const MAX_ZOOM_FACTOR = 2;
 const MIN_WINDOW_WIDTH = 240;
 const MIN_WINDOW_HEIGHT = 64;
+
+/**
+ * The page of a screensaver window says `cursor: none`, but the pointer only takes the look of a page
+ * once a mouse event reaches it. A pointer that is not moving would stay in sight until it moved.
+ */
+function hideCursorOver(win: BrowserWindow, bounds: Rectangle) {
+  const pointer = screen.getCursorScreenPoint();
+  const isOver =
+    pointer.x >= bounds.x &&
+    pointer.x < bounds.x + bounds.width &&
+    pointer.y >= bounds.y &&
+    pointer.y < bounds.y + bounds.height;
+  if (isOver) {
+    win.webContents.sendInputEvent({
+      type: 'mouseMove',
+      x: pointer.x - bounds.x,
+      y: pointer.y - bounds.y,
+    });
+  }
+}
 
 /** The monitor a window with this name is meant to cover, when it is a window of the screensaver */
 function getScreensaverDisplay(frameName: string) {

@@ -16,6 +16,7 @@ import {
   shuffled,
   snapToDevicePixels,
   withoutDuplicates,
+  wasUsedSinceStart,
 } from '../common/screensaver';
 
 describe('shouldStartScreensaver', () => {
@@ -487,5 +488,22 @@ describe('getLaneCount', () => {
     expect(getLaneCount('columns', 1920)).toBe(5);
     expect(getLaneCount('columns', 7680)).toBe(8);
     expect(getLaneCount('columns', 600)).toBe(3);
+  });
+});
+
+describe('wasUsedSinceStart', () => {
+  it('does not take the click that started it for a use', () => {
+    // Clicked "Start it now" 0.2 s before it started; checked 1.5 s later: idle 1.7 s, reported as 1
+    expect(wasUsedSinceStart(1, 1.5)).toBe(false);
+    expect(wasUsedSinceStart(2, 2.0)).toBe(false);
+  });
+
+  it('does not take the idle time before an automatic start for a use', () => {
+    expect(wasUsedSinceStart(600, 30)).toBe(false);
+  });
+
+  it('sees a key pressed while it runs', () => {
+    expect(wasUsedSinceStart(0, 5)).toBe(true);
+    expect(wasUsedSinceStart(1, 3.5)).toBe(true);
   });
 });

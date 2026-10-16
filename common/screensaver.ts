@@ -52,8 +52,14 @@ export interface IdleState {
   isLocked: boolean;
 }
 
-/** After this little time without input, the computer is being used: the screensaver ends */
-export const SCREENSAVER_WAKE_IDLE_SECONDS = 2;
+/**
+ * Whether the mouse or keyboard was used after the screensaver started, in any application. The system
+ * counts idle time in whole seconds, so only an idle time clearly shorter than how long the screensaver
+ * has been running means a use since. Otherwise the click on "Start it now" itself would end it.
+ */
+export function wasUsedSinceStart(systemIdleSeconds: number, secondsSinceStart: number): boolean {
+  return systemIdleSeconds + 1 <= secondsSinceStart;
+}
 
 /** A monitor the screensaver can cover */
 export interface ScreensaverDisplay {
