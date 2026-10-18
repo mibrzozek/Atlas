@@ -1,7 +1,8 @@
 import { observer } from 'mobx-react-lite';
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 import { IconSet } from 'widgets';
+import { Menu, MenuDivider, MenuItem, useContextMenu } from 'widgets/menus';
 import { Alert, DialogButton } from 'widgets/popovers';
 import { useStore } from '../../contexts/StoreContext';
 import { ClientWorkspace } from '../../entities/Workspace';
@@ -9,19 +10,27 @@ import { useWorkspaceDrop } from './useWorkspaceDrop';
 import { WorkspaceNameInput } from './WorkspaceNameInput';
 
 /**
- * The Library and the workspaces, as tabs in the top bar, and a + that makes a workspace of the images
- * the Library shows. Opening one changes nothing else in the window.
+ * The Library and the open workspaces, as tabs in the top bar, and a + that makes a workspace of the
+ * images the Library shows. Opening one changes nothing else in the window. Like a browser's, the tabs
+ * get narrower as there are more of them, and closing one leaves the workspace in the Workspaces panel.
  */
 const WorkspaceTabs = observer(() => {
   const { uiStore, workspaceStore } = useStore();
   const active = uiStore.activeWorkspace;
-  const [deleting, setDeleting] = useState<ClientWorkspace>();
+  const strip = useRef<HTMLDivElement>(null);
+
+  // The open tab in sight, also when the tabs are at their narrowest and do not all fit
+  useEffect(() => {
+    strip.current
+      ?.querySelector('[aria-selected="true"]')
+      ?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  }, [active, uiStore.workspaceTabs.length]);
 
   return (
     <div className="workspace-tabs" role="tablist" aria-label="Library and workspaces">
       <button
         role="tab"
-        className="workspace-tab"
+        className="workspace-tab workspace-tab-library"
         aria-selected={active === undefined}
         onClick={uiStore.openLibrary}
         data-tooltip="Your images"
@@ -29,14 +38,17 @@ const WorkspaceTabs = observer(() => {
         {IconSet.MEDIA}
         <span className="workspace-tab-name">Library</span>
       </button>
-      {workspaceStore.workspaceList.map((workspace) => (
-        <WorkspaceTab
-          key={workspace.id}
-          workspace={workspace}
-          isActive={workspace === active}
-          onDelete={() => setDeleting(workspace)}
-        />
-      ))}
+      <div
+        ref={strip}
+        className="workspace-tab-strip"
+        role="none"
+        // The wheel scrolls through tabs that do not fit
+        onWheel={(event) => (event.currentTarget.scrollLeft += event.deltaY + event.deltaX)}
+      >
+        {uiStore.workspaceTabs.map((workspace) => (
+          <WorkspaceTab key={workspace.id} workspace={workspace} isActive={workspace === active} />
+        ))}
+      </div>
       <button
         className="workspace-tab-add btn-icon"
         onClick={workspaceStore.createFromLibrary}
@@ -45,28 +57,69 @@ const WorkspaceTabs = observer(() => {
       >
         {IconSet.PLUS}
       </button>
-      {deleting !== undefined && (
-        <Alert
-          open
-          title={`Delete the workspace "${deleting.name}"?`}
-          icon={IconSet.WARNING}
-          type="warning"
-          primaryButtonText="Delete"
-          defaultButton={DialogButton.CloseButton}
-          onClick={(button) => {
-            if (button === DialogButton.PrimaryButton) {
-              workspaceStore.remove(deleting);
-            }
-            setDeleting(undefined);
-          }}
-        >
-          <p>How its images are arranged is lost. The images themselves stay in your library.</p>
-        </Alert>
-      )}
+      <DeleteWorkspaceAlert />
       <LargeWorkspaceAlert />
     </div>
   );
 });
+
+/** Asked before a workspace is deleted (its right-click menu, in a tab or the Workspaces panel) */
+const DeleteWorkspaceAlert = observer(() => {
+  const { uiStore, workspaceStore } = useStore();
+  const workspace = uiStore.workspaceToDelete;
+  if (workspace === undefined) {
+    return null;
+  }
+  return (
+    <Alert
+      open
+      title={`Delete the workspace "${workspace.name}"?`}
+      icon={IconSet.WARNING}
+      type="warning"
+      primaryButtonText="Delete"
+      defaultButton={DialogButton.CloseButton}
+      onClick={(button) => {
+        if (button === DialogButton.PrimaryButton) {
+          workspaceStore.remove(workspace);
+        }
+        uiStore.closeDeleteWorkspace();
+      }}
+    >
+      <p>How its images are arranged is lost. The images themselves stay in your library.</p>
+    </Alert>
+  );
+});
+
+/**
+ * The right-click menu of a workspace, the same on its tab and its row in the Workspaces panel: rename,
+ * close the tab, delete. Deleting is only here, and asks first.
+ */
+export function useWorkspaceMenu(workspace: ClientWorkspace, startRenaming: () => void) {
+  const { uiStore } = useStore();
+  const showMenu = useContextMenu();
+  return (event: React.MouseEvent) => {
+    event.preventDefault();
+    showMenu(
+      event.clientX,
+      event.clientY,
+      <Menu>
+        <MenuItem icon={IconSet.EDIT} text="Rename" onClick={startRenaming} />
+        <MenuItem
+          icon={IconSet.CLOSE}
+          text="Close tab"
+          onClick={() => uiStore.closeWorkspaceTab(workspace)}
+          disabled={!uiStore.workspaceTabs.includes(workspace)}
+        />
+        <MenuDivider />
+        <MenuItem
+          icon={IconSet.DELETE}
+          text="Delete workspace…"
+          onClick={() => uiStore.askToDeleteWorkspace(workspace)}
+        />
+      </Menu>,
+    );
+  };
+}
 
 /**
  * Asked before making a workspace of many images, or adding many to one by dropping them: preparing
@@ -116,14 +169,14 @@ const LargeWorkspaceAlert = observer(() => {
 interface WorkspaceTabProps {
   workspace: ClientWorkspace;
   isActive: boolean;
-  onDelete: () => void;
 }
 
-const WorkspaceTab = observer(({ workspace, isActive, onDelete }: WorkspaceTabProps) => {
+const WorkspaceTab = observer(({ workspace, isActive }: WorkspaceTabProps) => {
   const { uiStore, workspaceStore } = useStore();
   const [isRenaming, setIsRenaming] = useState(false);
   const { mark, props: dnd } = useWorkspaceDrop(workspace, 'horizontal', !isRenaming);
   const isPreparing = workspaceStore.imagesOf(workspace)?.isPreparing === true;
+  const showMenu = useWorkspaceMenu(workspace, () => setIsRenaming(true));
 
   return (
     <div
@@ -134,6 +187,10 @@ const WorkspaceTab = observer(({ workspace, isActive, onDelete }: WorkspaceTabPr
       tabIndex={0}
       onClick={() => uiStore.openWorkspace(workspace)}
       onDoubleClick={() => setIsRenaming(true)}
+      // A click of the wheel closes it, as in a browser (pressing it would start scrolling)
+      onMouseDown={(event) => event.button === 1 && event.preventDefault()}
+      onAuxClick={(event) => event.button === 1 && uiStore.closeWorkspaceTab(workspace)}
+      onContextMenu={showMenu}
       onKeyDown={(event) => {
         if (event.key === 'F2') {
           setIsRenaming(true);
@@ -145,7 +202,7 @@ const WorkspaceTab = observer(({ workspace, isActive, onDelete }: WorkspaceTabPr
           ? undefined
           : isPreparing
           ? 'Its images are being prepared'
-          : 'Double click to rename, drag to move'
+          : `${workspace.name}: double click to rename, drag to move`
       }
     >
       {isPreparing ? <span className="workspace-spinner small" /> : IconSet.WORKSPACE}
@@ -158,20 +215,19 @@ const WorkspaceTab = observer(({ workspace, isActive, onDelete }: WorkspaceTabPr
       ) : (
         <span className="workspace-tab-name">{workspace.name}</span>
       )}
-      {/* Only on the open tab: on the others it would leave a gap where it is hidden */}
-      {isActive && (
-        <button
-          className="workspace-tab-close btn-icon"
-          aria-label={`Delete the workspace ${workspace.name}`}
-          tabIndex={-1}
-          onClick={(event) => {
-            event.stopPropagation();
-            onDelete();
-          }}
-        >
-          {IconSet.CLOSE}
-        </button>
-      )}
+      <button
+        className="workspace-tab-close btn-icon"
+        aria-label={`Close the tab of ${workspace.name}`}
+        data-tooltip="Close the tab; the workspace stays in the side panel"
+        tabIndex={-1}
+        onClick={(event) => {
+          event.stopPropagation();
+          uiStore.closeWorkspaceTab(workspace);
+        }}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        {IconSet.CLOSE}
+      </button>
     </div>
   );
 });

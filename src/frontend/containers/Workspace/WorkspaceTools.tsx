@@ -10,7 +10,7 @@ import {
   WorkspaceItem,
 } from 'common/workspace';
 import { IconSet, keyComboToString } from 'widgets';
-import { MenuButton, MenuRadioItem } from 'widgets/menus';
+import { MenuButton, MenuCheckboxItem, MenuRadioItem } from 'widgets/menus';
 import { MenuDivider, MenuSliderItem } from 'widgets/menus/menu-items';
 import { ToolbarButton } from 'widgets/toolbar';
 import { useStore } from '../../contexts/StoreContext';
@@ -48,8 +48,8 @@ function currentCrop(workspace: ClientWorkspace): CropShape | undefined {
 
 /**
  * Lays out what is selected anew, like the views of the Library: in rows, in columns or in a grid, with as
- * many rows or columns as the slider says, as far apart as the other slider says, and in a grid whole or
- * cut to squares or portraits. Every change shows at once, and can be undone.
+ * many rows or columns as the slider says, as far apart as the other slider says, rows and columns filled
+ * out to every edge or not, and in a grid whole or cut to squares or portraits. Every change shows at once, and can be undone.
  */
 const ArrangeMenu = observer(({ workspace }: { workspace: ClientWorkspace }) => {
   const count = workspace.selection.size;
@@ -57,6 +57,7 @@ const ArrangeMenu = observer(({ workspace }: { workspace: ClientWorkspace }) => 
   const [lines, setLines] = useState<number>();
   const [crop, setCrop] = useState<CropShape | undefined | 'unset'>('unset');
   const [gap, setGap] = useState(LAYOUT_GAP);
+  const [fill, setFill] = useState(false);
   const shownLines = Math.min(lines ?? suggestedCount(kind, count), Math.max(1, count));
   const shownCrop = crop === 'unset' ? currentCrop(workspace) : crop;
   // How things were when this session of arranging began, and what it last made of them: while the
@@ -74,17 +75,20 @@ const ArrangeMenu = observer(({ workspace }: { workspace: ClientWorkspace }) => 
     lines?: number;
     crop?: CropShape | undefined;
     gap?: number;
+    fill?: boolean;
   }) => {
     const next = {
       kind: changes.kind ?? kind,
       lines: changes.lines ?? shownLines,
       crop: 'crop' in changes ? changes.crop : shownCrop,
       gap: changes.gap ?? gap,
+      fill: changes.fill ?? fill,
     };
     setKind(next.kind);
     setLines(next.lines);
     setCrop(next.crop);
     setGap(next.gap);
+    setFill(next.fill);
     // A slider sends many values a second: one arrangement a frame, with the last of them
     cancelAnimationFrame(frame.current!);
     frame.current = requestAnimationFrame(() => {
@@ -99,7 +103,12 @@ const ArrangeMenu = observer(({ workspace }: { workspace: ClientWorkspace }) => 
         session.current.made.length === items.length &&
         session.current.made.every((item, i) => item === items[i]);
       const from = isSameSession ? session.current!.from : items;
-      workspace.arrangeSelection(next.kind, next.lines, { gap: next.gap, crop: next.crop }, from);
+      workspace.arrangeSelection(
+        next.kind,
+        next.lines,
+        { gap: next.gap, crop: next.crop, fill: next.fill },
+        from,
+      );
       session.current = { from, made: workspace.items.slice(), selection };
     });
   };
@@ -127,6 +136,13 @@ const ArrangeMenu = observer(({ workspace }: { workspace: ClientWorkspace }) => 
           onClick={() => arrange({ kind: layout.kind, lines: suggestedCount(layout.kind, count) })}
         />
       ))}
+      {kind !== 'grid' && (
+        <MenuCheckboxItem
+          text="Fill to the edges"
+          checked={fill}
+          onClick={() => arrange({ fill: !fill })}
+        />
+      )}
       <MenuDivider />
       {kind === 'grid' &&
         CROPS.map((option) => (

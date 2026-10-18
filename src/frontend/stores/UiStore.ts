@@ -81,6 +81,9 @@ export interface IHotkeyMap {
   workspaceFitAll: string;
   workspaceActualSize: string;
   workspaceSwap: string;
+  workspaceCrop: string;
+  workspaceGroup: string;
+  workspaceUngroup: string;
   undo: string;
   redo: string;
 
@@ -116,6 +119,9 @@ export const defaultHotkeyMap: IHotkeyMap = {
   workspaceActualSize: 'mod + 0',
   // The same as swapping two images in the collage
   workspaceSwap: 'alt + s',
+  workspaceCrop: 'c',
+  workspaceGroup: 'mod + g',
+  workspaceUngroup: 'mod + shift + g',
   undo: 'mod + z',
   redo: 'mod + shift + z',
   openPreviewWindow: 'space',
@@ -166,6 +172,7 @@ type PersistentPreferenceFields =
   | 'isScreensaverOnlyInFront'
   | 'screensaverTagIds'
   | 'screensaverCollectionIds'
+  | 'closedWorkspaceTabIds'
   | 'isSearchBarVisible'
   | 'isWorkspaceGridShown'
   | 'workspaceGridStyle'
@@ -191,6 +198,8 @@ class UiStore {
   @observable isSettingsOpen: boolean = false;
   @observable isHelpCenterOpen: boolean = false;
   @observable isAboutOpen: boolean = false;
+  /** The tag whose inspector window is open (`TagInspector`) */
+  @observable private inspectedTagId: ID | undefined = undefined;
   @observable isLocationRecoveryOpen: ID | null = null;
   @observable isPreviewOpen: boolean = false;
   @observable isAdvancedSearchOpen: boolean = false;
@@ -206,6 +215,12 @@ class UiStore {
    * workspace); not observable: nothing is drawn from it, a new workspace is laid out by it
    */
   galleryWidth = 1600;
+  /** Whether the wheel pans and zooms workspaces slowly, for placing things finely (Ctrl + wheel click) */
+  @observable isWorkspaceSlowScroll: boolean = false;
+  /** The workspace that is asked about before it is deleted */
+  @observable.ref workspaceToDelete: ClientWorkspace | undefined = undefined;
+  /** Whether the name of a new group of layers is being asked for */
+  @observable isNamingLayerGroup: boolean = false;
   /** Whether workspaces have a grid behind their images */
   @observable isWorkspaceGridShown: boolean = true;
   /** Lines or dots: what the grid is when it is shown */
@@ -229,6 +244,8 @@ class UiStore {
   readonly screensaverTagIds = observable<ID>([]);
   /** The collections whose images the screensaver shows as well */
   readonly screensaverCollectionIds = observable<ID>([]);
+  /** Workspaces whose tab was closed: they are still there, in the Workspaces panel, and opening one brings its tab back */
+  readonly closedWorkspaceTabIds = observable<ID>([]);
   /** Goes up whenever the panels of the outliner should collapse. The outliner keeps their state itself */
   @observable outlinerCollapseRequest: number = 0;
   @observable searchMatchAny = false;
@@ -478,6 +495,21 @@ class UiStore {
     this.isAboutOpen = !this.isAboutOpen;
   }
 
+  @action.bound openTagInspector(tag: ClientTag): void {
+    this.inspectedTagId = tag.id;
+  }
+
+  @action.bound closeTagInspector(): void {
+    this.inspectedTagId = undefined;
+  }
+
+  /** The tag being inspected, while it still exists */
+  get inspectedTag(): ClientTag | undefined {
+    return this.inspectedTagId !== undefined
+      ? this.rootStore.tagStore.get(this.inspectedTagId)
+      : undefined;
+  }
+
   @action.bound closeAbout(): void {
     this.isAboutOpen = false;
   }
@@ -500,7 +532,45 @@ class UiStore {
 
   @action.bound openWorkspace(workspace: ClientWorkspace): void {
     this.rootStore.workspaceStore.prepareImages(workspace);
+    this.closedWorkspaceTabIds.remove(workspace.id);
     this.activeWorkspaceId = workspace.id;
+  }
+
+  @action.bound askToDeleteWorkspace(workspace: ClientWorkspace): void {
+    this.workspaceToDelete = workspace;
+  }
+
+  @action.bound closeDeleteWorkspace(): void {
+    this.workspaceToDelete = undefined;
+  }
+
+  /** The workspaces that have a tab, in the order of the Workspaces panel */
+  @computed get workspaceTabs(): ClientWorkspace[] {
+    const closed = new Set(this.closedWorkspaceTabIds.slice());
+    return this.rootStore.workspaceStore.workspaceList.filter(
+      (workspace) => !closed.has(workspace.id),
+    );
+  }
+
+  /**
+   * Takes the tab of a workspace away, as a browser closes a tab; the workspace itself stays. When it was
+   * the open one, the tab after it opens, or else the one before, or else the Library.
+   */
+  @action.bound closeWorkspaceTab(workspace: ClientWorkspace): void {
+    const tabs = this.workspaceTabs;
+    const index = tabs.indexOf(workspace);
+    if (index === -1) {
+      return;
+    }
+    if (workspace === this.activeWorkspace) {
+      const neighbour = tabs[index + 1] ?? tabs[index - 1];
+      if (neighbour !== undefined) {
+        this.openWorkspace(neighbour);
+      } else {
+        this.openLibrary();
+      }
+    }
+    this.closedWorkspaceTabIds.push(workspace.id);
   }
 
   @action.bound openLibrary(): void {
@@ -531,6 +601,21 @@ class UiStore {
       default:
         return { kind: 'rows', width, rowHeight: cell };
     }
+  }
+
+  /** Asks for the name of the group the selected layers of the open workspace become (`GroupLayersDialog`) */
+  @action.bound openLayerGrouping(): void {
+    if ((this.activeWorkspace?.selection.size ?? 0) >= 2) {
+      this.isNamingLayerGroup = true;
+    }
+  }
+
+  @action.bound closeLayerGrouping(): void {
+    this.isNamingLayerGroup = false;
+  }
+
+  @action.bound toggleWorkspaceSlowScroll(): void {
+    this.isWorkspaceSlowScroll = !this.isWorkspaceSlowScroll;
   }
 
   @action.bound toggleWorkspaceGrid(): void {
@@ -1228,6 +1313,11 @@ class UiStore {
             prefs.screensaverCollectionIds.filter((id: unknown) => typeof id === 'string'),
           );
         }
+        if (Array.isArray(prefs.closedWorkspaceTabIds)) {
+          this.closedWorkspaceTabIds.replace(
+            prefs.closedWorkspaceTabIds.filter((id: unknown) => typeof id === 'string'),
+          );
+        }
         if (Array.isArray(prefs.screensaverTagIds)) {
           this.screensaverTagIds.replace(
             prefs.screensaverTagIds.filter((id: unknown) => typeof id === 'string'),
@@ -1295,6 +1385,7 @@ class UiStore {
       isScreensaverOnlyInFront: this.isScreensaverOnlyInFront,
       screensaverTagIds: this.screensaverTagIds.slice(),
       screensaverCollectionIds: this.screensaverCollectionIds.slice(),
+      closedWorkspaceTabIds: this.closedWorkspaceTabIds.slice(),
       isSearchBarVisible: this.isSearchBarVisible,
       isWorkspaceGridShown: this.isWorkspaceGridShown,
       workspaceGridStyle: this.workspaceGridStyle,

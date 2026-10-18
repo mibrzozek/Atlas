@@ -1,6 +1,7 @@
 import { shell } from 'electron';
 import path from 'path';
 
+import { cropOf, photoRectOf } from 'common/crop';
 import { fileNameOf, writeNewFile } from 'common/export';
 import { encodeFilePath } from 'common/fs';
 import { SHARP_DECODABLE } from 'common/sharp-size';
@@ -49,11 +50,12 @@ function pictureScale(
   let scale = 1;
   for (const item of items) {
     const source = item.kind === 'image' ? sources.get(item.fileId) : undefined;
-    if (source !== undefined && source.file.width > 0) {
-      // Cut to its frame, the image covers it: the side that fills it sets how many pixels there are
+    if (item.kind === 'image' && source !== undefined && source.file.width > 0) {
+      // As many pixels as the whole photo has over the size it lies at, cropped or not
+      const photo = photoRectOf(item);
       scale = Math.max(
         scale,
-        Math.min(source.file.width / item.width, source.file.height / item.height),
+        Math.min(source.file.width / photo.width, source.file.height / photo.height),
       );
     }
   }
@@ -133,17 +135,14 @@ async function renderPicture(
       }
       try {
         const image = await loadImage(source);
-        // Cut to the frame from the middle, as `object-fit: cover` does on screen
-        const frame = width / height;
-        const natural = image.naturalWidth / image.naturalHeight;
-        const sw = natural > frame ? image.naturalHeight * frame : image.naturalWidth;
-        const sh = natural > frame ? image.naturalHeight : image.naturalWidth / frame;
+        // The part of the photo it shows, as on screen
+        const crop = cropOf(item);
         context.drawImage(
           image,
-          (image.naturalWidth - sw) / 2,
-          (image.naturalHeight - sh) / 2,
-          sw,
-          sh,
+          crop.x * image.naturalWidth,
+          crop.y * image.naturalHeight,
+          crop.width * image.naturalWidth,
+          crop.height * image.naturalHeight,
           x,
           y,
           width,

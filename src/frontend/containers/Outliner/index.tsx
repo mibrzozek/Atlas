@@ -14,15 +14,16 @@ const Outliner = () => {
 
   // Would be more consistent to store these in the UIStore,
   // but that would only be needed when the values need to be changed from other places
-  // One entry per panel. The keys are renamed whenever a panel is added, as the old lists are shorter
-  const [expansion, setExpansion] = useLocalStorage('outliner-expansion-5', [
+  // One entry per panel, by place. The keys are renamed whenever a panel is added or moved, as the old
+  // lists are shorter or in another order
+  const [expansion, setExpansion] = useLocalStorage('outliner-expansion-6', [
     true,
     true,
     true,
     true,
     true,
   ]);
-  const [heights, setHeights] = useLocalStorage('outliner-heights-5', [0, 0, 0, 0, 0]);
+  const [heights, setHeights] = useLocalStorage('outliner-heights-6', [0, 0, 0, 0, 0]);
 
   // The home button collapses all panels
   const collapseRequest = uiStore.outlinerCollapseRequest;
@@ -46,8 +47,8 @@ const Outliner = () => {
         >
           {/* Every panel is only as tall as what is in it; the outliner scrolls when they do not fit */}
           <LocationsPanel fitContent />
-          <CollectionsPanel fitContent />
           <WorkspacesPanel fitContent />
+          <CollectionsPanel fitContent />
           <TagsPanel fitContent />
           <SavedSearchesPanel fitContent />
         </MultiSplit>

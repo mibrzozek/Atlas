@@ -2,13 +2,15 @@ import { reaction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import React, { useEffect, useRef, useState } from 'react';
 
-import { isStartCamera, textInk, WorkspaceItem } from 'common/workspace';
+import { boundsOf, isStartCamera, textInk, WorkspaceItem } from 'common/workspace';
 import { useStore } from '../../contexts/StoreContext';
 import { comboMatches, getKeyCombo, parseKeyCombo } from '../../hotkeyParser';
 import { ClientWorkspace } from '../../entities/Workspace';
+import CropOverlay, { CropTools } from './CropOverlay';
+import { GroupLayersDialog } from './GroupLayersDialog';
 import LayersPanel from './LayersPanel';
 import { carriesLibraryBatch, dropEffectFor, readLibraryBatch } from './libraryDrop';
-import WorkspaceObject from './WorkspaceObject';
+import WorkspaceObject, { SelectionFrame } from './WorkspaceObject';
 import { WorkspaceImages } from './WorkspaceImages';
 import { VisibleItems, WorkspaceSurface } from './WorkspaceSurface';
 
@@ -24,6 +26,8 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
   const canvas = useRef<HTMLCanvasElement>(null);
   const backgroundWorld = useRef<HTMLDivElement>(null);
   const tileCanvas = useRef<HTMLCanvasElement>(null);
+  const cropWorld = useRef<HTMLDivElement>(null);
+  const cropTools = useRef<HTMLDivElement>(null);
   const surface = useRef<WorkspaceSurface>();
   const [visible, setVisible] = useState<VisibleItems>({ ids: new Set() });
   // Prepared by the store when the workspace was opened, and kept while switching tabs
@@ -36,10 +40,14 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
   useEffect(() => {
     const created = new WorkspaceSurface(
       viewport.current!,
-      world.current!,
-      canvas.current!,
-      backgroundWorld.current!,
-      tileCanvas.current!,
+      {
+        grid: canvas.current!,
+        backgrounds: backgroundWorld.current!,
+        tiles: tileCanvas.current!,
+        world: world.current!,
+        crop: cropWorld.current!,
+        cropTools: cropTools.current!,
+      },
       workspace,
       images.tiles,
       {
@@ -49,6 +57,7 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
           setSettledZoom(camera.zoom);
         },
         onEditText: uiStore.editWorkspaceText,
+        onToggleSlowScroll: uiStore.toggleWorkspaceSlowScroll,
       },
     );
     surface.current = created;
@@ -74,12 +83,27 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
 
   const grid = uiStore.workspaceGrid;
   useEffect(() => surface.current?.setGrid(grid), [grid]);
+  const isSlowScroll = uiStore.isWorkspaceSlowScroll;
+  useEffect(() => surface.current?.setSlowScroll(isSlowScroll), [isSlowScroll]);
 
   // The keys are in Settings, Shortcuts; Backspace, Escape and copying always do what they do
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const combo = getKeyCombo(event.nativeEvent);
     const { hotkeyMap } = uiStore;
     const matches = (keys: string) => comboMatches(combo, parseKeyCombo(keys));
+    if (workspace.cropping !== undefined) {
+      // While cropping, keys only end it: anything else would act on what is under it
+      if (event.key === 'Enter' || matches(hotkeyMap.workspaceCrop)) {
+        workspace.applyCrop();
+      } else if (event.key === 'Escape' || matches(hotkeyMap.undo)) {
+        workspace.cancelCrop();
+      }
+      if (event.key !== ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
     if (matches(hotkeyMap.deleteSelection) || event.key === 'Backspace') {
       workspace.removeSelected();
     } else if (matches(hotkeyMap.redo)) {
@@ -105,6 +129,12 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
     } else if (matches(hotkeyMap.workspaceActualSize)) {
       // Before the menu's Ctrl+0, which would set the zoom of the whole window
       surface.current?.zoomToActualSize();
+    } else if (matches(hotkeyMap.workspaceUngroup)) {
+      workspace.ungroupSelection();
+    } else if (matches(hotkeyMap.workspaceGroup)) {
+      uiStore.openLayerGrouping();
+    } else if (matches(hotkeyMap.workspaceCrop)) {
+      surface.current?.startCrop();
     } else if (matches(hotkeyMap.workspaceSwap)) {
       workspace.swapSelection();
     } else if (matches(hotkeyMap.workspaceAddText)) {
@@ -119,7 +149,12 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
     event.stopPropagation();
   };
 
-  const { selection, isLocked } = workspace;
+  const { selection, isLocked, cropping } = workspace;
+  // Several selected: a frame around them all, to size them together
+  const selectionBounds =
+    !isLocked && selection.size >= 2 && cropping === undefined
+      ? boundsOf(workspace.items.slice().filter((item) => selection.has(item.id)))
+      : undefined;
   const shown: WorkspaceItem[] = [];
   const backgrounds: WorkspaceItem[] = [];
   for (const item of workspace.items.slice()) {
@@ -138,7 +173,9 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
       source={item.kind === 'image' ? images.sources.get(item.fileId) : undefined}
       zoom={settledZoom}
       isSelected={selection.has(item.id)}
-      isSizable={!isLocked && selection.size === 1 && selection.has(item.id)}
+      isSizable={!isLocked && selection.size === 1 && selection.has(item.id) && !cropping}
+      // While it is cropped, the crop shows it, in front of everything
+      isCropped={cropping?.id === item.id}
       // A sheet under a text in view is in view too
       ink={item.kind === 'text' ? textInk(item, backgrounds) : undefined}
     />
@@ -153,6 +190,7 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
         aria-label={workspace.name}
         data-locked={isLocked}
         data-drop-target={isDropTarget}
+        data-cropping={cropping !== undefined}
         onKeyDown={handleKeyDown}
         onDragOver={(event) => {
           if (!isLocked && carriesLibraryBatch(event.dataTransfer)) {
@@ -185,10 +223,35 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
         <canvas ref={tileCanvas} className="workspace-backdrop" />
         <div ref={world} className="workspace-world">
           {shown.map(objectOf)}
+          {selectionBounds !== undefined && (
+            <SelectionFrame bounds={selectionBounds} zoom={settledZoom} />
+          )}
+        </div>
+        {/* Over all of it, which is blurred while an image is cropped */}
+        <div ref={cropWorld} className="workspace-world workspace-crop-world">
+          {cropping !== undefined && (
+            <CropOverlay
+              workspace={workspace}
+              source={images.sources.get(cropping.id)}
+              zoom={settledZoom}
+            />
+          )}
+        </div>
+        {/* The tools of cropping, in pixels of the screen: placed by the surface */}
+        <div ref={cropTools} className="workspace-crop-tools-layer">
+          {cropping !== undefined && <CropTools workspace={workspace} />}
         </div>
         <PreparingOverlay images={images} />
+        <div
+          className="workspace-slow-scroll"
+          data-active={isSlowScroll}
+          aria-hidden={!isSlowScroll}
+        >
+          Slow scrolling <span>Ctrl + wheel click to turn off</span>
+        </div>
       </div>
       {uiStore.isWorkspaceLayersOpen && <LayersPanel workspace={workspace} images={images} />}
+      {uiStore.isNamingLayerGroup && <GroupLayersDialog workspace={workspace} />}
     </div>
   );
 });

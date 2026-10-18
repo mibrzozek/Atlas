@@ -184,15 +184,22 @@
   // Small: a large blur on many images is slow to draw
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 
-  img {
-    display: block;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
   &[aria-selected='true'] {
     overflow: visible;
+  }
+}
+
+// The frame of an image cuts off what its crop leaves out of the photo, also while it is selected (and
+// the handle in its corner shows outside it)
+.workspace-image-crop {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+
+  img {
+    position: absolute;
+    display: block;
+    max-width: none;
   }
 }
 
@@ -203,6 +210,23 @@
 }
 
 // The handle in the corner of what is selected, for making it larger or smaller
+// Around a selection of several: a dashed frame, with the handle that sizes them together. Only the
+// handle takes the pointer; the objects under the frame are clicked as they are
+.workspace-selection-frame {
+  position: absolute;
+  box-sizing: border-box;
+  outline: dashed var(--accent-color);
+  pointer-events: none;
+
+  .workspace[data-moving='true'] & {
+    opacity: 0;
+  }
+
+  .workspace-resize {
+    pointer-events: auto;
+  }
+}
+
 .workspace-resize {
   position: absolute;
   right: 0;
@@ -336,6 +360,70 @@
   font-size: 0.75rem;
 }
 
+// A group of layers: its arrow, its name, how many, its lock; its layers under it, set in
+.workspace-layer-group {
+  padding-left: 0.25rem;
+
+  .workspace-layer-name {
+    font-weight: 600;
+  }
+}
+
+.workspace-layer[data-in-group='true'] {
+  padding-left: 1.875rem;
+}
+
+.workspace-layer-caret,
+.workspace-layer-lock {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.125rem;
+  height: 1.125rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--text-color-muted);
+  cursor: pointer;
+
+  .custom-icon {
+    width: 0.625rem;
+    height: 0.625rem;
+    margin: 0;
+  }
+
+  &:hover {
+    background: var(--hover-color);
+    color: var(--text-color-strong);
+  }
+}
+
+.workspace-layer-lock {
+  margin-left: 0.125rem;
+
+  &[aria-pressed='true'] {
+    color: var(--accent-color);
+  }
+}
+
+.workspace-layer-count {
+  margin-left: auto;
+  font-size: 0.6875rem;
+  color: var(--text-color-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+input.workspace-layer-rename {
+  flex: 1;
+  min-width: 0;
+  height: 1.125rem;
+  padding: 0 0.25rem;
+  font: inherit;
+  font-size: 0.75rem;
+}
+
 // Where the layers that are dragged would go
 .workspace-layer-drop {
   position: absolute;
@@ -391,6 +479,8 @@
   align-self: stretch;
   align-items: stretch;
   gap: 0.125rem;
+  // Only the tabs give way when the bar gets full, never the buttons around them
+  flex: 0 1 auto;
   min-width: 0;
   height: auto;
   margin-left: 0.5rem;
@@ -410,6 +500,54 @@
     border-left: 0.0625rem solid var(--border-color);
     transform: translateY(-50%);
   }
+}
+
+// The tabs of the workspaces: as wide as a browser's, narrower the more there are, down to a little more
+// than the icon; beyond that they scroll (with the wheel), the open one kept in sight
+.workspace-tab-strip {
+  display: flex;
+  align-items: stretch;
+  gap: 0.125rem;
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+
+  > .workspace-tab {
+    // A width of its own, not of its content: measuring the tab's width (below) makes its content count as 0
+    flex: 0 1 auto;
+    width: 10rem;
+    min-width: 2.75rem;
+    max-width: none;
+    // For the rules below that look at how wide the tab is
+    container-type: inline-size;
+  }
+}
+
+// Narrow tabs: only the open one keeps its close button, and gives up its icon for it
+@container (max-width: 4.75rem) {
+  .workspace-tab:not([aria-selected='true']) .workspace-tab-close {
+    display: none;
+  }
+
+  .workspace-tab[aria-selected='true'] > .custom-icon {
+    display: none;
+  }
+}
+
+// The narrowest: the icon alone, as a browser shows only the site's icon (the name is in the tooltip)
+@container (max-width: 3.5rem) {
+  .workspace-tab > span.workspace-tab-name {
+    display: none;
+  }
+}
+
+.workspace-tab-library {
+  flex: none;
 }
 
 .workspace-tab {
@@ -547,6 +685,8 @@ input.workspace-tab-name {
 .workspace-tab-close {
   flex: none;
   display: flex;
+  // At the right end of the tab, however wide it is
+  margin-left: auto;
   align-items: center;
   justify-content: center;
   width: 1.125rem;
@@ -726,9 +866,10 @@ input.workspace-tab-name {
   box-sizing: border-box;
 }
 
-// Saving a workspace as a picture: like the folder creator, a small label above every control
+// The dialogs of a workspace (saving a picture, naming a group): like the folder creator, a small label
+// above every control
 
-#save-picture {
+.workspace-dialog {
   --field-height: 2.25rem;
 
   display: flex;
@@ -747,7 +888,7 @@ input.workspace-tab-name {
   }
 }
 
-.save-picture-field {
+.workspace-dialog-field {
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -759,8 +900,8 @@ input.workspace-tab-name {
   }
 }
 
-// The name, with the extension of the format inside the same field, after it
-.save-picture-name {
+// A name, with what follows it (the extension of a picture) inside the same field
+.workspace-dialog-input {
   display: flex;
   align-items: center;
   height: var(--field-height);
@@ -841,5 +982,269 @@ input.workspace-tab-name {
     grid-area: detail;
     color: var(--text-color-muted);
     font-size: 0.75rem;
+  }
+}
+
+// The crop button at the end of an image's row in the layers panel: on hover, and lit while that image
+// is cropped
+.workspace-layer-crop {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--text-color-muted);
+  opacity: 0;
+  cursor: pointer;
+
+  .custom-icon {
+    width: 0.75rem;
+    height: 0.75rem;
+    margin: 0;
+  }
+
+  .workspace-layer:hover & {
+    opacity: 1;
+  }
+
+  &:hover {
+    background: var(--hover-color);
+    color: var(--text-color-strong);
+  }
+
+  &[aria-pressed='true'] {
+    opacity: 1;
+    color: var(--accent-color);
+  }
+}
+
+// CROPPING (CropOverlay.tsx): the image over everything else, which is blurred and darkened under it
+
+.workspace[data-cropping='true'] {
+  > .workspace-backdrop,
+  > .workspace-world:not(.workspace-crop-world) {
+    filter: blur(6px) brightness(0.65) saturate(0.85);
+    transition: filter 0.3s ease;
+  }
+}
+
+// The handles and lines of a crop are as large on the screen at every zoom: `--zoom` is the camera's,
+// set by the surface in every frame. The lines are shadows and gradients, not borders: a border thinner
+// than a pixel is made one pixel wide before the camera scales it (4.78 pixels at a zoom of 4.78)
+.workspace-crop {
+  --line: calc(1.5px / var(--zoom, 1));
+  --handle: calc(12px / var(--zoom, 1));
+
+  animation: workspace-crop-in 0.25s ease-out;
+}
+
+@keyframes workspace-crop-in {
+  from {
+    opacity: 0;
+  }
+}
+
+// The whole photo; a drag on it moves it under the frame
+.workspace-crop-photo {
+  position: absolute;
+  display: block;
+  max-width: none;
+  cursor: move;
+}
+
+// What the image will show: clear, with everything around it dark (the shadow reaches far past the view)
+.workspace-crop-frame {
+  position: absolute;
+  box-sizing: border-box;
+  box-shadow: 0 0 0 var(--line) rgba(255, 255, 255, 0.95), 0 0 0 100000px rgba(0, 0, 0, 0.55);
+  cursor: move;
+}
+
+// The thirds, to line up what matters with
+.workspace-crop-thirds {
+  --third: rgba(255, 255, 255, 0.35);
+
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      to right,
+      transparent calc(33.333% - var(--line) / 2),
+      var(--third) 0 calc(33.333% + var(--line) / 2),
+      transparent 0 calc(66.667% - var(--line) / 2),
+      var(--third) 0 calc(66.667% + var(--line) / 2),
+      transparent 0
+    ),
+    linear-gradient(
+      to bottom,
+      transparent calc(33.333% - var(--line) / 2),
+      var(--third) 0 calc(33.333% + var(--line) / 2),
+      transparent 0 calc(66.667% - var(--line) / 2),
+      var(--third) 0 calc(66.667% + var(--line) / 2),
+      transparent 0
+    );
+}
+
+// The handles: squares in the corners, short bars on the edges
+.workspace-crop-handle {
+  position: absolute;
+  box-sizing: border-box;
+  width: var(--handle);
+  height: var(--handle);
+  background: #fff;
+  border-radius: 20%;
+  box-shadow: 0 0 0 var(--line) rgba(0, 0, 0, 0.35);
+  transform: translate(-50%, -50%);
+
+  &[data-crop-handle='nw'] {
+    left: 0;
+    top: 0;
+    cursor: nwse-resize;
+  }
+  &[data-crop-handle='ne'] {
+    left: 100%;
+    top: 0;
+    cursor: nesw-resize;
+  }
+  &[data-crop-handle='se'] {
+    left: 100%;
+    top: 100%;
+    cursor: nwse-resize;
+  }
+  &[data-crop-handle='sw'] {
+    left: 0;
+    top: 100%;
+    cursor: nesw-resize;
+  }
+  &[data-crop-handle='n'],
+  &[data-crop-handle='s'] {
+    left: 50%;
+    transform: translate(-50%, -50%) scale(2.2, 0.6);
+    cursor: ns-resize;
+  }
+  &[data-crop-handle='n'] {
+    top: 0;
+  }
+  &[data-crop-handle='s'] {
+    top: 100%;
+  }
+  &[data-crop-handle='e'],
+  &[data-crop-handle='w'] {
+    top: 50%;
+    transform: translate(-50%, -50%) scale(0.6, 2.2);
+    cursor: ew-resize;
+  }
+  &[data-crop-handle='e'] {
+    left: 100%;
+  }
+  &[data-crop-handle='w'] {
+    left: 0;
+  }
+}
+
+// The tools of cropping: in pixels of the screen, placed under the frame by the surface in every frame
+.workspace-crop-tools-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+}
+
+.workspace-crop-tools {
+  display: flex;
+  animation: workspace-crop-in 0.25s ease-out;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.3125rem;
+  border: 0.0625rem solid var(--border-color);
+  border-radius: 0.5rem;
+  background: var(--background-color);
+  box-shadow: 0 0.5rem 1.5rem rgba(0, 0, 0, 0.35);
+  color: var(--text-color);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  cursor: default;
+
+  button {
+    padding: 0.3125rem 0.625rem;
+    border: none;
+    border-radius: 0.3125rem;
+    background: none;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+
+    &:hover {
+      background: var(--hover-color);
+      color: var(--text-color-strong);
+    }
+  }
+}
+
+.workspace-crop-shapes,
+.workspace-crop-actions {
+  display: flex;
+  gap: 0.125rem;
+}
+
+.workspace-crop-shapes {
+  padding-right: 0.5rem;
+  border-right: 0.0625rem solid var(--border-color);
+
+  button[aria-pressed='true'] {
+    background: var(--hover-color);
+    color: var(--accent-color);
+    font-weight: 600;
+  }
+}
+
+.workspace-crop-tools .workspace-crop-done {
+  background: var(--accent-color);
+  color: #fff;
+  font-weight: 600;
+
+  &:hover {
+    background: var(--accent-color);
+    color: #fff;
+    filter: brightness(1.1);
+  }
+}
+
+// While slow scrolling is on (Ctrl + wheel click): a small pill at the top of the workspace says so
+.workspace-slow-scroll {
+  position: absolute;
+  top: 0.75rem;
+  left: 50%;
+  padding: 0.3125rem 0.75rem;
+  border: 0.0625rem solid var(--border-color);
+  border-radius: 1rem;
+  background: var(--background-color);
+  box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.25);
+  color: var(--accent-color);
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -0.5rem);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+
+  span {
+    margin-left: 0.375rem;
+    color: var(--text-color-muted);
+    font-weight: 400;
+  }
+
+  &[data-active='true'] {
+    opacity: 1;
+    transform: translate(-50%, 0);
   }
 }

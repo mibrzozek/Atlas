@@ -107,6 +107,9 @@ import TEXT from 'resources/icons/text.svg';
 import ARRANGE from 'resources/icons/arrange.svg';
 import BACKGROUND from 'resources/icons/background.svg';
 import EXPORT from 'resources/icons/export.svg';
+import CROP from 'resources/icons/crop.svg';
+import COPY from 'resources/icons/copy.svg';
+import CHECK from 'resources/icons/check.svg';
 import GRID_DOTS from 'resources/icons/grid-dots.svg';
 import TAG_ADD from 'resources/icons/tag-add.svg';
 // import TAG_ADD_COLLECTION from 'resources/icons/tag-add-collection.svg';
@@ -223,6 +226,9 @@ const IconSet = {
   ARRANGE: toSvg(ARRANGE),
   BACKGROUND: toSvg(BACKGROUND),
   EXPORT: toSvg(EXPORT),
+  CROP: toSvg(CROP),
+  COPY: toSvg(COPY),
+  CHECK: toSvg(CHECK),
   // SMALL_ARROW_DOWN: toSvg(SMALL_ARROW_DOWN),
   // SMALL_ARROW_RIGHT: toSvg(SMALL_ARROW_RIGHT),
   SORT: toSvg(SORT),

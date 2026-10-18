@@ -2,13 +2,17 @@ import { observer } from 'mobx-react-lite';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import {
+  LayerGroup,
+  layerIndexOfDrop,
+  layerRows,
   MIN_FONT_SIZE,
   PAPER_FORMATS,
   WorkspaceBackgroundItem,
   WorkspaceItem,
   WorkspaceTextItem,
 } from 'common/workspace';
-import { IconSet } from 'widgets';
+import { IconSet, KeyCombo } from 'widgets';
+import { Menu, MenuItem, useContextMenu } from 'widgets/menus';
 import TagColorPicker from '../../components/TagColorPicker';
 import { useStore } from '../../contexts/StoreContext';
 import { ClientWorkspace } from '../../entities/Workspace';
@@ -73,15 +77,23 @@ interface LayerListProps extends LayersPanelProps {
   layers: readonly WorkspaceItem[];
 }
 
-/** The layers, of which only the rows in sight are drawn: a workspace can hold thousands of images */
+/**
+ * The layers, of which only the rows in sight are drawn: a workspace can hold thousands of images. A group
+ * of layers is a row of its own, with its layers under it when it is opened. A right click groups,
+ * ungroups, locks and unlocks.
+ */
 const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
-  const { workspaceStore } = useStore();
+  const { uiStore, workspaceStore } = useStore();
+  const showMenu = useContextMenu();
   const list = useRef<HTMLDivElement>(null);
   const [scrollTop, setScrollTop] = useState(0);
   const [height, setHeight] = useState(400);
+  /** The groups that are opened, showing their layers */
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   /** Where what is dragged would go: before the row with this number */
   const [dropAt, setDropAt] = useState<number>();
   const dragged = useRef<ReadonlySet<string>>();
+  const rows = layerRows(layers, workspace.groupsInUse, expanded);
 
   useLayoutEffect(() => {
     const element = list.current!;
@@ -90,11 +102,16 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
     return () => observer.disconnect();
   }, []);
 
-  // What was selected on the surface comes into sight in the list
-  const firstSelected = workspace.selection.size === 1 ? [...workspace.selection][0] : undefined;
+  // What was selected on the surface comes into sight in the list: its row, or its group's
+  // Not a copy of the selection: thousands can be selected, and this runs on every render
+  const firstSelected: string | undefined = workspace.selection.values().next().value;
   useEffect(() => {
     const element = list.current;
-    const index = layers.findIndex((layer) => layer.id === firstSelected);
+    const index = rows.findIndex((row) =>
+      row.kind === 'layer'
+        ? row.item.id === firstSelected
+        : row.members.some((member) => member.id === firstSelected),
+    );
     if (element !== null && index !== -1) {
       const top = index * ROW_HEIGHT;
       if (top < element.scrollTop || top + ROW_HEIGHT > element.scrollTop + element.clientHeight) {
@@ -106,13 +123,13 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
   }, [firstSelected]);
 
   const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - SPARE_ROWS);
-  const last = Math.min(layers.length, Math.ceil((scrollTop + height) / ROW_HEIGHT) + SPARE_ROWS);
+  const last = Math.min(rows.length, Math.ceil((scrollTop + height) / ROW_HEIGHT) + SPARE_ROWS);
 
   /** The place between two rows nearest to the pointer */
   const placeAt = (event: React.DragEvent) => {
     const rect = list.current!.getBoundingClientRect();
     const y = event.clientY - rect.top + list.current!.scrollTop;
-    return Math.max(0, Math.min(layers.length, Math.round(y / ROW_HEIGHT)));
+    return Math.max(0, Math.min(rows.length, Math.round(y / ROW_HEIGHT)));
   };
 
   const handleDragOver = (event: React.DragEvent) => {
@@ -140,9 +157,62 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
       return;
     }
     event.preventDefault();
-    // Counted without what is moved, as the workspace counts it
-    const toIndex = layers.slice(0, at).filter((layer) => !ids.has(layer.id)).length;
-    workspace.moveLayers(ids, toIndex);
+    workspace.moveLayers(ids, layerIndexOfDrop(rows, at, ids, expanded, layers));
+  };
+
+  const startDrag = (event: React.DragEvent, ids: string[]) => {
+    if (!ids.every((id) => workspace.selection.has(id))) {
+      workspace.selectMany(ids, false);
+    }
+    dragged.current = new Set(workspace.selection);
+    event.dataTransfer.setData(LAYERS_DND_TYPE, ids[0]);
+    event.dataTransfer.effectAllowed = 'move';
+  };
+  const endDrag = () => {
+    dragged.current = undefined;
+    setDropAt(undefined);
+  };
+
+  const toggleExpanded = (groupId: string) =>
+    setExpanded((open) => {
+      const next = new Set(open);
+      next.has(groupId) ? next.delete(groupId) : next.add(groupId);
+      return next;
+    });
+
+  const handleContextMenu = (event: React.MouseEvent) => {
+    if (workspace.isLocked) {
+      return;
+    }
+    event.preventDefault();
+    const groups = workspace.selectedGroups;
+    showMenu(
+      event.clientX,
+      event.clientY,
+      <Menu>
+        <MenuItem
+          icon={IconSet.LAYERS}
+          text="Group layers…"
+          accelerator={<KeyCombo combo={uiStore.hotkeyMap.workspaceGroup} />}
+          onClick={uiStore.openLayerGrouping}
+          disabled={workspace.selection.size < 2}
+        />
+        <MenuItem
+          icon={IconSet.CLOSE}
+          text="Ungroup"
+          accelerator={<KeyCombo combo={uiStore.hotkeyMap.workspaceUngroup} />}
+          onClick={workspace.ungroupSelection}
+          disabled={groups.length === 0}
+        />
+        {groups.length === 1 && (
+          <MenuItem
+            icon={groups[0].isLocked ? IconSet.UNLOCK : IconSet.LOCK}
+            text={groups[0].isLocked ? 'Unlock the group' : 'Lock the group'}
+            onClick={() => workspace.toggleGroupLock(groups[0].id)}
+          />
+        )}
+      </Menu>,
+    );
   };
 
   return (
@@ -159,30 +229,41 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
         }
       }}
       onDrop={handleDrop}
+      onContextMenu={handleContextMenu}
     >
-      <div style={{ height: layers.length * ROW_HEIGHT, position: 'relative' }}>
-        {layers.slice(first, last).map((layer, i) => (
-          <LayerRow
-            key={layer.id}
-            layer={layer}
-            top={(first + i) * ROW_HEIGHT}
-            workspace={workspace}
-            images={images}
-            onDragStart={(event) => {
-              if (!workspace.selection.has(layer.id)) {
-                workspace.select(layer.id, false);
+      <div style={{ height: rows.length * ROW_HEIGHT, position: 'relative' }}>
+        {rows.slice(first, last).map((row, i) =>
+          row.kind === 'group' ? (
+            <GroupRow
+              key={`group-${row.group.id}`}
+              group={row.group}
+              members={row.members}
+              top={(first + i) * ROW_HEIGHT}
+              workspace={workspace}
+              isExpanded={expanded.has(row.group.id)}
+              onToggleExpanded={() => toggleExpanded(row.group.id)}
+              onDragStart={(event) =>
+                startDrag(
+                  event,
+                  row.members.map((member) => member.id),
+                )
               }
-              dragged.current = new Set(workspace.selection);
-              event.dataTransfer.setData(LAYERS_DND_TYPE, layer.id);
-              event.dataTransfer.effectAllowed = 'move';
-            }}
-            onDragEnd={() => {
-              dragged.current = undefined;
-              setDropAt(undefined);
-            }}
-            onLook={() => workspaceStore.surface?.lookAt(layer.id)}
-          />
-        ))}
+              onDragEnd={endDrag}
+            />
+          ) : (
+            <LayerRow
+              key={row.item.id}
+              layer={row.item}
+              isInGroup={row.group !== undefined}
+              top={(first + i) * ROW_HEIGHT}
+              workspace={workspace}
+              images={images}
+              onDragStart={(event) => startDrag(event, [row.item.id])}
+              onDragEnd={endDrag}
+              onLook={() => workspaceStore.surface?.lookAt(row.item.id)}
+            />
+          ),
+        )}
         {dropAt !== undefined && (
           <div className="workspace-layer-drop" style={{ top: dropAt * ROW_HEIGHT - 1 }} />
         )}
@@ -191,8 +272,103 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
   );
 });
 
+interface GroupRowProps {
+  group: LayerGroup;
+  members: readonly WorkspaceItem[];
+  top: number;
+  workspace: ClientWorkspace;
+  isExpanded: boolean;
+  onToggleExpanded: () => void;
+  onDragStart: (event: React.DragEvent) => void;
+  onDragEnd: () => void;
+}
+
+/**
+ * A group of layers: opened and closed by its arrow, selected whole by a click, renamed by a double click,
+ * and locked (its layers are one) or unlocked by its lock
+ */
+const GroupRow = observer((props: GroupRowProps) => {
+  const { group, members, top, workspace, isExpanded, onToggleExpanded, onDragStart, onDragEnd } =
+    props;
+  const [isRenaming, setIsRenaming] = useState(false);
+  const isSelected = members.every((member) => workspace.selection.has(member.id));
+  return (
+    <div
+      className="workspace-layer workspace-layer-group"
+      role="option"
+      aria-selected={isSelected}
+      aria-expanded={isExpanded}
+      style={{ top, height: ROW_HEIGHT }}
+      draggable={!workspace.isLocked && !isRenaming}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onClick={(event) =>
+        workspace.selectGroup(group.id, event.shiftKey || event.ctrlKey || event.metaKey)
+      }
+      onDoubleClick={() => setIsRenaming(true)}
+      data-tooltip="A group of layers: double click to rename it"
+    >
+      <button
+        className="workspace-layer-caret btn-icon"
+        aria-label={isExpanded ? 'Close the group' : 'Open the group'}
+        onClick={(event) => {
+          event.stopPropagation();
+          onToggleExpanded();
+        }}
+      >
+        {isExpanded ? IconSet.ARROW_DOWN : IconSet.ARROW_RIGHT}
+      </button>
+      <span className="workspace-layer-preview">{IconSet.LAYERS}</span>
+      {isRenaming ? (
+        <input
+          className="workspace-layer-rename"
+          autoFocus
+          defaultValue={group.name}
+          aria-label="Name of the group"
+          onFocus={(event) => event.target.select()}
+          onClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => {
+            event.stopPropagation();
+            if (event.key === 'Enter') {
+              workspace.renameGroup(group.id, event.currentTarget.value);
+              setIsRenaming(false);
+            } else if (event.key === 'Escape') {
+              setIsRenaming(false);
+            }
+          }}
+          onBlur={(event) => {
+            workspace.renameGroup(group.id, event.currentTarget.value);
+            setIsRenaming(false);
+          }}
+        />
+      ) : (
+        <span className="workspace-layer-name">{group.name}</span>
+      )}
+      <span className="workspace-layer-count">{members.length.toLocaleString()}</span>
+      <button
+        className="workspace-layer-lock btn-icon"
+        aria-label={group.isLocked ? 'Unlock the group' : 'Lock the group'}
+        aria-pressed={group.isLocked}
+        data-tooltip={
+          group.isLocked
+            ? 'Locked: its layers are selected and moved as one'
+            : 'Unlocked: each layer on its own'
+        }
+        onClick={(event) => {
+          event.stopPropagation();
+          workspace.toggleGroupLock(group.id);
+        }}
+      >
+        {group.isLocked ? IconSet.LOCK : IconSet.UNLOCK}
+      </button>
+    </div>
+  );
+});
+
 interface LayerRowProps {
   layer: WorkspaceItem;
+  /** Shown under its group, set in */
+  isInGroup: boolean;
   top: number;
   workspace: ClientWorkspace;
   images: WorkspaceImages;
@@ -202,7 +378,9 @@ interface LayerRowProps {
 }
 
 const LayerRow = observer((props: LayerRowProps) => {
-  const { layer, top, workspace, images, onDragStart, onDragEnd, onLook } = props;
+  const { layer, isInGroup, top, workspace, images, onDragStart, onDragEnd, onLook } = props;
+  const { workspaceStore } = useStore();
+  const isCropped = workspace.cropping?.id === layer.id;
   const source = layer.kind === 'image' ? images.sources.get(layer.fileId) : undefined;
   const name =
     layer.kind === 'image'
@@ -216,6 +394,8 @@ const LayerRow = observer((props: LayerRowProps) => {
       className="workspace-layer"
       role="option"
       aria-selected={workspace.selection.has(layer.id)}
+      data-cropping={isCropped}
+      data-in-group={isInGroup}
       style={{ top, height: ROW_HEIGHT }}
       draggable={!workspace.isLocked}
       onDragStart={onDragStart}
@@ -236,6 +416,25 @@ const LayerRow = observer((props: LayerRowProps) => {
         )}
       </span>
       <span className="workspace-layer-name">{name}</span>
+      {/* Cropping this image: started here (the camera glides to it) and done here */}
+      {layer.kind === 'image' && !workspace.isLocked && (
+        <button
+          className="workspace-layer-crop btn-icon"
+          aria-label={isCropped ? 'Done cropping' : 'Crop'}
+          aria-pressed={isCropped}
+          onClick={(event) => {
+            event.stopPropagation();
+            if (isCropped) {
+              workspace.applyCrop();
+            } else {
+              // By its id: selecting it would bring the rest of a locked group with it
+              workspaceStore.surface?.startCrop(layer.id);
+            }
+          }}
+        >
+          {IconSet.CROP}
+        </button>
+      )}
     </div>
   );
 });

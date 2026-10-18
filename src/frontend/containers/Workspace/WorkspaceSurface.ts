@@ -1,3 +1,5 @@
+import { reaction } from 'mobx';
+
 import {
   boundsOf,
   Camera,
@@ -28,6 +30,14 @@ import {
   WorkspaceItem,
   zoomAt,
 } from 'common/workspace';
+import {
+  CropHandle,
+  cropOf,
+  dragCropHandle,
+  MIN_CROP_PIXELS,
+  movePhoto,
+  zoomPhoto,
+} from 'common/crop';
 import { ClientWorkspace } from '../../entities/Workspace';
 import { MAX_TILES, TileImages } from './TileImages';
 
@@ -62,6 +72,16 @@ const VIEW_MARGIN = 400;
 const SETTLE_DELAY = 150;
 /** One "line" of a wheel that scrolls by lines, in pixels */
 const WHEEL_LINE = 40;
+/** How far the wheel moves the workspace while slow scrolling is on: a tenth of the usual */
+const SLOW_WHEEL_SPEED = 0.1;
+/**
+ * A wheel that turns this many pixels at once (or in lines) is a mouse wheel with notches, which glide; a
+ * touchpad sends smaller steps. How fast a glide eases out, in ms: most of a notch is there in about 0.2 s
+ */
+const NOTCH_DELTA = 50;
+const WHEEL_GLIDE_TIME = 70;
+/** One frame at 60 per second, in ms */
+const FRAME_TIME = 1000 / 60;
 /** A press that moves less than this is a click, not a drag */
 const CLICK_DISTANCE = 4;
 /** How near, in screen pixels, an edge or middle of what is dragged comes before it snaps to another */
@@ -72,6 +92,14 @@ const SNAP_PIXELS = 7;
  */
 const EDGE_PIXELS = 48;
 const EDGE_SPEED = 24;
+/** How much a pixel of wheel with Alt sizes what is selected, and when the wheel has stopped, in ms */
+const WHEEL_SCALE_RATE = 0.0012;
+const WHEEL_SCALE_REST = 400;
+/** Room around a photo being cropped, in pixels on the screen, for its handles */
+const CROP_PADDING = 48;
+/** A band at the foot of the view kept free for the tools of cropping, and how far they are from the frame */
+const CROP_TOOLS_ROOM = 72;
+const CROP_TOOLS_GAP = 12;
 /** How long the camera takes to glide to an image or to everything */
 const GLIDE_DURATION = 320;
 
@@ -80,12 +108,30 @@ export interface VisibleItems {
   ids: ReadonlySet<string>;
 }
 
+/** What the surface draws in, from the bottom up */
+export interface SurfaceLayers {
+  /** The grid, under everything */
+  grid: HTMLCanvasElement;
+  /** The backgrounds, over the grid and under the tiles, moved along with the world */
+  backgrounds: HTMLElement;
+  /** Images too small on screen for an element of their own, over the backgrounds */
+  tiles: HTMLCanvasElement;
+  /** Everything but the backgrounds, over the tiles */
+  world: HTMLElement;
+  /** An image being cropped, over everything else (which is blurred under it), moved along with the world */
+  crop: HTMLElement;
+  /** The tools of cropping, in pixels of the screen, placed under the frame (`placeCropTools`) */
+  cropTools: HTMLElement;
+}
+
 interface SurfaceEvents {
   onVisibleChange: (visible: VisibleItems) => void;
   /** The camera came to rest */
   onSettle: (camera: Camera) => void;
   /** A text was double clicked: its words are to be changed */
   onEditText: (id: string) => void;
+  /** Ctrl and the wheel pressed: slow scrolling on or off */
+  onToggleSlowScroll: () => void;
 }
 
 type Gesture =
@@ -109,6 +155,15 @@ type Gesture =
     }
   /** Its width as sized so far, snapped */
   | { kind: 'resize'; item: WorkspaceItem; width: number }
+  /** While cropping: an edge or corner of the frame dragged, from where the frame was when pressed */
+  | { kind: 'crop-frame'; handle: CropHandle; frame: Rect }
+  /** While cropping: the photo moved under the frame, from where it was when pressed */
+  | { kind: 'crop-photo'; photo: Rect }
+  /**
+   * What is selected, sized together by the handle of its frame: from how things were when it was pressed
+   * (`from`), around the top left of the frame (`bounds`), lined up with what is near (`others`)
+   */
+  | { kind: 'scale'; from: WorkspaceItem[]; bounds: Rect; others: WorkspaceItem[] }
   /**
    * What was selected before, which stays selected when adding (Shift or Ctrl); and the background the
    * box was started on, which a click (no box) selects
@@ -121,9 +176,10 @@ interface Press {
   /** Where it was pressed, in the window, and on the workspace: what the box or the drag is held by */
   start: Point;
   startInWorld: Point;
-  /** Where the pointer is now, in the window, and whether Alt is held (no snapping) */
+  /** Where the pointer is now, in the window, whether Alt is held (no snapping), and Shift (a crop keeps its shape) */
   last: Point;
   isAltDown: boolean;
+  isShiftDown: boolean;
   hasMoved: boolean;
 }
 
@@ -149,6 +205,20 @@ export class WorkspaceSurface {
   /** Images being dragged, and how far, in world units: the canvas draws their tiles there too */
   private dragged: { ids: ReadonlySet<string>; dx: number; dy: number } | undefined;
   private isSpaceDown = false;
+  /** How far the wheel pans and zooms: less than 1 while slow scrolling is on */
+  private wheelSpeed = 1;
+  /** What the notches of the wheel still have to move the camera (`glideWheel`) */
+  private wheelGlide:
+    | {
+        x: number;
+        y: number;
+        zoom: number;
+        at: Point;
+        frame: number | undefined;
+        /** When the last frame of it was drawn */
+        time: number | undefined;
+      }
+    | undefined;
   private readonly marquee: HTMLDivElement;
   /** The lines along which what is dragged lines up with something else, over everything */
   private readonly guideLayer: HTMLDivElement;
@@ -159,26 +229,37 @@ export class WorkspaceSurface {
   private overviewTimer: number | undefined;
   /** The frame of scrolling by itself while the pointer is held at an edge of the view */
   private edgeScroll: number | undefined;
+  /** A sizing of what is selected with Alt + wheel, while the wheel keeps turning */
+  private wheelScale:
+    | {
+        from: WorkspaceItem[];
+        middle: Point;
+        factor: number;
+        selection: ReadonlySet<string>;
+        timer: number;
+      }
+    | undefined;
+  /** Whether the change being made is the wheel's own sizing, not one that ends its session */
+  private isScalingByWheel = false;
 
   private readonly resizeObserver: ResizeObserver;
+  private readonly stopFollowingCrop: () => void;
 
   constructor(
     /** The surface on screen, which also carries the colours of the theme */
     readonly viewport: HTMLElement,
-    /** Everything but the backgrounds, over the tiles */
-    private readonly world: HTMLElement,
-    /** The grid, under everything */
-    private readonly canvas: HTMLCanvasElement,
-    /** The backgrounds, over the grid and under the tiles, moved along with the world */
-    private readonly backgroundWorld: HTMLElement,
-    /** Images too small on screen for an element of their own, over the backgrounds */
-    private readonly tileCanvas: HTMLCanvasElement,
+    private readonly layers: SurfaceLayers,
     private readonly workspace: ClientWorkspace,
     /** The tiny versions of its images, which belong to the workspace (see WorkspaceImages) */
     private readonly tileImages: TileImages,
     private readonly events: SurfaceEvents,
   ) {
     this.camera = workspace.camera;
+    // A crop that changes (its frame sized, its tools drawn) is drawn again, its tools placed under it
+    this.stopFollowingCrop = reaction(
+      () => workspace.cropping,
+      () => this.requestFrame(),
+    );
     tileImages.onLoad = (id) => {
       this.drawIntoOverview(id);
       this.requestFrame();
@@ -210,6 +291,9 @@ export class WorkspaceSurface {
 
   dispose(): void {
     this.resizeObserver.disconnect();
+    this.stopFollowingCrop();
+    // A crop is not stored: left for another tab, it would come back with its image hidden and out of view
+    this.workspace.cancelCrop();
     this.viewport.removeEventListener('wheel', this.handleWheel);
     this.viewport.removeEventListener('pointerdown', this.handlePointerDown);
     this.viewport.removeEventListener('pointermove', this.handlePointerMove);
@@ -225,7 +309,9 @@ export class WorkspaceSurface {
       cancelAnimationFrame(this.frame);
     }
     this.stopGlide();
+    this.stopWheelGlide();
     this.stopEdgeScroll();
+    window.clearTimeout(this.wheelScale?.timer);
     window.clearTimeout(this.settleTimer);
     window.clearTimeout(this.overviewTimer);
     // Let go of the overview picture (up to 64 MB) at once
@@ -241,6 +327,10 @@ export class WorkspaceSurface {
 
   /** The images that are on the workspace, whenever they change */
   setItems(items: readonly WorkspaceItem[]): void {
+    if (!this.isScalingByWheel) {
+      // Changed some other way (Arrange, paste, undo): a sizing by the wheel starts again from that
+      this.wheelScale = undefined;
+    }
     const next = new Map(items.map((item) => [item.id, item]));
     for (const id of this.items.keys()) {
       if (!next.has(id)) {
@@ -257,6 +347,16 @@ export class WorkspaceSurface {
     this.isOverviewStale = true;
     this.changedAt = performance.now();
     this.requestFrame();
+  }
+
+  /** The layers that are moved and scaled by the camera, as one */
+  private get worlds(): HTMLElement[] {
+    return [this.layers.backgrounds, this.layers.world, this.layers.crop];
+  }
+
+  /** While on, the wheel pans and zooms a small part as far: for placing things finely */
+  setSlowScroll(isSlow: boolean): void {
+    this.wheelSpeed = isSlow ? SLOW_WHEEL_SPEED : 1;
   }
 
   setGrid(grid: WorkspaceGridStyle | undefined): void {
@@ -317,6 +417,42 @@ export class WorkspaceSurface {
     }
   };
 
+  /**
+   * Crops an image, the one selected by default: the camera glides to show all of its photo, with room
+   * around it for the tools of cropping
+   */
+  startCrop = (id?: string): void => {
+    this.workspace.startCrop(id);
+    const { cropping } = this.workspace;
+    if (cropping !== undefined) {
+      // All of the photo, as large as fits above a band kept free for the tools
+      const above = { width: this.view.width, height: this.view.height - CROP_TOOLS_ROOM };
+      this.glideTo(fitCamera(cropping.photo, above, CROP_PADDING, MAX_ZOOM));
+    }
+  };
+
+  /**
+   * The tools of cropping under the frame, in pixels of the screen; kept inside the view when the frame
+   * reaches its edge
+   */
+  private placeCropTools() {
+    const { cropping } = this.workspace;
+    const tools = this.layers.cropTools;
+    if (cropping === undefined) {
+      return;
+    }
+    const { frame } = cropping;
+    const corner = toScreen(this.camera, { x: frame.x, y: frame.y + frame.height });
+    const width = tools.offsetWidth;
+    const height = tools.offsetHeight;
+    const left = Math.min(
+      Math.max(corner.x, CROP_TOOLS_GAP),
+      this.view.width - width - CROP_TOOLS_GAP,
+    );
+    const top = Math.min(corner.y + CROP_TOOLS_GAP, this.view.height - height - CROP_TOOLS_GAP);
+    tools.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+  }
+
   /** Where on the workspace a point of the window is, such as where something was dropped */
   worldAt = (point: { clientX: number; clientY: number }): Point =>
     toWorld(this.camera, this.pointerAt(point));
@@ -336,23 +472,146 @@ export class WorkspaceSurface {
     event.preventDefault();
     this.stopGlide();
     const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? WHEEL_LINE : 1;
-    const dx = event.deltaX * scale;
-    const dy = event.deltaY * scale;
+    // Slow scrolling makes panning and zooming finer; sizing with Alt keeps its own pace
+    const speed = event.altKey ? 1 : this.wheelSpeed;
+    const dx = event.deltaX * scale * speed;
+    const dy = event.deltaY * scale * speed;
+    // A mouse wheel turns in notches: each one glides; a touchpad already sends a stream of small steps,
+    // which move at once (gliding them would only make them lag)
+    const isNotch =
+      event.deltaMode === WheelEvent.DOM_DELTA_LINE ||
+      Math.max(Math.abs(event.deltaX), Math.abs(event.deltaY)) >= NOTCH_DELTA;
+    const at = this.pointerAt(event);
     if (event.ctrlKey || event.metaKey) {
       // A pinch on a touchpad comes in as Ctrl + wheel as well
-      this.moveCamera(zoomAt(this.camera, this.pointerAt(event), wheelZoomFactor(dy)));
-    } else if (event.shiftKey && dx === 0) {
-      this.moveCamera(panBy(this.camera, -dy, 0));
+      if (isNotch) {
+        this.glideWheel(0, 0, Math.log(wheelZoomFactor(dy)), at);
+      } else {
+        this.moveCamera(zoomAt(this.camera, at, wheelZoomFactor(dy)));
+      }
+    } else if (event.altKey && this.workspace.cropping !== undefined) {
+      // While cropping, the photo larger or smaller under the frame, around the pointer
+      const { cropping } = this.workspace;
+      const at = toWorld(this.camera, this.pointerAt(event));
+      this.workspace.adjustCrop({
+        photo: zoomPhoto(
+          cropping.photo,
+          cropping.frame,
+          Math.exp(-(dy || dx) * WHEEL_SCALE_RATE),
+          at,
+        ),
+      });
+    } else if (event.altKey) {
+      this.scaleByWheel(dy || dx);
     } else {
-      this.moveCamera(panBy(this.camera, -dx, -dy));
+      const [panX, panY] = event.shiftKey && dx === 0 ? [-dy, 0] : [-dx, -dy];
+      if (isNotch) {
+        this.glideWheel(panX, panY, 0, at);
+      } else {
+        this.moveCamera(panBy(this.camera, panX, panY));
+      }
     }
   };
+
+  /**
+   * A notch of the wheel glides instead of jumping: what it moves is added to what is still to go, and the
+   * camera eases through it, a share in every frame, so turning on keeps one smooth movement. Pan is in
+   * pixels of the screen, zoom as the logarithm of its factor, around `at` (the point under the pointer
+   * stays where it is)
+   */
+  private glideWheel(panX: number, panY: number, zoom: number, at: Point) {
+    const glide = this.wheelGlide ?? { x: 0, y: 0, zoom: 0, at, frame: undefined, time: undefined };
+    glide.x += panX;
+    glide.y += panY;
+    glide.zoom += zoom;
+    glide.at = at;
+    this.wheelGlide = glide;
+    if (glide.frame === undefined) {
+      glide.frame = requestAnimationFrame(this.stepWheelGlide);
+    }
+  }
+
+  private stepWheelGlide = (now: number) => {
+    const glide = this.wheelGlide;
+    if (glide === undefined) {
+      return;
+    }
+    // The same pace at every frame rate: a share of what is left, by the time since the last frame. The
+    // first frame counts as one frame (its time can lie just before the wheel turned: never backwards)
+    const elapsed = glide.time === undefined ? FRAME_TIME : Math.max(0, now - glide.time);
+    const share = 1 - Math.exp(-elapsed / WHEEL_GLIDE_TIME);
+    glide.time = now;
+    const isAlmostThere =
+      Math.abs(glide.x) < 0.5 && Math.abs(glide.y) < 0.5 && Math.abs(glide.zoom) < 0.0005;
+    const part = isAlmostThere ? 1 : share;
+    const [x, y, zoom] = [glide.x * part, glide.y * part, glide.zoom * part];
+    glide.x -= x;
+    glide.y -= y;
+    glide.zoom -= zoom;
+    let camera = panBy(this.camera, x, y);
+    if (zoom !== 0) {
+      camera = zoomAt(camera, glide.at, Math.exp(zoom));
+    }
+    this.moveCamera(camera);
+    if (isAlmostThere) {
+      this.wheelGlide = undefined;
+    } else {
+      glide.frame = requestAnimationFrame(this.stepWheelGlide);
+    }
+  };
+
+  /** Whatever moves the camera otherwise (a drag, a glide to something) takes over from the wheel */
+  private stopWheelGlide() {
+    if (this.wheelGlide?.frame !== undefined) {
+      cancelAnimationFrame(this.wheelGlide.frame);
+    }
+    this.wheelGlide = undefined;
+  }
+
+  /**
+   * Alt + wheel: what is selected larger (wheel up) or smaller, around its middle. The turns of one go of
+   * the wheel are one sizing, from how things were when it began: one change to undo, nothing drifts
+   */
+  private scaleByWheel(delta: number) {
+    const { workspace } = this;
+    if (workspace.isLocked || workspace.selection.size === 0) {
+      return;
+    }
+    let session = this.wheelScale;
+    if (session === undefined || !sameSet(session.selection, workspace.selection)) {
+      window.clearTimeout(session?.timer);
+      const from = workspace.items.slice();
+      const bounds = boundsOf(from.filter((item) => workspace.selection.has(item.id)));
+      if (bounds === undefined) {
+        return;
+      }
+      const middle = { x: bounds.x + bounds.width / 2, y: bounds.y + bounds.height / 2 };
+      session = { from, middle, factor: 1, selection: new Set(workspace.selection), timer: 0 };
+      this.wheelScale = session;
+    }
+    window.clearTimeout(session.timer);
+    session.timer = window.setTimeout(() => (this.wheelScale = undefined), WHEEL_SCALE_REST);
+    // A notch of a mouse wheel (100) is about an eighth; a touchpad's small amounts add up smoothly
+    session.factor *= Math.exp(-delta * WHEEL_SCALE_RATE);
+    this.isScalingByWheel = true;
+    try {
+      workspace.scaleSelection(session.factor, session.middle, session.from);
+    } finally {
+      this.isScalingByWheel = false;
+    }
+  }
 
   private handlePointerDown = (event: PointerEvent) => {
     if ((event.button !== 0 && event.button !== 1) || this.press !== undefined) {
       return;
     }
     event.preventDefault();
+    this.stopWheelGlide();
+    if (event.button === 1 && (event.ctrlKey || event.metaKey)) {
+      // Ctrl and the wheel pressed: slow scrolling on or off; the wheel alone still pans
+      this.events.onToggleSlowScroll();
+      return;
+    }
     this.viewport.focus({ preventScroll: true });
     this.stopGlide();
     const gesture = this.gestureFor(event);
@@ -368,6 +627,7 @@ export class WorkspaceSurface {
       startInWorld: toWorld(this.camera, this.pointerAt(at)),
       last: at,
       isAltDown: event.altKey,
+      isShiftDown: event.shiftKey,
       hasMoved: false,
     };
     if (gesture.kind === 'pan') {
@@ -388,6 +648,28 @@ export class WorkspaceSurface {
 
     if (event.button === 1 || this.isSpaceDown || workspace.isLocked) {
       return { kind: 'pan' };
+    }
+    // Cropping: the frame's handles size it, a drag on the photo moves it under the frame, and a press
+    // anywhere else is done with it
+    const { cropping } = workspace;
+    if (cropping !== undefined) {
+      const handle = target.closest<HTMLElement>('[data-crop-handle]')?.dataset.cropHandle;
+      if (handle !== undefined) {
+        return { kind: 'crop-frame', handle: handle as CropHandle, frame: cropping.frame };
+      }
+      if (target.closest('.workspace-crop-photo, .workspace-crop-frame') !== null) {
+        return { kind: 'crop-photo', photo: cropping.photo };
+      }
+      // Its tools are buttons of their own (seen here before React could keep the press from the surface)
+      if (target.closest('.workspace-crop-tools') !== null) {
+        return undefined;
+      }
+      workspace.applyCrop();
+      return undefined;
+    }
+    // The handle of the frame around a selection of several: the frame is no object of its own
+    if (target.closest('.workspace-group-resize') !== null) {
+      return this.scaleGesture();
     }
     const before = isAdditive ? new Set(workspace.selection) : new Set<string>();
     if (id === undefined) {
@@ -411,6 +693,16 @@ export class WorkspaceSurface {
     }
     // Brought to the front by the click when it is let go, or by the move: one change to undo, not two
     return this.moveGesture(id);
+  }
+
+  /** Sizing what is selected together, by the handle of the frame around it */
+  private scaleGesture(): Gesture | undefined {
+    const ids = this.workspace.selection;
+    const from = this.workspace.items.slice();
+    const bounds = boundsOf(from.filter((item) => ids.has(item.id)));
+    return bounds === undefined
+      ? undefined
+      : { kind: 'scale', from, bounds, others: this.othersNear(new Set(ids)) };
   }
 
   /** Dragging what is selected, from the one that was pressed */
@@ -454,6 +746,7 @@ export class WorkspaceSurface {
     const step = { x: at.x - press.last.x, y: at.y - press.last.y };
     press.last = at;
     press.isAltDown = event.altKey;
+    press.isShiftDown = event.shiftKey;
     if (!press.hasMoved) {
       press.hasMoved = Math.hypot(at.x - press.start.x, at.y - press.start.y) >= CLICK_DISTANCE;
       if (!press.hasMoved) {
@@ -482,6 +775,8 @@ export class WorkspaceSurface {
       case 'pan':
         break;
       case 'move': {
+        // The frame around a selection of several stays where it was until it is let go: hidden meanwhile
+        this.viewport.dataset.moving = 'true';
         // Lined up with what is near when it comes close, unless Alt is held
         const where = {
           ...gesture.bounds,
@@ -515,13 +810,57 @@ export class WorkspaceSurface {
         const wanted = gesture.item.width + total.x;
         const snapped = press.isAltDown
           ? { width: wanted, guides: [] }
-          : snapSize(gesture.item, this.othersNear(gesture.item.id), wanted, threshold);
+          : snapSize(gesture.item, this.othersNear(new Set([gesture.item.id])), wanted, threshold);
         const sized = resizeItem(gesture.item, snapped.width);
         gesture.width = sized.width;
         for (const element of this.elementsOf(new Set([gesture.item.id]))) {
           element.style.width = `${sized.width}px`;
           element.style.height = `${sized.height}px`;
         }
+        this.drawGuides(snapped.guides);
+        break;
+      }
+      case 'crop-frame': {
+        const { cropping } = this.workspace;
+        if (cropping !== undefined) {
+          // Held to its shape when one was chosen, or while Shift is held
+          const aspect =
+            cropping.aspect ??
+            (press.isShiftDown ? gesture.frame.width / gesture.frame.height : undefined);
+          const frame = dragCropHandle(
+            gesture.frame,
+            cropping.photo,
+            gesture.handle,
+            total.x,
+            total.y,
+            MIN_CROP_PIXELS / this.camera.zoom,
+            aspect,
+          );
+          this.workspace.adjustCrop({ frame });
+        }
+        break;
+      }
+      case 'crop-photo': {
+        const { cropping } = this.workspace;
+        if (cropping !== undefined) {
+          this.workspace.adjustCrop({
+            photo: movePhoto(gesture.photo, cropping.frame, total.x, total.y),
+          });
+        }
+        break;
+      }
+      case 'scale': {
+        // The frame's right and lower edges line up with what is near, as when sizing one object
+        const { bounds } = gesture;
+        const wanted = Math.max(1, bounds.width + total.x);
+        const snapped = press.isAltDown
+          ? { width: wanted, guides: [] }
+          : snapSize(bounds, gesture.others, wanted, threshold);
+        this.workspace.scaleSelection(
+          snapped.width / bounds.width,
+          { x: bounds.x, y: bounds.y },
+          gesture.from,
+        );
         this.drawGuides(snapped.guides);
         break;
       }
@@ -552,12 +891,12 @@ export class WorkspaceSurface {
     }
   }
 
-  /** What is near an object, but not itself: what it can line up with */
-  private othersNear(id: string): WorkspaceItem[] {
+  /** What is near, but not these: what they can line up with */
+  private othersNear(ids: ReadonlySet<string>): WorkspaceItem[] {
     const others: WorkspaceItem[] = [];
     for (const near of this.nearby) {
       const item = this.items.get(near);
-      if (item !== undefined && near !== id) {
+      if (item !== undefined && !ids.has(near)) {
         others.push(item);
       }
     }
@@ -621,6 +960,7 @@ export class WorkspaceSurface {
         break;
       case 'move':
         this.dragged = undefined;
+        delete this.viewport.dataset.moving;
         this.drawGuides([]);
         gesture.elements?.forEach((element) => element.style.removeProperty('z-index'));
         if (hasMoved) {
@@ -635,6 +975,9 @@ export class WorkspaceSurface {
           this.workspace.bringToFront(gesture.pressed);
         }
         this.requestFrame();
+        break;
+      case 'scale':
+        this.drawGuides([]);
         break;
       case 'resize':
         this.drawGuides([]);
@@ -743,6 +1086,7 @@ export class WorkspaceSurface {
 
   private glideTo(target: Camera) {
     this.stopGlide();
+    this.stopWheelGlide();
     const from = this.camera;
     const start = performance.now();
     const step = (now: number) => {
@@ -772,8 +1116,7 @@ export class WorkspaceSurface {
     if (!this.isMoving) {
       // Moved as one picture on the graphics card while it moves; drawn sharp again once it stops
       this.isMoving = true;
-      this.world.style.willChange = 'transform';
-      this.backgroundWorld.style.willChange = 'transform';
+      this.worlds.forEach((world) => (world.style.willChange = 'transform'));
     }
     window.clearTimeout(this.settleTimer);
     this.settleTimer = window.setTimeout(this.settle, SETTLE_DELAY);
@@ -782,8 +1125,7 @@ export class WorkspaceSurface {
 
   private settle = () => {
     this.isMoving = false;
-    this.world.style.willChange = '';
-    this.backgroundWorld.style.willChange = '';
+    this.worlds.forEach((world) => (world.style.willChange = ''));
     this.readColors(); // the theme may have changed
     this.requestFrame();
     this.events.onSettle(this.camera);
@@ -823,8 +1165,10 @@ export class WorkspaceSurface {
     this.frame = undefined;
     const { x, y, zoom } = this.camera;
     const transform = `translate(${-x * zoom}px, ${-y * zoom}px) scale(${zoom})`;
-    this.world.style.transform = transform;
-    this.backgroundWorld.style.transform = transform;
+    this.worlds.forEach((world) => (world.style.transform = transform));
+    // What has to be as large on the screen at every zoom (the handles of a crop) is sized by this
+    this.layers.crop.style.setProperty('--zoom', String(zoom));
+    this.placeCropTools();
 
     // Whether an image gets an element is decided at steps of the zoom, not in every frame: while zooming,
     // the images that change from a tile to an element and back do so a few at a time instead of always
@@ -895,7 +1239,7 @@ export class WorkspaceSurface {
    * own on the canvas over the backgrounds, in device pixels
    */
   private drawCanvas(tiles: readonly WorkspaceImageItem[]) {
-    const grid = this.prepare(this.canvas);
+    const grid = this.prepare(this.layers.grid);
     const { zoom } = this.camera;
     if (this.grid === 'lines' && grid.context !== null) {
       const { context, width, height } = grid;
@@ -928,7 +1272,7 @@ export class WorkspaceSurface {
       context.globalAlpha = 1;
     }
 
-    const { context, ratio, width, height } = this.prepare(this.tileCanvas);
+    const { context, ratio, width, height } = this.prepare(this.layers.tiles);
     if (context === null) {
       return;
     }
@@ -958,14 +1302,7 @@ export class WorkspaceSurface {
       const image = wantsImage ? this.tileImages.get(tile.fileId) : undefined;
       if (image !== undefined) {
         context.globalAlpha = 1;
-        context.drawImage(
-          image,
-          ...coverSource(image, tileWidth, tileHeight),
-          left,
-          top,
-          tileWidth,
-          tileHeight,
-        );
+        context.drawImage(image, ...cropSource(image, tile), left, top, tileWidth, tileHeight);
       } else {
         this.fillWithColor(context, tile.fileId, left, top, tileWidth, tileHeight);
       }
@@ -1065,7 +1402,7 @@ export class WorkspaceSurface {
     const tile = this.tileImages.peek(item.fileId);
     if (tile !== undefined) {
       context.globalAlpha = 1;
-      context.drawImage(tile, ...coverSource(tile, width, height), left, top, width, height);
+      context.drawImage(tile, ...cropSource(tile, item), left, top, width, height);
     } else {
       this.fillWithColor(context, item.fileId, left, top, width, height);
     }
@@ -1130,22 +1467,15 @@ export class WorkspaceSurface {
   }
 }
 
-/**
- * The part of a tile that shows in a frame of another shape: cut to it, as the image is in its element
- * (`object-fit: cover`), for images laid out in the square cells of a grid
- */
-function coverSource(
-  tile: ImageBitmap,
-  width: number,
-  height: number,
-): [number, number, number, number] {
-  const frame = width / height;
-  if (tile.width / tile.height > frame) {
-    const shown = tile.height * frame;
-    return [(tile.width - shown) / 2, 0, shown, tile.height];
-  }
-  const shown = tile.width / frame;
-  return [0, (tile.height - shown) / 2, tile.width, shown];
+/** The part of a tile that an image shows: its crop, as the element shows it (`cropOf`) */
+function cropSource(tile: ImageBitmap, item: WorkspaceImageItem): [number, number, number, number] {
+  const crop = cropOf(item);
+  return [
+    crop.x * tile.width,
+    crop.y * tile.height,
+    crop.width * tile.width,
+    crop.height * tile.height,
+  ];
 }
 
 function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {

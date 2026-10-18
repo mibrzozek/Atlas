@@ -50,6 +50,11 @@ body {
   .spacer {
     flex-grow: 1;
   }
+
+  // The buttons always keep their room: only the workspace tabs get narrower
+  > :not(.workspace-tabs) {
+    flex-shrink: 0;
+  }
 }
 
 #window-splitter {

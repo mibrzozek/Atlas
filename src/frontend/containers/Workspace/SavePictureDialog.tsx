@@ -84,7 +84,7 @@ export const SavePictureDialog = observer(
         describedby="save-picture-info"
       >
         <form
-          id="save-picture"
+          className="workspace-dialog"
           method="dialog"
           onSubmit={(event) => {
             event.preventDefault();
@@ -95,10 +95,10 @@ export const SavePictureDialog = observer(
             {pictureAreaName(workspace)}, at the full resolution of its photos.
           </p>
 
-          <label className="save-picture-field">
+          <label className="workspace-dialog-field">
             <span>Name</span>
             {/* The name and its extension as one field: the extension follows the format */}
-            <div className="save-picture-name" data-invalid={fileName === ''}>
+            <div className="workspace-dialog-input" data-invalid={fileName === ''}>
               <input
                 ref={nameInput}
                 spellCheck={false}
@@ -109,7 +109,7 @@ export const SavePictureDialog = observer(
             </div>
           </label>
 
-          <div className="save-picture-field" role="radiogroup" aria-label="Format">
+          <div className="workspace-dialog-field" role="radiogroup" aria-label="Format">
             <span>Format</span>
             <div className="save-picture-formats">
               {FORMATS.map((option) => (

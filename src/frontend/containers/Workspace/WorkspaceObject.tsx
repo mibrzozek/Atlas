@@ -1,8 +1,10 @@
 import React, { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { encodeFilePath } from 'common/fs';
+import { Crop, cropOf } from 'common/crop';
 import { getSharpSize } from 'common/sharp-size';
 import {
+  Rect,
   TEXT_LINE_HEIGHT,
   WorkspaceImageItem,
   WorkspaceItem,
@@ -25,6 +27,8 @@ interface FrameProps {
   isSelected: boolean;
   /** Whether it has the handle for sizing it: when it is the only one selected */
   isSizable: boolean;
+  /** Whether it is being cropped: then the crop shows it, and this one is not seen */
+  isCropped?: boolean;
   /** The colour of a text (`textInk`): its own, or the one that reads on the paper under it */
   ink?: string;
 }
@@ -37,7 +41,7 @@ interface FrameProps {
 const WorkspaceObject = memo(function WorkspaceObject(
   props: FrameProps & { source: WorkspaceImageSource | undefined },
 ) {
-  const { item, zoom, isSelected, isSizable, source, ink } = props;
+  const { item, zoom, isSelected, isSizable, isCropped, source, ink } = props;
   const element = useRef<HTMLDivElement>(null);
 
   // Drawn at its new place: the offset of the drag is done with, in the same frame
@@ -58,6 +62,7 @@ const WorkspaceObject = memo(function WorkspaceObject(
         height: item.height,
         // The same width on the screen at every zoom
         outlineWidth: isSelected ? RING_PIXELS / zoom : undefined,
+        visibility: isCropped ? 'hidden' : undefined,
       }}
     >
       {item.kind === 'image' ? (
@@ -81,14 +86,58 @@ const WorkspaceObject = memo(function WorkspaceObject(
 
 export default WorkspaceObject;
 
-/** An image, with as many pixels as it takes up on the screen */
+/**
+ * Around everything that is selected, when that is more than one: a thin frame with the handle that sizes
+ * them all together (`WorkspaceSurface`, the 'scale' gesture). It takes no clicks but on its handle.
+ */
+export function SelectionFrame({ bounds, zoom }: { bounds: Rect; zoom: number }): JSX.Element {
+  return (
+    <div
+      className="workspace-selection-frame"
+      style={{
+        left: bounds.x,
+        top: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        outlineWidth: RING_PIXELS / zoom,
+      }}
+    >
+      <div
+        className="workspace-resize workspace-group-resize"
+        style={{ width: HANDLE_PIXELS / zoom, height: HANDLE_PIXELS / zoom }}
+        aria-label="Drag to make what is selected larger or smaller (or Alt and the wheel)"
+      />
+    </div>
+  );
+}
+
+/**
+ * Where the whole photo lies in a frame that shows the part `crop` of it, as a style: the frame cuts off
+ * the rest
+ */
+export function photoInFrame(crop: Crop): React.CSSProperties {
+  return {
+    left: `${(-crop.x / crop.width) * 100}%`,
+    top: `${(-crop.y / crop.height) * 100}%`,
+    width: `${100 / crop.width}%`,
+    height: `${100 / crop.height}%`,
+  };
+}
+
+/** An image, the part of its photo it shows (`cropOf`), with as many pixels as it takes up on the screen */
 function WorkspaceImage(props: {
   item: WorkspaceImageItem;
   source: WorkspaceImageSource | undefined;
   zoom: number;
 }) {
   const { item, source, zoom } = props;
-  const sharpSrc = useSharpSource(source, item.width * zoom, item.height * zoom);
+  const crop = cropOf(item);
+  // As sharp as the whole photo is large on the screen: a small part of it is shown large
+  const sharpSrc = useSharpSource(
+    source,
+    (item.width / crop.width) * zoom,
+    (item.height / crop.height) * zoom,
+  );
   const src = sharpSrc ?? source?.src;
   // Broken for this source only: a thumbnail that was not made yet, or a sharp one, may still come
   const [brokenSrc, setBrokenSrc] = useState<string>();
@@ -99,13 +148,16 @@ function WorkspaceImage(props: {
   return isBroken ? (
     <span className="workspace-image-name">{source.name}</span>
   ) : (
-    <img
-      src={src}
-      alt={source.name}
-      decoding="async"
-      draggable={false}
-      onError={() => setBrokenSrc(src)}
-    />
+    <div className="workspace-image-crop">
+      <img
+        src={src}
+        alt={source.name}
+        style={photoInFrame(crop)}
+        decoding="async"
+        draggable={false}
+        onError={() => setBrokenSrc(src)}
+      />
+    </div>
   );
 }
 
@@ -131,7 +183,7 @@ function WorkspaceText({ item, ink }: { item: WorkspaceTextItem; ink?: string })
  * the file itself. Only swapped in once it is decoded, so that it never blinks; until then, and when it
  * becomes small again, the thumbnail.
  */
-function useSharpSource(
+export function useSharpSource(
   source: WorkspaceImageSource | undefined,
   screenWidth: number,
   screenHeight: number,

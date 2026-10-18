@@ -7,6 +7,7 @@ import { Toolbar, ToolbarButton } from 'widgets/toolbar';
 import { useStore } from '../../contexts/StoreContext';
 import { ClientWorkspace } from '../../entities/Workspace';
 import { useWorkspaceDrop } from '../Workspace/useWorkspaceDrop';
+import { useWorkspaceMenu } from '../Workspace/WorkspaceTabs';
 import { WorkspaceNameInput } from '../Workspace/WorkspaceNameInput';
 
 /** How a drop on a row is shown: a line above or below it, or the whole row lit for adding to it */
@@ -14,7 +15,8 @@ const MARK_CLASS = { before: 'top', after: 'bottom', into: 'center' } as const;
 
 /**
  * A workspace in the side panel, as its tab behaves: a click opens it, a double click (or F2) renames
- * it, a drag moves it among the others, and a tag, collection, folder or images dropped on it are added
+ * it, a drag moves it among the others, and a tag, collection, folder or images dropped on it are added.
+ * A click also brings back its tab when that was closed; a right click renames, closes the tab or deletes.
  */
 const WorkspaceRow = observer(({ workspace }: { workspace: ClientWorkspace }) => {
   const { uiStore } = useStore();
@@ -22,6 +24,7 @@ const WorkspaceRow = observer(({ workspace }: { workspace: ClientWorkspace }) =>
   const { mark, props: dnd } = useWorkspaceDrop(workspace, 'vertical', !isRenaming);
   const isOpen = workspace === uiStore.activeWorkspace;
   const imageCount = workspace.fileIds.length;
+  const showMenu = useWorkspaceMenu(workspace, () => setIsRenaming(true));
 
   return (
     <li role="treeitem" aria-selected={isOpen} className={isOpen ? 'searched' : undefined}>
@@ -31,6 +34,7 @@ const WorkspaceRow = observer(({ workspace }: { workspace: ClientWorkspace }) =>
         tabIndex={-1}
         onClick={() => uiStore.openWorkspace(workspace)}
         onDoubleClick={() => setIsRenaming(true)}
+        onContextMenu={showMenu}
         onKeyDown={(event) => {
           if (event.key === 'F2') {
             setIsRenaming(true);
