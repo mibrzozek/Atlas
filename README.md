@@ -38,9 +38,12 @@ on their work, and it is released under the same licence, GPL-3.0.
 - **Workspaces**: endless canvases, one per tab, made from what the Library shows and laid out the same
   way, or filled by dragging tags, collections, folders and images onto them. Move, stack and size
   images, add texts and paper sheets, snap to edges, middles and even gaps, arrange a selection in rows,
-  columns or a grid (whole or cut to 1:1 or 4:5), copy between workspaces, reorder layers, and save as a
-  picture at the full resolution of the photos. Zoom from thousands of images at a glance to one at full
-  size.
+  columns or a grid (whole or cut to 1:1 or 4:5, or filled out to the edges), crop images by hand, size
+  several at once, copy between workspaces, reorder layers and gather them in named groups, and save as
+  a picture at the full resolution of the photos. Zoom from thousands of images at a glance to one at
+  full size.
+- **Tag inspector**: right-click a tag and choose Inspect to see how many images it holds, from which
+  folders, and every image with its path and a large preview on hover.
 - **Collage mode**: put the images of any view in your own order by dragging them, or switch two.
 - **Export**: copy selected or tagged images to a folder you pick.
 - **Folder creator**: make a run of numbered or dated folders, continuing the numbering already there.
@@ -71,9 +74,81 @@ The page for editing tags and collections:
 
 The pictures in these screenshots are generated, not photographs.
 
-## Running it
+## Installing the beta
 
-There are no installers yet: Atlas is run from source.
+Atlas is in beta: it works and is used daily, but expect rough edges. The installers are on the
+[Releases page](https://github.com/mibrzozek/Atlas/releases), marked *Pre-release*. Open the newest one
+(for example **Atlas 1.0.0-beta.1**) and download the file for your computer from its **Assets** list.
+
+The installers are not signed with a paid developer certificate yet, so Windows and macOS warn about
+them the first time. The steps below get past that once; after that Atlas opens like any other app.
+
+### Windows 10 and 11
+
+1. Download `Atlas-Setup-1.0.0-beta.1.exe`. If your browser warns that the file is not commonly
+   downloaded, keep it (in Edge: **…** next to the download → **Keep**, then **Keep anyway**).
+2. Open it. If Windows says *"Windows protected your PC"*, click **More info**, then **Run anyway**.
+3. Accept the licence with **I Agree**, choose **Only for me** (this needs no administrator rights),
+   keep the suggested folder and click **Install**.
+4. Start Atlas from the Start menu or the desktop shortcut.
+
+Rather not install anything? Download `Atlas-Portable-1.0.0-beta.1.exe` instead and run it from any
+folder or a USB stick. It tells you when there is a new version, but you download that yourself.
+
+### macOS 12 or newer
+
+1. Download the `.dmg` for your Mac: `arm64` for Apple silicon (M1 and later), `x64` for Intel. (Apple
+   menu → About This Mac shows which: "Chip: Apple M…" or "Processor: Intel".)
+2. Open the `.dmg` and drag **Atlas** into **Applications**.
+3. Open Atlas from Applications. The first time, macOS refuses it, in one of two ways:
+   - *"Atlas is damaged and can't be opened"* (most likely on Apple silicon Macs): it is not damaged,
+     it is only not signed. Click **Cancel**, open **Terminal** (in Applications → Utilities), paste the
+     line below, press Return, and open Atlas again:
+
+     ```
+     xattr -cr /Applications/Atlas.app
+     ```
+
+   - *"cannot be opened"* or *"Apple could not verify…"*: click **Done** or **OK**, open
+     **System Settings → Privacy & Security**, scroll down to the message about Atlas, click
+     **Open Anyway** and then **Open**.
+
+### Linux
+
+- **Ubuntu, Debian, Mint and the like**: download `Atlas-1.0.0-beta.1-amd64.deb`, open a terminal in
+  the folder it was saved to (usually `cd ~/Downloads`) and install it with the line below. The `./`
+  matters: without it apt looks for a package of that name online. Atlas is then in your applications
+  menu.
+
+  ```
+  sudo apt install ./Atlas-1.0.0-beta.1-amd64.deb
+  ```
+
+- **Any other distribution**: download `Atlas-1.0.0-beta.1-x86_64.AppImage`, make it runnable with
+  `chmod +x Atlas-*.AppImage` (or in the file's Properties, *Allow executing as a program*), and
+  double-click it. If nothing happens on Ubuntu 22.04 or newer, install FUSE 2 first:
+  `sudo apt install libfuse2` (`libfuse2t64` on 24.04).
+
+### After installing
+
+1. Atlas starts with a welcome page and an empty library. Add your photo folders with the **+** (New
+   Source) in the header of **Sources** in the side panel. Atlas only reads them; it never changes,
+   moves or deletes a file there. Thumbnails are made in the background, with the progress at the
+   bottom left.
+2. Coming from Allusion? See [below](#coming-from-allusion) to bring your tags along.
+3. At start-up Atlas looks for a newer beta (this can be switched off under Settings). The Windows
+   installer version and the AppImage update themselves when you agree; the portable Windows file and
+   the Mac version tell you and open the releases page, and the `.deb` is updated by installing the
+   new one the same way. When the official 1.0.0 is out, download it once by hand: a beta only looks
+   for newer betas.
+4. Your library is kept apart from your photos and from Allusion: in `%APPDATA%\Atlas` on Windows,
+   `~/Library/Application Support/Atlas` on macOS, `~/.config/Atlas` on Linux. Uninstalling Atlas
+   leaves it there.
+
+To uninstall: Windows, **Settings → Apps → Atlas → Uninstall**; macOS, drag Atlas from Applications to
+the Trash; Linux, `sudo apt remove atlas` or delete the AppImage.
+
+## Running it from source
 
 You need [Node.js](https://nodejs.org/en/download/) 20 and [Yarn](https://classic.yarnpkg.com/) 1.
 
@@ -107,8 +182,8 @@ made in Atlas can be restored into Allusion too; collections then show up there 
 ## Things to know
 
 - Camera raw files (CR2, CR3 and the like) are not shown yet.
-- The updater and the "report a bug" link still point at the Allusion project. Do not rely on automatic
-  updates.
+- The installers are not signed yet; see [Installing the beta](#installing-the-beta) for the warnings
+  that causes and how to get past them.
 - Atlas runs on Electron 21, which no longer receives security updates. It only opens your own local
   files; do not point it at untrusted content.
 
