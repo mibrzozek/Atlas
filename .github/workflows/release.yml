@@ -1,36 +1,79 @@
-# This is the config for the github actions that creates new releases
-name: Build/release
+# Builds the installers for Windows, macOS and Linux.
+# - Started by hand (Actions, "Build installers", Run workflow): the files can be downloaded from the run.
+# - A pushed tag v* (e.g. v1.0.0): the same, and they are also put in a draft GitHub Release, to be checked
+#   and published by hand. The updater of installed copies reads the published releases.
+name: Build installers
 
 on:
-  # Create a release for tag pushes starting with 'v'
+  workflow_dispatch:
   push:
     tags:
-      - v*
+      - 'v*'
+
+permissions:
+  # Only to upload the files to a draft release
+  contents: write
 
 jobs:
-  release:
+  # The draft release is made once, before the three builds upload to it: left to them, each could make
+  # one of its own at the same moment
+  draft:
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    steps:
+      - run: gh release view "$TAG" --repo "$GITHUB_REPOSITORY" || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG" --notes ""
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+
+  build:
+    needs: draft
+    # Also when the draft was skipped (started by hand), not when it failed
+    if: ${{ !failure() && !cancelled() }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            platform: --win
+          # Apple Silicon; it builds the Intel version as well
+          - os: macos-14
+            platform: --mac
+          - os: ubuntu-22.04
+            platform: --linux
     runs-on: ${{ matrix.os }}
 
-    strategy:
-      matrix:
-        os: [macos-latest, ubuntu-latest, windows-latest]
-
     steps:
-      - name: Check out Git repository
-        uses: actions/checkout@v1
+      - uses: actions/checkout@v4
 
-      - name: Install Node.js, NPM and Yarn
-        uses: actions/setup-node@v1
+      - uses: actions/setup-node@v4
         with:
-          node-version: 16
+          node-version: 20
+          cache: yarn
 
-      - name: Build/release Electron app
-        uses: samuelmeuli/action-electron-builder@v1
+      - run: yarn install --frozen-lockfile
+
+      - name: Test
+        if: runner.os == 'Linux'
+        run: yarn test
+
+      - run: yarn build
+
+      - name: Package
+        # Unsigned for now: no certificates are looked for (see docs/installer-plan.md)
+        run: yarn electron-builder ${{ matrix.platform }} --publish ${{ startsWith(github.ref, 'refs/tags/v') && 'always' || 'never' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - uses: actions/upload-artifact@v4
         with:
-          # GitHub token, automatically provided to the action
-          # (No need to define this secret in the repo settings)
-          github_token: ${{ secrets.github_token }}
-
-          # If the commit is tagged with a version (e.g. "v1.0.0"),
-          # release the app after building
-          release: ${{ startsWith(github.ref, 'refs/tags/v') }}
+          name: atlas-${{ runner.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.deb
+          if-no-files-found: error
+          retention-days: 14

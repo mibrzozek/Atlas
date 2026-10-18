@@ -1,7 +1,7 @@
 {
   "name": "atlas",
   "productName": "Atlas",
-  "version": "1.0.0-rc.10",
+  "version": "1.0.0",
   "description": "A tool for managing your visual library",
   "main": "build/main.bundle.js",
   "scripts": {
@@ -27,22 +27,43 @@
       "extraResources": [
         "resources/exiftool/exiftool.pl",
         "resources/exiftool/lib",
-        "resources/exiftool/.Exiftool_config"
-      ]
+        "resources/exiftool/.ExifTool_config"
+      ],
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
     },
     "dmg": {
       "icon": false
     },
     "linux": {
       "target": [
-        "AppImage"
+        "AppImage",
+        "deb"
       ],
       "category": "Graphics",
       "extraResources": [
         "resources/exiftool/exiftool.pl",
         "resources/exiftool/lib",
-        "resources/exiftool/.Exiftool_config"
-      ]
+        "resources/exiftool/.ExifTool_config"
+      ],
+      "icon": "resources/logo/atlas/png/atlas-mark-512.png",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "maintainer": "mibrzozek"
     },
     "win": {
       "target": [
@@ -51,7 +72,7 @@
       ],
       "extraResources": [
         "resources/exiftool/exiftool.exe",
-        "resources/exiftool/.Exiftool_config"
+        "resources/exiftool/.ExifTool_config"
       ]
     },
     "extraResources": [
@@ -59,23 +80,34 @@
     ],
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "license": "LICENSE",
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "deleteAppDataOnUninstall": false
     },
     "portable": {
-      "artifactName": "${productName}Portable.${version}.${ext}"
+      "artifactName": "${productName}-Portable-${version}.${ext}"
     },
     "files": [
       "!node_modules",
       "build/**/*",
       "package.json"
     ],
-    "asar": true
+    "asar": true,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "mibrzozek",
+        "repo": "Atlas",
+        "releaseType": "draft"
+      }
+    ]
   },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/mibrzozek/Atlas.git"
   },
-  "author": "Allusion-App",
+  "author": "mibrzozek",
   "license": "GPL-3.0",
   "bugs": {
     "url": "https://github.com/mibrzozek/Atlas/issues"
