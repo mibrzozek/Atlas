@@ -40,6 +40,11 @@ export const TagItemContextMenu = observer((props: IContextMenuProps) => {
         icon={IconSet.REPLACE}
       />
       <MenuItem
+        onClick={() => uiStore.openTagInspector(tag)}
+        text="Inspect..."
+        icon={IconSet.INFO}
+      />
+      <MenuItem
         onClick={() => fileStore.exportTaggedFilesToFolder(ctxTags)}
         text="Export Tagged Images to Folder..."
         icon={IconSet.FOLDER_OPEN}

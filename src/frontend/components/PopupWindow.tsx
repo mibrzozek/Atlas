@@ -9,6 +9,8 @@ type PopupWindowProps = {
   windowName: string;
   closeOnEscape?: boolean;
   additionalCloseKey?: string;
+  /** Where and how large, as `window.open` takes it ("left=..,top=..,width=..,height=.."), for main.ts */
+  features?: string;
 };
 
 /**
@@ -19,7 +21,7 @@ const PopupWindow: React.FC<PopupWindowProps> = (props) => {
   const [win, setWin] = useState<Window>();
 
   useEffect(() => {
-    const externalWindow = window.open('', props.windowName);
+    const externalWindow = window.open('', props.windowName, props.features);
     if (!externalWindow) {
       throw new Error('External window not supported!');
     }

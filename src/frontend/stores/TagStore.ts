@@ -1,6 +1,8 @@
 import { action, computed, makeObservable, observable, runInAction } from 'mobx';
 
 import { DataStorage } from '../../api/data-storage';
+import { OrderDirection } from '../../api/data-storage-search';
+import { FileDTO } from '../../api/file';
 import { generateId, ID } from '../../api/id';
 import { ROOT_TAG_ID, TagDTO } from '../../api/tag';
 import { ClientFile } from '../entities/File';
@@ -56,6 +58,14 @@ class TagStore {
     const tags = runInAction(() => this.tagList.slice());
     const counts = await this.backend.countFilesByTag(tags.map((tag) => tag.id));
     runInAction(() => tags.forEach((tag, i) => (tag.fileCount = counts[i])));
+  }
+
+  /** The images of a tag and its sub-tags, as plain rows, in the order of their paths */
+  async fetchImagesOf(tag: ClientTag): Promise<FileDTO[]> {
+    const condition = runInAction(() =>
+      new ClientTagSearchCriteria('tags', tag.id).toCondition(this.rootStore),
+    );
+    return this.backend.searchFiles(condition, 'absolutePath', OrderDirection.Asc);
   }
 
   @action get(tag: ID): ClientTag | undefined {

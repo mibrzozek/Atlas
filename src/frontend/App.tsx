@@ -10,6 +10,7 @@ import HelpCenter from './containers/HelpCenter';
 import AdvancedSearchDialog from './containers/AdvancedSearch';
 import Settings from './containers/Settings';
 import StatusFooter from './containers/StatusFooter';
+import TagInspector from './containers/TagInspector';
 
 import { ThumbnailTarget, useWorkerListener } from './image/ThumbnailGeneration';
 import WindowTitlebar from './containers/WindowTitlebar';
@@ -112,6 +113,8 @@ const App = observer(() => {
             <HelpCenter />
 
             <About />
+
+            <TagInspector />
 
             <AdvancedSearchDialog />
 

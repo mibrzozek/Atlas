@@ -28,6 +28,7 @@ import {
 } from '../common/config';
 import { IS_DEV, IS_MAC } from '../common/process';
 import { SCREENSAVER_WINDOW_PREFIX } from '../common/screensaver';
+import { keepOnScreen, previewPlace, visibleFrame } from '../common/tag-inspection';
 import { TagDTO, ROOT_TAG_ID } from './api/tag';
 import { MainMessenger } from './ipc/main';
 import { WindowSystemButtonPress } from './ipc/messages';
@@ -49,6 +50,8 @@ const updatePreferences = (prefs: PreferencesFile) => {
 
 let mainWindow: BrowserWindow | null = null;
 let previewWindow: BrowserWindow | null = null;
+/** The inspector of a tag, which its preview is placed beside */
+let tagInspectorWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let clipServer: ClipServer | null = null;
 
@@ -119,7 +122,7 @@ function createWindow() {
 
   // Customize new window opening
   // https://www.electronjs.org/docs/api/window-open
-  mainWindow.webContents.setWindowOpenHandler(({ frameName }) => {
+  mainWindow.webContents.setWindowOpenHandler(({ frameName, features }) => {
     if (mainWindow === null || mainWindow.isDestroyed()) {
       return { action: 'deny' };
     }
@@ -128,7 +131,56 @@ function createWindow() {
       settings: 'Settings',
       'help-center': 'Help Center',
       about: 'About',
+      'tag-inspector': 'Inspect tag',
     };
+
+    // The tag inspector and its preview are placed where the page asks (`inspectorPlace`, `previewPlace`)
+    const asked = Object.fromEntries(
+      features
+        .split(',')
+        .filter((feature) => feature.includes('='))
+        .map((feature) => {
+          const [key, value] = feature.split('=');
+          return [key.trim(), Number(value)];
+        }),
+    );
+    // Checked against the real screens: the page may have been told of a screen that is not there
+    const askedBounds = [asked.left, asked.top, asked.width, asked.height].every(Number.isFinite)
+      ? keepOnScreen(
+          { x: asked.left, y: asked.top, width: asked.width, height: asked.height },
+          screen.getDisplayNearestPoint({ x: Math.round(asked.left), y: Math.round(asked.top) })
+            .workArea,
+        )
+      : undefined;
+
+    // The large preview beside the tag inspector: no frame, never takes the focus or a place in the
+    // taskbar, exactly as large as what can be seen of the inspector, next to it (`TagInspector`)
+    if (frameName === 'tag-inspector-preview') {
+      const inspector =
+        tagInspectorWindow?.isDestroyed() === false ? tagInspectorWindow : undefined;
+      const visible =
+        inspector && visibleFrame(inspector.getBounds(), inspector.getContentBounds());
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          ...(visible
+            ? previewPlace(visible, screen.getDisplayMatching(visible).workArea)
+            : askedBounds),
+          backgroundColor: '#111215',
+          parent: mainWindow,
+          title: 'Atlas',
+          frame: false,
+          thickFrame: false,
+          resizable: false,
+          movable: false,
+          minimizable: false,
+          maximizable: false,
+          fullscreenable: false,
+          skipTaskbar: true,
+          focusable: false,
+        },
+      };
+    }
 
     // A window of the screensaver: covers one monitor completely, taskbar included, without taking the
     // keyboard away from the main window (a key press there is what ends it)
@@ -164,9 +216,12 @@ function createWindow() {
 
     // Open window on same display as main window
     const targetDisplay = getMainWindowDisplay();
-    const bounds: Rectangle = { width: 680, height: 480, x: 0, y: 0 };
-    bounds.x = targetDisplay.bounds.x + bounds.width / 2;
-    bounds.y = targetDisplay.bounds.y + bounds.height / 2;
+    // The inspector of a tag lists folders and images: larger than the others
+    const bounds: Rectangle = askedBounds ?? { width: 680, height: 480, x: 0, y: 0 };
+    if (askedBounds === undefined) {
+      bounds.x = targetDisplay.bounds.x + bounds.width / 2;
+      bounds.y = targetDisplay.bounds.y + bounds.height / 2;
+    }
 
     return {
       action: 'allow',
@@ -206,7 +261,10 @@ function createWindow() {
       // button), Windows puts the taskbar back in front. Claim the top again once that has settled
       setTimeout(claimTop, 250);
       setTimeout(claimTop, 1000);
-    } else {
+    } else if (details.frameName === 'tag-inspector') {
+      tagInspectorWindow = childWindow;
+    } else if (details.frameName !== 'tag-inspector-preview') {
+      // (The tag inspector and its preview are placed exactly where they were asked to be)
       childWindow.center(); // "center" in additionalOptions doesn't work :/
     }
 
@@ -546,7 +604,7 @@ autoUpdater.on('update-available', async (info: UpdateInfo) => {
   if (dialogResult.response === 0) {
     autoUpdater.downloadUpdate();
   } else if (dialogResult.response === 2) {
-    shell.openExternal('https://github.com/allusion-app/Allusion/releases/latest');
+    shell.openExternal(`${githubUrl}/releases/latest`);
   }
 });
 
