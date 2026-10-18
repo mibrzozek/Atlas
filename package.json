@@ -1,7 +1,7 @@
 {
   "name": "atlas",
   "productName": "Atlas",
-  "version": "1.0.0",
+  "version": "1.0.0-beta.1",
   "description": "A tool for managing your visual library",
   "main": "build/main.bundle.js",
   "scripts": {
@@ -24,6 +24,7 @@
     "productName": "Atlas",
     "mac": {
       "category": "public.app-category.graphics-design",
+      "icon": "resources/logo/atlas/atlas.icns",
       "extraResources": [
         "resources/exiftool/exiftool.pl",
         "resources/exiftool/lib",
@@ -66,6 +67,7 @@
       "maintainer": "mibrzozek"
     },
     "win": {
+      "icon": "resources/logo/atlas/atlas.ico",
       "target": [
         "nsis",
         "portable"

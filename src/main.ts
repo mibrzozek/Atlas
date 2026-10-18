@@ -561,6 +561,11 @@ app.on('activate', () => {
 // - Only download and install when user agrees
 autoUpdater.autoDownload = false;
 let hasCheckedForUpdateOnStartup = false;
+// The portable Windows file cannot replace itself (an update would install Atlas instead), and macOS only
+// installs updates of a signed app: there a new version is told of, and its page opened
+const canInstallUpdates = process.env.PORTABLE_EXECUTABLE_DIR === undefined && !IS_MAC;
+// Pre-releases are listed on the releases page, not on "latest"
+const releasesUrl = `${githubUrl}/releases`;
 if (IS_DEV) {
   autoUpdater.updateConfigPath = path.join(__dirname, '..', 'dev-app-update.yml');
 }
@@ -594,6 +599,20 @@ autoUpdater.on('update-available', async (info: UpdateInfo) => {
   }:\nDo you wish to update now?`;
   // info.releaseNotes attribute is HTML, could show that in renderer at some point
 
+  if (!canInstallUpdates) {
+    const { response } = await dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: 'Found Updates',
+      message: `Update available: ${info.releaseName || info.version}`,
+      detail: 'Download it from the releases page.',
+      buttons: ['Open release page', 'Not now'],
+    });
+    if (response === 0) {
+      shell.openExternal(releasesUrl);
+    }
+    return;
+  }
+
   const dialogResult = await dialog.showMessageBox(mainWindow, {
     type: 'info',
     title: 'Found Updates',
@@ -604,7 +623,7 @@ autoUpdater.on('update-available', async (info: UpdateInfo) => {
   if (dialogResult.response === 0) {
     autoUpdater.downloadUpdate();
   } else if (dialogResult.response === 2) {
-    shell.openExternal(`${githubUrl}/releases/latest`);
+    shell.openExternal(releasesUrl);
   }
 });
 

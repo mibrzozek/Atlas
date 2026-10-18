@@ -29,8 +29,15 @@ Sizes: about 90-130 MB each (Electron itself is most of it).
 
 ## The decisions to make first
 
-1. **The version number.** Proposal: **Atlas 1.0.0**, tag `v1.0.0`. It sorts after Allusion's
-   `1.0.0-rc.10`, so nothing is confused, and it says "first real release of Atlas".
+1. **The version number.** Decided: first a beta, **Atlas 1.0.0-beta.1**, tag `v1.0.0-beta.1`, shown on
+   GitHub as a pre-release, not the latest release. Later betas count up (`1.0.0-beta.2`); the official
+   release is `1.0.0`. Installed betas update to later betas, but electron-updater 5 does not take a
+   beta to a stable release (it skips tags without "alpha"/"beta" while looking at pre-releases): before
+   1.0.0, make a beta that finds nothing check once more with `allowPrerelease = false`, or tell beta
+   users to download 1.0.0 by hand (the README says so for now). The tag must equal the version in
+   `package.json`; the workflow checks it. (The files below are
+   named with the version, e.g. `Atlas-Setup-1.0.0-beta.1.exe`.) Atlas reads only its own releases, so
+   that a beta sorts before Allusion's `1.0.0-rc.10` does not matter.
 2. **Code signing: what to pay for.** Without it, the operating systems warn people away:
    - **Windows**, unsigned: SmartScreen shows "Windows protected your PC"; people must click *More info,
      Run anyway*. It works, but many give up. Options: **Azure Trusted Signing** (about $10 a month,

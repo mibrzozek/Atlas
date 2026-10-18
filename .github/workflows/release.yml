@@ -1,7 +1,8 @@
 # Builds the installers for Windows, macOS and Linux.
 # - Started by hand (Actions, "Build installers", Run workflow): the files can be downloaded from the run.
-# - A pushed tag v* (e.g. v1.0.0): the same, and they are also put in a draft GitHub Release, to be checked
-#   and published by hand. The updater of installed copies reads the published releases.
+# - A pushed tag v* (e.g. v1.0.0-beta.1): the same, and they are also put in a draft GitHub Release, to be
+#   checked and published by hand. A tag with a "-" (a beta) makes it a pre-release. The updater of
+#   installed copies reads the published releases; a beta also takes later betas.
 name: Build installers
 
 on:
@@ -21,7 +22,23 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     steps:
-      - run: gh release view "$TAG" --repo "$GITHUB_REPOSITORY" || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG" --notes ""
+      - uses: actions/checkout@v4
+
+      # The builds upload to the release of the version in package.json: another tag would get none
+      - name: Tag matches the version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "${TAG#v}" != "$VERSION" ]; then
+            echo "The tag $TAG does not match the version $VERSION in package.json" >&2
+            exit 1
+          fi
+        env:
+          TAG: ${{ github.ref_name }}
+
+      - name: Draft release
+        run: |
+          PRERELEASE=$([[ "$TAG" == *-* ]] && echo --prerelease || true)
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft $PRERELEASE --title "Atlas ${TAG#v}" --notes ""
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ github.ref_name }}
