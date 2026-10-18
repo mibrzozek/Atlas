@@ -28,16 +28,26 @@ Library sorts them, laid out as the Library shows them, selected; images already
 
 **Moving around.** The wheel pans (Shift sideways); **Ctrl + wheel and touchpad pinch zoom toward the
 pointer**, 1/2000 to 32 times. Space + drag, the middle button, or any drag on a locked workspace pans.
-**F** fits everything, **1:1** zooms to 100%, both gliding. A double click on an image glides to it, sharp
+**Ctrl + wheel click** turns slow scrolling on and off: the wheel then pans and zooms a tenth as far,
+for placing things finely, and a pill at the top says so. **F** fits everything, **1:1** zooms to 100%, both gliding. A double click on an image glides to it, sharp
 at full resolution; on a text, opens it for editing.
 
 **Objects.** Images, texts and backgrounds, each a layer of its own.
 - A drag on empty space draws a box that selects what it touches (Shift or Ctrl adds). A click brings an
   image to the front, also one that only shows from under another. Selected objects move together and
-  land on top. A handle in the corner sizes the one selected (a text's letters grow along).
+  land on top. A handle in the corner sizes the one selected (a text's letters grow along). With
+  several selected, a dashed frame around them has the same handle and sizes them all together from
+  its top left; **Alt + wheel** sizes what is selected around its middle. Either way they keep how they
+  lie to each other, land on top, and one sizing is one step to undo.
 - While a box is drawn or something is dragged or sized, the wheel and a zoom move the view under it:
   the box keeps its start on the workspace, what is dragged stays under the pointer. Held near an edge
   of the view, the view scrolls that way by itself.
+- **Cropping**: **C** or the crop button of its row in the layers panel (on hover) crops the selected
+  image. It comes to the front with its whole photo around the frame, everything else blurred
+  under it. Handles size the frame (Shift keeps its shape), a drag moves the photo under it, Alt + wheel
+  zooms the photo; the tools under it hold the frame to a shape (Free, Original, 1:1, 4:5, 3:2, 16:9),
+  reset it, cancel or apply. Enter or a click outside applies, Escape cancels; one step to undo. Arrange
+  keeps a crop's middle when it gives the image another shape; a saved picture shows the crop too.
 - **Snapping** while dragging: edges and middles line up with those of nearby objects, gaps even out with
   the gaps between neighbours in the same row or column, and a sheet lines up with the images it lies
   under as one block (the middle of an even grid is in a gap). While sizing, the right and lower edges
@@ -58,6 +68,11 @@ at full resolution; on a text, opens it for editing.
 - **Swap** (two selected, **Alt+S** as in the collage) trades their places. **Delete** takes objects off (never the files),
   **Ctrl+Z** undoes, **Ctrl+Shift+Z** redoes, **Ctrl+A** selects all, **Escape** lets go, **L** locks,
   **G** shows or hides the grid (lines or dots, picked in the Grid menu), **Ctrl+0** zooms to 100%. All but Escape can be changed in Settings, Shortcuts.
+- **Groups of layers**: **Ctrl+G** or *Group layers…* in the layers panel's right-click menu asks for a
+  name and makes the selected layers a group, locked: a click on one selects all, and they move and size
+  as one. Its row in the layers panel opens and closes to show its layers, renames by a double click,
+  and its lock unlocks it (then each layer on its own, still together in the panel). **Ctrl+Shift+G** or
+  *Ungroup* undoes it; both are steps to undo.
 - **Layers panel** on the right (folds into the Layers button): everything from the top layer down, only
   the rows in sight drawn; click selects, drag changes the layer, double click glides to it.
 

@@ -261,6 +261,15 @@ Probe pitfalls that cost time:
   Shortcuts are matched on `event.which`: a synthetic key event in a test needs `keyCode`.
 - **"Locations" are called "Sources" in everything the user reads** (panel title, dialogs, messages, help).
   The code keeps `location` in names, ids and the database (`locations` table, `locationId`): do not rename those.
+- The tag inspector (right click on a tag, Inspect...; `containers/TagInspector.tsx`, rules in
+  `common/tag-inspection.ts`, tested) is a window of its own: counts, folders, and every image with a small
+  picture; hovering one opens a frameless preview window beside it, and the rows above and below switch it.
+  A right click on a folder or image reveals it in Explorer or copies the path; each row has a copy button.
+  It only reads. The page places the inspector at the top left of the gallery (`inspectorPlace`); `main.ts`
+  checks that place against the real screens (`keepOnScreen`) and places the preview itself
+  (`previewPlace` of `visibleFrame`): on Windows a framed window's bounds include an undrawn 7 px border
+  left, right and below, so a preview of the inspector's outer size looked taller than it. Hidden copies of
+  the app are told of a 0 by 0 screen (`screen.availWidth`): fake one in a test.
 - The screensaver settings pick tags and collections with the same type-to-search `TagSelector` as the inspector
   (it takes `extraSelection` and `renderExtraOptions` for the collections; `screensaverCollectionIds`).
 - The screensaver shows the tags picked in its settings (`UiStore.screensaverTagIds`); none picked means
@@ -293,8 +302,11 @@ Probe pitfalls that cost time:
 - **The full-size viewer** animates with the thumbnail and layers the full image on top; swapping the `src` of
   the visible image mid-animation freezes it for about 200 ms.
 - **Temporary files used in parallel need unique names** (a shared name once made a repair pass skip files).
-- **The Bash tool mangles backslashes and some quotes in heredocs.** Write scripts with the Write tool and build
-  Windows paths with `path.sep`. Several source files use CRLF line endings; preserve them.
+- **Never put a script inside a shell command** (no heredocs, no `node -e "..."`, no `sed -i` for edits). The
+  Bash tool mangles backticks, `$`, quotes and backslashes in them, and it has cost many failed round trips.
+  Edit source with the Edit tool. When a helper script is really needed, write it to a `tmp-*.js` file with
+  the Write tool, run it with a plain `node tmp-x.js`, and delete it. `sed -i` also strips the CR of CRLF
+  files. Build Windows paths with `path.sep`. Several source files use CRLF line endings; preserve them.
 
 - **Never use `instanceof HTMLElement` / `Element` on an event target in shared widgets.** The settings, help
   and about windows are separate windows drawn by the main window's React: their elements are made by the
@@ -355,12 +367,40 @@ Probe pitfalls that cost time:
   image without its tile is drawn in that colour. Save as picture (`SavePictureDialog.tsx`,
   `workspacePicture.ts`) asks for a name (`fileNameOf`) and a format, then a folder, and writes with
   `writeNewFile` (`common/export.ts`), which never overwrites. Printing was taken out for now.
+  Several selected get a frame (`SelectionFrame`) whose handle sizes them together (`scaleItems`, the
+  'scale' gesture, around the frame's top left, snapping its outer edges); Alt + wheel does the same
+  around the middle (`scaleByWheel`). Both are sessions like Arrange's (`scaleSelection` with a `from`
+  snapshot, `sessionFrom` in the entity): one undo step, no drift. The frame's handle is checked before
+  "pressed on nothing" in `gestureFor`, as the frame is no object.
+  Cropping: an image can have a `crop` (fractions of its photo, `common/crop.ts`, tested); without one it
+  shows the middle (`centeredCrop`), as it always has. Everything that draws an image goes through
+  `cropOf`: the element (the whole photo placed in a clipping frame, `photoInFrame`), the tiles and the
+  overview (`cropSource`), and the saved picture. The crop session is `ClientWorkspace.cropping` (photo
+  and frame on the workspace), drawn by `CropOverlay` in a layer of its own over the others, which are
+  blurred (`data-cropping`). The surface sees presses before React does: the crop tools are recognised in
+  `gestureFor`, a React `stopPropagation` would come too late.
+  The crop's tools are in a layer of their own in pixels of the screen, placed under the frame by the
+  surface in every frame (`placeCropTools`): scaled by React's settled zoom they changed size while the
+  camera glided. Handles and lines take their size from `--zoom`, set in every frame; the lines are
+  shadows and gradients, as a border under a pixel is rounded up to one before the camera scales it.
+  Groups of layers: an object's `groupId` and the workspace's `layerGroups` (`LayerGroup`: name, locked);
+  the membership is on the objects so that undo covers it, and a group without members is neither shown
+  nor stored (`groupsInUse`). Selection goes through `withGroupMates`: a locked group comes whole. The
+  layers panel lists `layerRows` (a group row, its layers under it when opened) and maps a drop among rows
+  back to a place among layers. The naming dialog is `GroupLayersDialog` (`UiStore.isNamingLayerGroup`).
+  Slow scrolling (`UiStore.isWorkspaceSlowScroll`, Ctrl + wheel click, `onToggleSlowScroll`): the wheel pans
+  and zooms a tenth as far (`SLOW_WHEEL_SPEED`); Alt + wheel sizing keeps its pace. Not stored.
+  A notch of a mouse wheel glides (`glideWheel`): it is added to what is still to go, and the camera eases
+  through it in about 0.2 s, by the time between frames; zoom glides around the pointer. Touchpad steps
+  (under `NOTCH_DELTA`) move at once. A drag or another glide takes over (`stopWheelGlide`).
   The grid is lines or dots (`UiStore.workspaceGridStyle`, the Grid menu; G shows or hides it); dots
   use `gridLevels` with a wider `MIN_DOT_SPACING`, each level drawn as one path.
   A new workspace is laid out as the Library shows it (`UiStore.galleryLayout`, mirroring
   `wasm/masonry/src/layout.rs` in whole pixels; grid with square thumbnails cuts to 1:1) and starts with
   its batch selected. Arrange (a menu that stays open) lays a selection out in rows, columns or a grid,
-  cut 1:1 or 4:5 or whole, with a spacing; images remember their photo's shape (`imageAspect`) so a cut
+  cut 1:1 or 4:5 or whole, with a spacing; rows and columns can "Fill to the edges" (`fill`,
+  `spreadToEdges`): sizes kept, the spaces in each row or column widened so it reaches both edges of the
+  block, as the longest does (a row of one image stays put); images remember their photo's shape (`imageAspect`) so a cut
   can be undone. Dragging snaps edges and middles, and even gaps in the same row or column
   (`snapMove`, guides drawn over everything); Alt drags freely. Swap trades two places. A background is a
   sheet (default white A4) drawn in its own layer under the tiles canvas, so small images stay visible on
@@ -383,6 +423,13 @@ Probe pitfalls that cost time:
   also in a saved picture). The workspace keys are in `hotkeyMap` (Settings, Shortcuts), with Ctrl+0 for 100%
   and Ctrl+Shift+Z for redo; the page takes Ctrl+0 before the menu's window zoom.
   The tabs are as flat as the toolbar buttons; the open one has an accent line on the bar's lower edge.
+  A tab is not the workspace: × (or a wheel click) closes the tab only (`UiStore.closeWorkspaceTab`,
+  stored as `closedWorkspaceTabIds`, so new workspaces have a tab); the workspace stays in the Workspaces
+  panel, and opening it there brings the tab back. Deleting is only in the right-click menu of a tab or
+  row (`useWorkspaceMenu`), and asks first (`UiStore.workspaceToDelete`). The top bar has a
+  `ContextMenuLayer` of its own: the one in `Main` does not reach it. Like a browser's, the tabs shrink
+  from 160 px to 44 px (container queries hide the × of other tabs, then the names), then scroll with the
+  wheel; nothing else in the top bar shrinks.
   The settings window's `[role='tablist']` / `[role='tab']` rules are global: anything with those roles
   has to undo them (`.workspace-tabs` does).
 - The viewer (one image open) keeps the search bar in its toolbar; searching from there goes back to the
