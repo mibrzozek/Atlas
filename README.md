@@ -52,6 +52,21 @@ Download the file for your computer from the newest release on the
 [Releases page](https://github.com/mibrzozek/Atlas/releases). The installers are not signed yet, so the
 first launch shows a warning; the steps below get past it.
 
+**Which file?**
+
+| Your computer | Download |
+|---|---|
+| Windows 10 / 11 | `Atlas-Setup-1.0.0-beta.1.exe` |
+| Windows, without installing | `Atlas-Portable-1.0.0-beta.1.exe` |
+| Mac with Apple silicon (M1, M2, M3, M4) | `Atlas-1.0.0-beta.1-arm64.dmg` |
+| Mac with an Intel processor | `Atlas-1.0.0-beta.1-x64.dmg` |
+| Linux: Ubuntu, Debian, Mint | `Atlas-1.0.0-beta.1-amd64.deb` |
+| Linux: any other | `Atlas-1.0.0-beta.1-x86_64.AppImage` |
+
+Not sure which Mac you have? Apple menu → **About This Mac**: "Chip: Apple M…" is Apple silicon,
+"Processor: Intel" is Intel. The other files in the release (`.yml`, `.blockmap`, `.zip`) are for
+automatic updates; you do not need them.
+
 **Windows 10 / 11**
 1. Download `Atlas-Setup-1.0.0-beta.1.exe` and open it.
 2. At *"Windows protected your PC"*, click **More info → Run anyway**.
@@ -60,7 +75,7 @@ first launch shows a warning; the steps below get past it.
 No install wanted? Run `Atlas-Portable-1.0.0-beta.1.exe` from any folder.
 
 **macOS 12+**
-1. Download the `.dmg`: `arm64` for Apple silicon (M1 and later), `x64` for Intel.
+1. Download the `.dmg` for your Mac (see the table above).
 2. Drag **Atlas** into **Applications** and open it.
 3. If it says *"damaged"*, run this in Terminal, then open it again:
    ```
