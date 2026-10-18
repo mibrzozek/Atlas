@@ -5,6 +5,8 @@
  * unit is one pixel at 100%.
  */
 
+import { Crop, cropFromRow, refitCrop } from './crop';
+
 export interface Point {
   x: number;
   y: number;
@@ -31,6 +33,19 @@ export type WorkspaceItem = WorkspaceImageItem | WorkspaceTextItem | WorkspaceBa
 interface WorkspaceObject extends Rect {
   id: string;
   z: number;
+  /** The group of layers it is in (`LayerGroup`), if any */
+  groupId?: string;
+}
+
+/**
+ * Layers put together under a name. Locked, they are one: selected, moved and sized together. Unlocked,
+ * each can be changed on its own, and they stay together in the layers panel. Which objects are in it is
+ * kept on the objects (`groupId`), so that undo takes it back with them.
+ */
+export interface LayerGroup {
+  id: string;
+  name: string;
+  isLocked: boolean;
 }
 
 /** An image of the library. Its id is the id of the file: an image is on a workspace once */
@@ -39,6 +54,8 @@ export interface WorkspaceImageItem extends WorkspaceObject {
   fileId: string;
   /** Width for height of the photo itself: its frame can be cut to another shape (a crop) */
   imageAspect: number;
+  /** The part of the photo it shows, chosen by hand (`common/crop.ts`); without one, the middle */
+  crop?: Crop;
 }
 
 /** A text, such as the name of what a batch of images came from. Its size follows from its letters */
@@ -73,6 +90,8 @@ export interface WorkspaceRow {
   items: WorkspaceItem[];
   camera: Camera;
   isLocked: boolean;
+  /** The groups of layers, those with layers in them */
+  layerGroups: LayerGroup[];
 }
 
 // The camera
@@ -411,6 +430,8 @@ export interface ArrangeOptions {
   gap: number;
   /** For a grid: the shape images are cut to; whole when not given */
   crop?: CropShape;
+  /** For rows and columns: spaced out so that every row (column) reaches both edges (`spreadToEdges`) */
+  fill?: boolean;
 }
 
 /** The shape something is laid out in: an image whole, in the shape of its photo, unless it is cut */
@@ -454,16 +475,61 @@ export function arrangeItems(
     layout = { kind, gap, columns: n, cell, crop: options.crop };
   }
   const rects = layOut(shapes, bounds, layout);
+  if (options.fill && kind !== 'grid') {
+    spreadToEdges(rects, kind);
+  }
   let z = frontZ(items);
   const placed = new Map(
     chosen.map((item, i) => {
       const rect = rects[i];
-      // A text gets letters of the size that fits; an image its new frame, cut or whole
+      // A text gets letters of the size that fits; an image its new frame, cut or whole, and a crop
+      // chosen by hand keeps its middle in the new shape
       const sized = resizeItem(item, rect.width);
-      return [item.id, { ...sized, x: rect.x, y: rect.y, height: rect.height, z: z++ }];
+      const placed = { ...sized, x: rect.x, y: rect.y, height: rect.height, z: z++ };
+      return [
+        item.id,
+        placed.kind === 'image'
+          ? {
+              ...placed,
+              crop: refitCrop(placed.crop, placed.imageAspect, rect.width / rect.height),
+            }
+          : placed,
+      ];
     }),
   );
   return items.map((item) => placed.get(item.id) ?? item);
+}
+
+/**
+ * Rows (or columns) of a layout spaced out, their sizes kept, so that each reaches from the first edge
+ * of the block to the last, as the longest one does: images then lie on every border of the block. A row
+ * of one image stays where it is. Changes the rects given.
+ */
+function spreadToEdges(rects: Rect[], kind: 'rows' | 'columns'): void {
+  const [along, size, across] =
+    kind === 'rows' ? (['x', 'width', 'y'] as const) : (['y', 'height', 'x'] as const);
+  const start = rects.reduce((min, rect) => Math.min(min, rect[along]), Infinity);
+  const end = rects.reduce((max, rect) => Math.max(max, rect[along] + rect[size]), -Infinity);
+  const lines = new Map<number, Rect[]>();
+  for (const rect of rects) {
+    lines.set(rect[across], [...(lines.get(rect[across]) ?? []), rect]);
+  }
+  for (const line of lines.values()) {
+    if (line.length < 2) {
+      continue;
+    }
+    line.sort((a, b) => a[along] - b[along]);
+    const free = end - start - line.reduce((sum, rect) => sum + rect[size], 0);
+    const space = free / (line.length - 1);
+    let position = start;
+    for (const rect of line) {
+      rect[along] = Math.round(position);
+      position += rect[size] + space;
+    }
+    // Exactly on the far edge, whatever the rounding
+    const last = line[line.length - 1];
+    last[along] = end - last[size];
+  }
 }
 
 /**
@@ -972,6 +1038,7 @@ export function pasteItems(
   const pasted = kept.map((item) => ({
     ...item,
     id: item.kind === 'image' ? item.id : newId(),
+    groupId: undefined,
     x: item.x + dx,
     y: item.y + dy,
     z: item.kind === 'background' ? back++ : front++,
@@ -1073,6 +1140,43 @@ export function resizeItem<T extends WorkspaceItem>(item: T, width: number): T {
     };
   }
   return { ...item, width: newWidth, height: item.height * scale };
+}
+
+/**
+ * The objects of `ids` made larger or smaller together by `factor` around `origin`: they move away from it
+ * or towards it, and each keeps its shape (a text's letters grow along), so the group looks the same,
+ * only larger or smaller. None becomes smaller than `MIN_ITEM_WIDTH`: the factor stops there.
+ */
+export function scaleItems(
+  items: readonly WorkspaceItem[],
+  ids: ReadonlySet<string>,
+  factor: number,
+  origin: Point,
+): WorkspaceItem[] {
+  let narrowest = Infinity;
+  for (const item of items) {
+    if (ids.has(item.id)) {
+      narrowest = Math.min(narrowest, item.width);
+    }
+  }
+  if (narrowest === Infinity) {
+    return [...items];
+  }
+  // Never grown by this limit: something that is narrower already only does not shrink further
+  const scale = Math.max(factor, Math.min(1, MIN_ITEM_WIDTH / narrowest));
+  // In front of the rest, as when they are moved or arranged, in the order they had; sheets stay under
+  let z = frontZ(items);
+  const scaled = items
+    .filter((item) => ids.has(item.id))
+    .sort((a, b) => a.z - b.z)
+    .map((item) => ({
+      ...resizeItem(item, item.width * scale),
+      x: origin.x + (item.x - origin.x) * scale,
+      y: origin.y + (item.y - origin.y) * scale,
+      z: item.kind === 'background' ? item.z : z++,
+    }));
+  const byId = new Map(scaled.map((item) => [item.id, item]));
+  return items.map((item) => byId.get(item.id) ?? item);
 }
 
 // What is in view
@@ -1199,7 +1303,7 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
   if (typeof row !== 'object' || row === null) {
     return undefined;
   }
-  const { id, name, index, items, camera, isLocked } = row as Partial<WorkspaceRow>;
+  const { id, name, index, items, camera, isLocked, layerGroups } = row as Partial<WorkspaceRow>;
   const { groups } = row as { groups?: unknown };
   if (typeof id !== 'string') {
     return undefined;
@@ -1261,6 +1365,7 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
         id: fileId,
         fileId,
         imageAspect: aspect,
+        crop: cropFromRow(item.crop),
         x,
         y,
         z,
@@ -1269,6 +1374,26 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
       });
     }
   }
+  // Groups of layers: those that are whole, and that still have layers in them
+  const storedGroupOf = new Map<string, unknown>();
+  for (const stored of Array.isArray(items) ? items : []) {
+    const { id: itemId, fileId, groupId } = (stored ?? {}) as unknown as Record<string, unknown>;
+    const key = typeof itemId === 'string' ? itemId : fileId;
+    if (typeof key === 'string') {
+      storedGroupOf.set(key, groupId);
+    }
+  }
+  const validGroups = (Array.isArray(layerGroups) ? layerGroups : []).filter(
+    (group): group is LayerGroup => typeof group.id === 'string' && typeof group.name === 'string',
+  );
+  const groupIds = new Set(validGroups.map((group) => group.id));
+  validItems.forEach((item, i) => {
+    const groupId = storedGroupOf.get(item.id);
+    if (typeof groupId === 'string' && groupIds.has(groupId)) {
+      validItems[i] = { ...item, groupId };
+    }
+  });
+  const usedGroups = new Set(validItems.map((item) => item.groupId));
   let z = frontZ(validItems);
   for (const group of (Array.isArray(groups) ? groups : []) as Partial<
     Point & { label: string }
@@ -1293,5 +1418,114 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
     items: validItems,
     camera: validCamera,
     isLocked: isLocked === true,
+    layerGroups: validGroups
+      .filter((group) => usedGroups.has(group.id))
+      .map(({ id: groupId, name: groupName, isLocked: isGroupLocked }) => ({
+        id: groupId,
+        name: groupName,
+        isLocked: isGroupLocked === true,
+      })),
   };
+}
+
+// Groups of layers
+
+/**
+ * What is selected when these are: with all the layers of the locked groups they are in, which are
+ * selected as one
+ */
+export function withGroupMates(
+  ids: Iterable<string>,
+  items: readonly WorkspaceItem[],
+  groups: readonly LayerGroup[],
+): Set<string> {
+  const chosen = new Set(ids);
+  const locked = new Set(groups.filter((group) => group.isLocked).map((group) => group.id));
+  const lockedGroupsChosen = new Set<string>();
+  for (const item of items) {
+    if (item.groupId !== undefined && locked.has(item.groupId) && chosen.has(item.id)) {
+      lockedGroupsChosen.add(item.groupId);
+    }
+  }
+  if (lockedGroupsChosen.size > 0) {
+    for (const item of items) {
+      if (item.groupId !== undefined && lockedGroupsChosen.has(item.groupId)) {
+        chosen.add(item.id);
+      }
+    }
+  }
+  return chosen;
+}
+
+/** A row of the layers panel: a group with its layers, or a layer (in a group or not) */
+export type LayerRow =
+  | { kind: 'group'; group: LayerGroup; members: WorkspaceItem[] }
+  | { kind: 'layer'; item: WorkspaceItem; group: LayerGroup | undefined };
+
+/**
+ * The rows of the layers panel, from the top layer down: a group comes where its top layer is, its layers
+ * under it when it is `expanded` (all of them, wherever they lie between other layers)
+ */
+/**
+ * Where among the layers (from the top down, counted without those moved) a drop between the rows of the
+ * layers panel puts what is moved: right under the row it lands below, as that row stands on the
+ * workspace. Under an opened group's row is above its first layer; under a closed group, below its last.
+ */
+export function layerIndexOfDrop(
+  rows: readonly LayerRow[],
+  at: number,
+  moved: ReadonlySet<string>,
+  expanded: ReadonlySet<string>,
+  layers: readonly WorkspaceItem[],
+): number {
+  const indexOf = new Map(
+    layers.filter((layer) => !moved.has(layer.id)).map((layer, i) => [layer.id, i]),
+  );
+  for (let r = Math.min(at, rows.length) - 1; r >= 0; r--) {
+    const row = rows[r];
+    if (row.kind === 'layer') {
+      const index = indexOf.get(row.item.id);
+      if (index !== undefined) {
+        return index + 1;
+      }
+      continue;
+    }
+    const kept = row.members.flatMap((member) => indexOf.get(member.id) ?? []);
+    if (kept.length > 0) {
+      return expanded.has(row.group.id) ? Math.min(...kept) : Math.max(...kept) + 1;
+    }
+  }
+  return 0;
+}
+
+export function layerRows(
+  layers: readonly WorkspaceItem[],
+  groups: readonly LayerGroup[],
+  expanded: ReadonlySet<string>,
+): LayerRow[] {
+  const groupById = new Map(groups.map((group) => [group.id, group]));
+  const membersOf = new Map<string, WorkspaceItem[]>();
+  for (const layer of layers) {
+    if (layer.groupId !== undefined && groupById.has(layer.groupId)) {
+      const members = membersOf.get(layer.groupId) ?? [];
+      members.push(layer);
+      membersOf.set(layer.groupId, members);
+    }
+  }
+  const rows: LayerRow[] = [];
+  const done = new Set<string>();
+  for (const layer of layers) {
+    const group = layer.groupId !== undefined ? groupById.get(layer.groupId) : undefined;
+    if (group === undefined) {
+      rows.push({ kind: 'layer', item: layer, group: undefined });
+    } else if (!done.has(group.id)) {
+      done.add(group.id);
+      const members = membersOf.get(group.id)!;
+      rows.push({ kind: 'group', group, members });
+      if (expanded.has(group.id)) {
+        members.forEach((member) => rows.push({ kind: 'layer', item: member, group }));
+      }
+    }
+  }
+  return rows;
 }

@@ -52,6 +52,10 @@ import {
   pasteItems,
   snapSize,
   isStartCamera,
+  scaleItems,
+  withGroupMates,
+  layerIndexOfDrop,
+  layerRows,
 } from '../common/workspace';
 
 const item = (fileId: string, x: number, y: number, z: number, size = 100): WorkspaceImageItem => ({
@@ -302,10 +306,144 @@ describe('layouts, like the views of the Library', () => {
     expect(new Set(arranged.map((i) => Math.round(i.y))).size).toBe(3);
   });
 
+  it('fills rows and columns out to every edge of the block when asked to', () => {
+    // Photos of mixed shapes, the last row or column shorter than the others
+    const items = Array.from({ length: 11 }, (_, i) => ({
+      ...item(`${i}`, i * 300, 0, i, 100),
+      imageAspect: [1, 1.5, 0.75, 2][i % 4],
+      width: 100 * [1, 1.5, 0.75, 2][i % 4],
+    }));
+    const ids = new Set(items.map((i) => i.id));
+    const lines = (arranged: typeof items, across: 'x' | 'y') =>
+      Object.values(
+        arranged.reduce<Record<number, typeof items>>(
+          (all, i) => ({ ...all, [i[across]]: [...(all[i[across]] ?? []), i] }),
+          {},
+        ),
+      );
+    const block = (arranged: typeof items) => ({
+      left: Math.min(...arranged.map((i) => i.x)),
+      right: Math.max(...arranged.map((i) => i.x + i.width)),
+      top: Math.min(...arranged.map((i) => i.y)),
+      bottom: Math.max(...arranged.map((i) => i.y + i.height)),
+    });
+
+    const rows = arrangeItems(items, ids, 'rows', 3, { gap: 8, fill: true }) as typeof items;
+    const rowsBlock = block(rows);
+    for (const row of lines(rows, 'y')) {
+      expect(Math.min(...row.map((i) => i.x))).toBe(rowsBlock.left);
+      expect(Math.max(...row.map((i) => i.x + i.width))).toBe(rowsBlock.right);
+    }
+    // Without it the last row stops short
+    const loose = arrangeItems(items, ids, 'rows', 3, { gap: 8 }) as typeof items;
+    const lastRow = lines(loose, 'y').sort((a, b) => b[0].y - a[0].y)[0];
+    expect(Math.max(...lastRow.map((i) => i.x + i.width))).toBeLessThan(block(loose).right);
+    // Sizes are kept: only the spaces change
+    expect(rows.map((i) => i.width)).toEqual(loose.map((i) => i.width));
+
+    const columns = arrangeItems(items, ids, 'columns', 3, { gap: 8, fill: true }) as typeof items;
+    const columnsBlock = block(columns);
+    for (const column of lines(columns, 'x')) {
+      expect(Math.min(...column.map((i) => i.y))).toBe(columnsBlock.top);
+      expect(Math.max(...column.map((i) => i.y + i.height))).toBe(columnsBlock.bottom);
+    }
+  });
+
   it('suggests a block about as wide as a monitor', () => {
     expect(suggestedCount('grid', 16)).toBe(5);
     expect(suggestedCount('rows', 16)).toBe(4);
     expect(suggestedCount('columns', 2)).toBe(2);
+  });
+});
+
+describe('groups of layers', () => {
+  const grouped = (id: string, z: number, groupId?: string) => ({ ...item(id, 0, 0, z), groupId });
+  const groups = [
+    { id: 'g', name: 'Locked', isLocked: true },
+    { id: 'h', name: 'Open', isLocked: false },
+  ];
+
+  it('select a locked group as one, an unlocked one layer by layer', () => {
+    const items = [
+      grouped('a', 0, 'g'),
+      grouped('b', 1, 'g'),
+      grouped('c', 2, 'h'),
+      grouped('d', 3, 'h'),
+    ];
+    expect([...withGroupMates(['a'], items, groups)].sort()).toEqual(['a', 'b']);
+    expect([...withGroupMates(['c'], items, groups)]).toEqual(['c']);
+  });
+
+  it('list a group where its top layer is, its layers under it when it is open', () => {
+    const layers = [grouped('d', 4), grouped('b', 3, 'g'), grouped('c', 2), grouped('a', 1, 'g')];
+    const closed = layerRows(layers, groups, new Set());
+    expect(closed.map((r) => (r.kind === 'group' ? `[${r.group.name}]` : r.item.id))).toEqual([
+      'd',
+      '[Locked]',
+      'c',
+    ]);
+    const open = layerRows(layers, groups, new Set(['g']));
+    expect(open.map((r) => (r.kind === 'group' ? `[${r.members.length}]` : r.item.id))).toEqual([
+      'd',
+      '[2]',
+      'b',
+      'a',
+      'c',
+    ]);
+  });
+
+  it('take a dropped layer right under the row it lands below, even with their layers apart', () => {
+    // From the top: d, b (in g), c, a (in g); d is moved
+    const layers = [grouped('d', 4), grouped('b', 3, 'g'), grouped('c', 2), grouped('a', 1, 'g')];
+    const moved = new Set(['d']);
+    const open = new Set(['g']);
+    const openRows = layerRows(layers, groups, open);
+    // Rows: d, [g], b, a, c. Under "a": below a, which is under c on the workspace
+    expect(layerIndexOfDrop(openRows, 4, moved, open, layers)).toBe(3);
+    // Under the opened group's row: above its first layer
+    expect(layerIndexOfDrop(openRows, 2, moved, open, layers)).toBe(0);
+    // Under the closed group: below its last layer
+    const closedRows = layerRows(layers, groups, new Set());
+    expect(layerIndexOfDrop(closedRows, 2, moved, new Set(), layers)).toBe(3);
+    // At the very top
+    expect(layerIndexOfDrop(openRows, 0, moved, open, layers)).toBe(0);
+  });
+
+  it('are stored, and read back only with layers in them', () => {
+    const row = workspaceFromRow(
+      {
+        id: 'w',
+        items: [grouped('a', 0, 'g'), grouped('b', 1, 'gone')],
+        layerGroups: [...groups, { id: 'gone' }],
+      },
+      measure,
+    )!;
+    expect(row.layerGroups).toEqual([groups[0]]);
+    expect(row.items.map((i) => i.groupId)).toEqual(['g', undefined]);
+  });
+});
+
+describe('sizing a group', () => {
+  it('scales positions and sizes around a point, so the group keeps its look', () => {
+    const items = [item('a', 100, 100, 0), item('b', 300, 100, 1), item('c', 900, 900, 2)];
+    const text = createText('t', 'Hi', { x: 100, y: 50 }, 3, measure, 20);
+    const scaled = scaleItems([...items, text], new Set(['a', 'b', 't']), 2, { x: 100, y: 100 });
+    expect(scaled[0]).toMatchObject({ x: 100, y: 100, width: 200, height: 200 });
+    expect(scaled[1]).toMatchObject({ x: 500, y: 100, width: 200, height: 200 });
+    // Not selected: left where it is
+    expect(scaled[2]).toBe(items[2]);
+    expect(scaled[3]).toMatchObject({ x: 100, y: 0, fontSize: 40 });
+    // Landed in front of what was not sized, in the order they had
+    expect(scaled[0].z).toBeGreaterThan(items[2].z);
+    expect(scaled[1].z).toBeGreaterThan(scaled[0].z);
+  });
+
+  it('stops shrinking when the smallest would get too small', () => {
+    const items = [item('a', 0, 0, 0, 32), item('b', 100, 0, 1, 320)];
+    const scaled = scaleItems(items, new Set(['a', 'b']), 0.1, { x: 0, y: 0 });
+    expect(scaled[0].width).toBe(MIN_ITEM_WIDTH);
+    expect(scaled[1].width).toBe(160);
+    expect(scaled[1].x).toBe(50);
   });
 });
 
@@ -500,6 +638,7 @@ describe('workspaceFromRow', () => {
       items: [item('a', 1, 2, 3), createText('t', 'Film', { x: 0, y: 0 }, 4, measure)],
       camera: { x: 5, y: 6, zoom: 0.5 },
       isLocked: true,
+      layerGroups: [],
     };
     expect(workspaceFromRow(row, measure)).toEqual(row);
   });

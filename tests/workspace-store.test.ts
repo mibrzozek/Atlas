@@ -1,4 +1,4 @@
-import { runInAction } from 'mobx';
+import { observable, runInAction } from 'mobx';
 
 import { WorkspaceItem } from '../common/workspace';
 import { DataStorage } from '../src/api/data-storage';
@@ -22,7 +22,13 @@ const measure = (line: string, fontSize: number) => line.length * fontSize * 0.5
 function setup() {
   const name = `Test_Workspaces_${databaseCounter++}`;
   // A Library laid out in the default way, with no workspace open
-  const rootStore = { uiStore: { galleryLayout: undefined, activeWorkspace: undefined } };
+  const rootStore = {
+    uiStore: {
+      galleryLayout: undefined,
+      activeWorkspace: undefined,
+      closedWorkspaceTabIds: observable<string>([]),
+    },
+  };
   const open = () =>
     new WorkspaceStore(
       {} as DataStorage,
@@ -36,7 +42,7 @@ function setup() {
     await again.init();
     return again;
   };
-  return { store, reopen };
+  return { store, reopen, uiStore: rootStore.uiStore };
 }
 
 /** The words of the texts on a workspace */
@@ -134,12 +140,15 @@ describe('WorkspaceStore', () => {
     expect((await reopen()).workspaceList[0].camera).toEqual({ x: 30, y: 40, zoom: 0.25 });
   });
 
-  it('forgets a closed workspace, also when a store of it was still pending', async () => {
-    const { store, reopen } = setup();
+  it('forgets a deleted workspace, also when a store of it was still pending', async () => {
+    const { store, reopen, uiStore } = setup();
     const kept = await store.create([]);
     const closed = await store.create([]);
     closed.setCamera({ x: 1, y: 1, zoom: 1 });
+    // Its tab was closed before: that is forgotten too
+    runInAction(() => uiStore.closedWorkspaceTabIds.push(closed.id));
     await store.remove(closed);
+    expect(uiStore.closedWorkspaceTabIds.slice()).toEqual([]);
     await new Promise((resolve) => setTimeout(resolve, 600));
     const read = await reopen();
     expect(read.workspaceList.map((w) => w.id)).toEqual([kept.id]);
@@ -246,6 +255,109 @@ describe('WorkspaceStore', () => {
       workspace.redo(); // nothing left to redo after a change
     });
     expect(workspace.fileIds).toEqual(['c']);
+  });
+
+  it('sizes what is selected in steps from where it began, as one change to undo', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    const before = workspace.toRow().items;
+    const width = (id: string) => workspace.items.find((i) => i.id === id)!.width;
+    const from = workspace.items.slice();
+    runInAction(() => {
+      workspace.selectMany(['a', 'b'], false);
+      // Steps of one drag: each from the same beginning, so they do not add up
+      workspace.scaleSelection(1.5, { x: 0, y: 0 }, from);
+      workspace.scaleSelection(2, { x: 0, y: 0 }, from);
+    });
+    expect(width('a')).toBe(before.find((i) => i.id === 'a')!.width * 2);
+    runInAction(() => workspace.undo());
+    expect(workspace.toRow().items).toEqual(before);
+  });
+
+  it('crops an image in a session, applied as one change to undo', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a') }]);
+    const before = workspace.toRow().items;
+    const a = () => workspace.items.find((i) => i.id === 'a')!;
+    runInAction(() => {
+      workspace.select('a', false);
+      workspace.startCrop();
+    });
+    const { photo, frame } = workspace.cropping!;
+    // The whole photo is the frame, as the image is whole
+    expect(photo).toMatchObject({ x: frame.x, width: frame.width });
+    runInAction(() => {
+      // The left half
+      workspace.adjustCrop({ frame: { ...frame, width: frame.width / 2 } });
+      workspace.applyCrop();
+    });
+    expect(workspace.cropping).toBeUndefined();
+    expect(a()).toMatchObject({ width: frame.width / 2, crop: { x: 0, width: 0.5 } });
+    runInAction(() => workspace.undo());
+    expect(workspace.toRow().items).toEqual(before);
+  });
+
+  it('groups layers under a name, locked and selected as one, stored, and undone', async () => {
+    const { store, reopen } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b', 'c') }]);
+    runInAction(() => workspace.selectMany(['a', 'b'], false));
+    const group = runInAction(() => workspace.groupSelection('  Pair  '))!;
+    expect(group).toMatchObject({ name: 'Pair', isLocked: true });
+    runInAction(() => workspace.select('a', false));
+    expect([...workspace.selection].sort()).toEqual(['a', 'b']);
+    // Unlocked: one by one
+    runInAction(() => {
+      workspace.toggleGroupLock(group.id);
+      workspace.select('a', false);
+    });
+    expect([...workspace.selection]).toEqual(['a']);
+    await settle();
+    const read = (await reopen()).workspaceList[0];
+    expect(read.layerGroups.slice()).toEqual([{ ...group, isLocked: false }]);
+    expect(read.items.filter((i) => i.groupId === group.id).map((i) => i.id)).toEqual(['a', 'b']);
+    // Undone: no group shows
+    runInAction(() => workspace.undo());
+    expect(workspace.groupsInUse).toEqual([]);
+  });
+
+  it('gathers the layers of a new group under the top one of them', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b', 'c') }]);
+    const order = () => workspace.layers.map((i) => i.id).filter((id) => id.length === 1);
+    const [top, middle, bottom] = order();
+    runInAction(() => {
+      workspace.selectMany([top, bottom], false);
+      workspace.groupSelection('Ends');
+    });
+    expect(order()).toEqual([top, bottom, middle]);
+  });
+
+  it('takes a crop with nothing changed as no change', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    const before = workspace.items.slice();
+    runInAction(() => {
+      workspace.startCrop('a');
+      workspace.applyCrop();
+    });
+    expect(workspace.items.slice()).toEqual(before);
+    // Nothing to undo: an undo leaves it as it is
+    runInAction(() => workspace.undo());
+    expect(workspace.items.slice()).toEqual(before);
+  });
+
+  it('ungroups what is selected, its layers staying where they are', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    const before = workspace.items.slice().map((i) => [i.x, i.y]);
+    runInAction(() => {
+      workspace.selectMany(['a', 'b'], false);
+      workspace.groupSelection('Pair');
+      workspace.select('a', false);
+      workspace.ungroupSelection();
+    });
+    expect(workspace.groupsInUse).toEqual([]);
+    expect(workspace.items.slice().map((i) => [i.x, i.y])).toEqual(before);
   });
 
   it('starts a new workspace with nothing to undo', async () => {

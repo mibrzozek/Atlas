@@ -13,12 +13,15 @@ import {
   createText,
   frontZ,
   LABEL_FONT_SIZE,
+  LayerGroup,
   LayoutKind,
   layersFromTop,
   moveItems,
   moveLayers,
   Point,
+  Rect,
   resizeItem,
+  scaleItems,
   swapItems,
   WorkspaceBackgroundItem,
   WorkspaceImage,
@@ -26,9 +29,22 @@ import {
   WorkspaceLayout,
   WorkspaceRow,
   WorkspaceTextItem,
+  withGroupMates,
 } from 'common/workspace';
+import { croppedImage, frameInShape, photoRectOf } from 'common/crop';
 import { generateId, ID } from '../../api/id';
 import WorkspaceStore from '../stores/WorkspaceStore';
+
+/** An image being cropped: see `ClientWorkspace.cropping` */
+export interface CropSession {
+  id: string;
+  /** Where the whole photo lies on the workspace */
+  photo: Rect;
+  /** The part of it the image will show: where the image will be */
+  frame: Rect;
+  /** Width for height the frame is held to, or undefined when it is free */
+  aspect: number | undefined;
+}
 
 /** How many changes can be undone */
 const MAX_UNDO = 100;
@@ -51,14 +67,27 @@ export class ClientWorkspace {
   readonly items = observable.array<WorkspaceItem>([], { deep: false });
   /** The ids of what is selected; not stored */
   readonly selection = observable.set<string>();
+  /**
+   * The groups of layers. Which layers are in one is kept on the layers (`groupId`); a group of which
+   * none are left (taken off, or undone) is not shown, and not stored
+   */
+  readonly layerGroups = observable.array<LayerGroup>([], { deep: false });
+  /**
+   * An image being cropped, while it is adjusted: where its whole photo and its frame are on the workspace,
+   * and the shape the frame is held to (undefined: free). Applied as one change; not stored
+   */
+  @observable.ref cropping: CropSession | undefined = undefined;
   /** Not observable: nothing renders from it, the surface moves itself */
   camera: Camera;
   /** How it was before each change, for undoing them; not stored */
   private readonly history: (readonly WorkspaceItem[])[] = [];
   /** How it was before each undo, for redoing them, until the next change */
   private readonly future: (readonly WorkspaceItem[])[] = [];
-  /** What the last arrangement was laid out from: one Arrange session is one change to undo */
-  private arrangedFrom: readonly WorkspaceItem[] | undefined;
+  /**
+   * What the current session of changes is made from (Arrange's sliders, a sizing of what is selected):
+   * every step starts again from it, and the whole session is one change to undo
+   */
+  private sessionFrom: readonly WorkspaceItem[] | undefined;
 
   constructor(store: WorkspaceStore, row: WorkspaceRow) {
     this.store = store;
@@ -67,6 +96,7 @@ export class ClientWorkspace {
     this.index = row.index;
     this.isLocked = row.isLocked;
     this.items.replace(row.items);
+    this.layerGroups.replace(row.layerGroups);
     this.camera = row.camera;
     makeObservable(this);
   }
@@ -120,10 +150,84 @@ export class ClientWorkspace {
     }
   }
 
+  /** Starts cropping an image (the one selected, by default): its whole photo shows around its frame */
+  @action.bound startCrop(id = this.selectedItem?.id): void {
+    const item = this.items.slice().find((i) => i.id === id);
+    if (this.isLocked || item?.kind !== 'image') {
+      return;
+    }
+    this.selection.replace([item.id]);
+    this.cropping = { id: item.id, photo: photoRectOf(item), frame: item, aspect: undefined };
+  }
+
+  /** The photo moved or zoomed under the frame, or the frame sized, while cropping */
+  @action.bound adjustCrop(changes: { photo?: Rect; frame?: Rect }): void {
+    const { cropping } = this;
+    if (cropping !== undefined) {
+      const frame = changes.frame ?? cropping.frame;
+      this.cropping = {
+        ...cropping,
+        photo: changes.photo ?? cropping.photo,
+        frame: { x: frame.x, y: frame.y, width: frame.width, height: frame.height },
+      };
+    }
+  }
+
+  /** The frame held to a shape (`CROP_PRESETS`): 'photo' is the photo's own; undefined lets it go free */
+  @action.bound setCropShape(shape: number | 'photo' | undefined): void {
+    const { cropping } = this;
+    if (cropping === undefined) {
+      return;
+    }
+    const aspect = shape === 'photo' ? cropping.photo.width / cropping.photo.height : shape;
+    this.cropping = {
+      ...cropping,
+      aspect,
+      frame: frameInShape(cropping.frame, cropping.photo, aspect),
+    };
+  }
+
+  /** Back to how the image showed its photo by itself: the middle, in the frame it had */
+  @action.bound resetCrop(): void {
+    const { cropping } = this;
+    const item = this.items.slice().find((i) => i.id === cropping?.id);
+    if (cropping !== undefined && item?.kind === 'image') {
+      const uncropped = { ...item, crop: undefined };
+      this.cropping = { ...cropping, photo: photoRectOf(uncropped), frame: item };
+    }
+  }
+
+  /** The crop as it is now becomes the image's: one change to undo, none when nothing was changed */
+  @action.bound applyCrop(): void {
+    const { cropping } = this;
+    this.cropping = undefined;
+    const item = this.items.slice().find((i) => i.id === cropping?.id);
+    if (cropping === undefined || this.isLocked || item?.kind !== 'image') {
+      return;
+    }
+    const isSame = (a: Rect, b: Rect) =>
+      a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
+    if (isSame(cropping.frame, item) && isSame(cropping.photo, photoRectOf(item))) {
+      return;
+    }
+    this.change(
+      this.items.map((item) =>
+        item.id === cropping.id && item.kind === 'image'
+          ? croppedImage(item, cropping.photo, cropping.frame)
+          : item,
+      ),
+    );
+  }
+
+  @action.bound cancelCrop(): void {
+    this.cropping = undefined;
+  }
+
   @action.bound toggleLock(): void {
     this.isLocked = !this.isLocked;
     if (this.isLocked) {
       this.selection.clear();
+      this.cropping = undefined;
     }
     this.store.saveSoon(this);
   }
@@ -168,12 +272,23 @@ export class ClientWorkspace {
     if (this.isLocked || this.selection.size < 2) {
       return;
     }
-    if (from !== this.arrangedFrom) {
-      this.arrangedFrom = from;
-      this.remember(from);
+    this.changeInSession(from, arrangeItems(from, this.selection, kind, count, options));
+  }
+
+  /**
+   * What is selected, larger or smaller by `factor` around `origin`, from how things were when this sizing
+   * began (`from`): every step of a drag or of the wheel starts from the same sizes, so nothing drifts,
+   * and the whole sizing is one change to undo
+   */
+  @action.bound scaleSelection(
+    factor: number,
+    origin: Point,
+    from: readonly WorkspaceItem[] = this.items.slice(),
+  ): void {
+    if (this.isLocked || this.selection.size === 0) {
+      return;
     }
-    this.items.replace(arrangeItems(from, this.selection, kind, count, options));
-    this.store.saveSoon(this);
+    this.changeInSession(from, scaleItems(from, this.selection, factor, origin));
   }
 
   /** The two things that are selected trade places */
@@ -320,12 +435,14 @@ export class ClientWorkspace {
     if (this.isLocked) {
       return;
     }
+    // With the other layers of its group, when that is locked
+    const ids = withGroupMates([id], this.items.slice(), this.layerGroups.slice());
     if (!additive) {
-      this.selection.replace([id]);
+      this.selection.replace(ids);
     } else if (this.selection.has(id)) {
-      this.selection.delete(id);
+      ids.forEach((other) => this.selection.delete(other));
     } else {
-      this.selection.add(id);
+      ids.forEach((other) => this.selection.add(other));
     }
   }
 
@@ -333,8 +450,10 @@ export class ClientWorkspace {
     if (this.isLocked) {
       return;
     }
-    // In one step: a box drawn over many images calls this with every move of the pointer
-    this.selection.replace(additive ? [...this.selection, ...ids] : [...ids]);
+    // In one step: a box drawn over many images calls this with every move of the pointer. Locked groups
+    // come whole
+    const chosen = withGroupMates(ids, this.items.slice(), this.layerGroups.slice());
+    this.selection.replace(additive ? [...this.selection, ...chosen] : [...chosen]);
   }
 
   @action.bound selectAll(): void {
@@ -368,13 +487,111 @@ export class ClientWorkspace {
       items: this.items.slice(),
       camera: this.camera,
       isLocked: this.isLocked,
+      layerGroups: this.groupsInUse,
     };
+  }
+
+  /** The groups that have layers in them */
+  @computed get groupsInUse(): LayerGroup[] {
+    const used = new Set(this.items.slice().map((item) => item.groupId));
+    return this.layerGroups.slice().filter((group) => used.has(group.id));
+  }
+
+  /** The groups that something selected is in */
+  get selectedGroups(): LayerGroup[] {
+    const ids = new Set<string>();
+    for (const item of this.items.slice()) {
+      if (item.groupId !== undefined && this.selection.has(item.id)) {
+        ids.add(item.groupId);
+      }
+    }
+    return this.groupsInUse.filter((group) => ids.has(group.id));
+  }
+
+  /**
+   * What is selected becomes a group of layers called `name`, locked: one change to undo. Something that
+   * was in another group is in this one now. Returns the group, or undefined when fewer than two are
+   * selected.
+   */
+  @action.bound groupSelection(name: string): LayerGroup | undefined {
+    if (this.isLocked || this.selection.size < 2) {
+      return undefined;
+    }
+    const group: LayerGroup = { id: generateId(), name: name.trim() || 'Group', isLocked: true };
+    this.layerGroups.push(group);
+    // Its layers together, where the top one of them was: the layers panel lists them as one block
+    const ids = new Set(this.selection);
+    const items = this.items.slice();
+    const top = layersFromTop(items).findIndex((item) => ids.has(item.id));
+    this.change(
+      moveLayers(items, ids, top).map((item) =>
+        ids.has(item.id) ? { ...item, groupId: group.id } : item,
+      ),
+    );
+    return group;
+  }
+
+  /** The groups of what is selected are undone: their layers stay, each on its own */
+  @action.bound ungroupSelection(): void {
+    const groups = new Set(this.selectedGroups.map((group) => group.id));
+    if (this.isLocked || groups.size === 0) {
+      return;
+    }
+    this.change(
+      this.items.map((item) =>
+        item.groupId !== undefined && groups.has(item.groupId)
+          ? { ...item, groupId: undefined }
+          : item,
+      ),
+    );
+  }
+
+  @action.bound toggleGroupLock(groupId: string): void {
+    this.updateGroup(groupId, (group) => ({ ...group, isLocked: !group.isLocked }));
+  }
+
+  @action.bound renameGroup(groupId: string, name: string): void {
+    const trimmed = name.trim();
+    if (trimmed.length > 0) {
+      this.updateGroup(groupId, (group) => ({ ...group, name: trimmed }));
+    }
+  }
+
+  /** All the layers of a group selected (or, with `additive`, added to what is selected) */
+  @action.bound selectGroup(groupId: string, additive: boolean): void {
+    const members = this.items.slice().filter((item) => item.groupId === groupId);
+    this.selectMany(
+      members.map((item) => item.id),
+      additive,
+    );
+  }
+
+  private updateGroup(groupId: string, update: (group: LayerGroup) => LayerGroup) {
+    if (this.isLocked) {
+      return;
+    }
+    this.layerGroups.replace(
+      this.layerGroups.slice().map((group) => (group.id === groupId ? update(group) : group)),
+    );
+    this.store.saveSoon(this);
   }
 
   /** What is on it from now on: remembered for undoing, and stored */
   private change(items: WorkspaceItem[]) {
     this.remember(this.items.slice());
-    this.arrangedFrom = undefined;
+    // Another change ends a crop that was going on; applying it is a change of its own
+    this.cropping = undefined;
+    this.sessionFrom = undefined;
+    this.items.replace(items);
+    this.store.saveSoon(this);
+  }
+
+  /** A step of a session (`sessionFrom`): its first step is what undo takes back; stored once it rests */
+  private changeInSession(from: readonly WorkspaceItem[], items: WorkspaceItem[]) {
+    if (from !== this.sessionFrom) {
+      this.sessionFrom = from;
+      this.remember(from);
+    }
     this.items.replace(items);
     this.store.saveSoon(this);
   }
@@ -395,7 +612,8 @@ export class ClientWorkspace {
       return;
     }
     to.push(this.items.slice());
-    this.arrangedFrom = undefined;
+    this.cropping = undefined;
+    this.sessionFrom = undefined;
     this.items.replace([...items]);
     const present = new Set(items.map((item) => item.id));
     [...this.selection].filter((id) => !present.has(id)).forEach((id) => this.selection.delete(id));

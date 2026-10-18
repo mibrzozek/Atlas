@@ -5,7 +5,7 @@ import StreamZip from 'node-stream-zip';
 
 import ExifIO from 'common/ExifIO';
 import { thumbnailMaxSize } from 'common/config';
-import { encodeFilePath } from 'common/fs';
+import { encodeFilePath, getThumbnailPath } from 'common/fs';
 import { FileDTO, IMG_EXTENSIONS_TYPE } from '../../api/file';
 import { ClientFile } from '../entities/File';
 import ExrLoader from './ExrLoader';
@@ -66,6 +66,16 @@ class ImageLoader {
 
   async init(): Promise<void> {
     await Promise.all([this.exrLoader.init(), this.psdLoader.init()]);
+  }
+
+  /** What an image is shown from: its thumbnail, or the file itself when it is small enough to be one */
+  shownPathOf(
+    file: Pick<FileDTO, 'absolutePath' | 'extension' | 'width' | 'height'>,
+    thumbnailDirectory: string,
+  ): string {
+    return this.needsThumbnail(file)
+      ? getThumbnailPath(file.absolutePath, thumbnailDirectory)
+      : file.absolutePath;
   }
 
   needsThumbnail(file: Pick<FileDTO, 'extension' | 'width' | 'height'>) {

@@ -1,7 +1,7 @@
 import { action, computed, makeObservable, observable, runInAction } from 'mobx';
 
 import { moveItem, uniqueName } from 'common/collections';
-import { encodeFilePath, getThumbnailPath } from 'common/fs';
+import { encodeFilePath } from 'common/fs';
 import { notEmpty } from 'common/core';
 import {
   addGroup,
@@ -74,6 +74,8 @@ export interface WorkspaceSurfaceControls {
   addText(): string | undefined;
   /** A sheet of paper under what is selected, or in the middle of the view */
   addBackground(): void;
+  /** Crops an image (the one selected by default), the camera showing all of its photo */
+  startCrop(id?: string): void;
 }
 
 /** The workspaces, in the order of their tabs. Stored in a database of their own (`workspace-db.ts`) */
@@ -159,6 +161,7 @@ class WorkspaceStore {
       items,
       camera: START_CAMERA,
       isLocked: false,
+      layerGroups: [],
     });
     this.workspaceList.push(workspace);
     await this.db.save(workspace.toRow());
@@ -364,9 +367,7 @@ class WorkspaceStore {
     const thumbnailDirectory = runInAction(() => uiStore.thumbnailDirectory);
     return new Map(
       files.map((file) => {
-        const path = imageLoader.needsThumbnail(file)
-          ? getThumbnailPath(file.absolutePath, thumbnailDirectory)
-          : file.absolutePath;
+        const path = imageLoader.shownPathOf(file, thumbnailDirectory);
         const { id, absolutePath, extension, width, height } = file;
         return [
           file.id,
@@ -386,6 +387,8 @@ class WorkspaceStore {
     clearTimeout(this.pendingSaves.get(workspace.id));
     this.pendingSaves.delete(workspace.id);
     this.workspaceList.remove(workspace);
+    // Else the id of a closed tab would stay in the preferences for good
+    this.rootStore.uiStore.closedWorkspaceTabIds.remove(workspace.id);
     this.prepared.get(workspace.id)?.dispose();
     this.prepared.delete(workspace.id);
     this.updateIndices();
