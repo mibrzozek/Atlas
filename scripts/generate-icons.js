@@ -43,23 +43,30 @@ const page = `<script>
     files['png/atlasTemplate@2x.png'] = toBase64(c, 'image/png');
   }
   {
-    // The picture in the About window and the help center
+    // The picture in the About window, the help center and the README: the logo of the app
+    // (components/AtlasLogo.tsx, common/logo-colours.ts) in its own colours, on the dark theme's background
     const c = document.createElement('canvas');
     c.width = c.height = 600;
     const ctx = c.getContext('2d');
     ctx.fillStyle = '#1c1e23';
     ctx.fillRect(0, 0, 600, 600);
-    drawMark(ctx, 600, 300, 240, 120, false);
-    ctx.fillStyle = '#fff';
+    drawMark(ctx, 600, 300, 215, 110, false);
     ctx.textAlign = 'center';
-    ctx.font = '900 84px "Segoe UI Black", "Arial Black", "Helvetica Neue", sans-serif';
-    const text = 'ATLAS';
-    const spacing = 8;
-    let width = 0;
-    for (const ch of text) width += ctx.measureText(ch).width + spacing;
-    let x = 300 - (width - spacing) / 2;
-    ctx.textAlign = 'left';
-    for (const ch of text) { ctx.fillText(ch, x, 470); x += ctx.measureText(ch).width + spacing; }
+    ctx.font = 'italic 400 124px Georgia, Cambria, "Times New Roman", serif';
+    const name = 'Atlas';
+    const half = ctx.measureText(name).width / 2;
+    const nameColours = ctx.createLinearGradient(300 - half, 470, 300 + half, 360);
+    nameColours.addColorStop(0, '#f7ea3a');
+    nameColours.addColorStop(0.5, '#7fc4a0');
+    nameColours.addColorStop(1, '#009de0');
+    ctx.fillStyle = nameColours;
+    ctx.fillText(name, 300, 455);
+    ctx.font = '400 28px Georgia, Cambria, "Times New Roman", serif';
+    ctx.fontVariantCaps = 'small-caps';
+    ctx.letterSpacing = '6px';
+    ctx.fillStyle = 'rgba(245, 248, 250, 0.7)';
+    // The spacing after the last letter is part of the width: shifted back by half of it to look centred
+    ctx.fillText('of my mind', 303, 512);
     files['atlas-about-dark.jpg'] = toBase64(c, 'image/jpeg', 0.92);
   }
   ipcRenderer.send('files', files);

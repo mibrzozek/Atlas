@@ -1,0 +1,47 @@
+///////////////////////////////// The Atlas logo /////////////////////////////////
+// In its own colours on dark themes, else in the theme's (`components/AtlasLogo.tsx`,
+// `common/logo-colours.ts`); these are the theme's. The strongest text colour stands out from the
+// background by at least 6.5:1 in every theme, the text colour by 5:1; the accent colour alone does not
+// (2.8:1 in Dimmed, light), so the mark only starts from it.
+
+.atlas-mark {
+  width: 6rem;
+  height: 6rem;
+}
+
+.atlas-mark-from {
+  stop-color: var(--accent-color);
+}
+
+.atlas-mark-to {
+  stop-color: var(--text-color-strong);
+}
+
+.atlas-wordmark {
+  text-align: center;
+  color: var(--text-color-strong);
+
+  p {
+    margin: 0;
+  }
+}
+
+// Like the title of a book: the user's pick of the mock-ups (Georgia comes with Windows and macOS)
+.atlas-wordmark-name {
+  font-family: Georgia, Cambria, 'Times New Roman', serif;
+  font-size: 4.5rem;
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.atlas-wordmark-line {
+  margin-top: 0.5rem !important;
+  // Compensates for the spacing after the last letter, so that the line is optically centered
+  padding-left: 0.2em;
+  color: var(--text-color);
+  font-family: Georgia, Cambria, 'Times New Roman', serif;
+  font-size: 0.875rem;
+  font-variant: small-caps;
+  letter-spacing: 0.2em;
+}

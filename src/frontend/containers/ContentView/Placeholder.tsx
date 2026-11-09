@@ -35,7 +35,7 @@ export default Placeholder;
 import { IconSet, Button, ButtonGroup, SVG } from 'widgets';
 import { RendererMessenger } from 'src/ipc/renderer';
 import useMountState from 'src/frontend/hooks/useMountState';
-import AtlasWordmark from 'src/frontend/components/AtlasWordmark';
+import { AtlasWordmark } from 'src/frontend/components/AtlasLogo';
 
 const PreviewWindowPlaceholder = observer(() => {
   const { fileStore } = useStore();

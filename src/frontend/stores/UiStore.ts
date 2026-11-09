@@ -164,6 +164,7 @@ type PersistentPreferenceFields =
   | 'outlinerWidth'
   | 'inspectorWidth'
   | 'isRememberSearchEnabled'
+  | 'isLogoThemed'
   | 'isScreensaverEnabled'
   | 'screensaverIdleMinutes'
   | 'screensaverSecondsPerImage'
@@ -260,6 +261,8 @@ class UiStore {
   @observable isThumbnailResolutionOverlayEnabled: boolean = false;
   /** Whether to restore the last search query on start-up */
   @observable isRememberSearchEnabled: boolean = true;
+  /** Whether the logo always takes the theme's colours, instead of its own wherever they stand out */
+  @observable isLogoThemed: boolean = false;
   /** Index of the first item in the viewport. Also acts as the current item shown in slide mode */
   // TODO: Might be better to store the ID to the file. I believe we were storing the index for performance, but we have instant conversion between index/ID now
   @observable firstItem: number = 0;
@@ -415,6 +418,10 @@ class UiStore {
 
   @action.bound toggleRememberSearchQuery(): void {
     this.isRememberSearchEnabled = !this.isRememberSearchEnabled;
+  }
+
+  @action.bound toggleLogoThemed(): void {
+    this.isLogoThemed = !this.isLogoThemed;
   }
 
   @action.bound openOutliner(): void {
@@ -1343,6 +1350,8 @@ class UiStore {
           this.searchMatchAny = prefs.searchMatchAny;
           this.isSlideMode = prefs.isSlideMode;
         }
+
+        this.isLogoThemed = Boolean(prefs.isLogoThemed ?? false);
         console.info('recovered', prefs);
       } catch (e) {
         console.error('Cannot parse persistent preferences', e);
@@ -1378,6 +1387,7 @@ class UiStore {
       outlinerWidth: this.outlinerWidth,
       inspectorWidth: this.inspectorWidth,
       isRememberSearchEnabled: this.isRememberSearchEnabled,
+      isLogoThemed: this.isLogoThemed,
       isScreensaverEnabled: this.isScreensaverEnabled,
       screensaverIdleMinutes: this.screensaverIdleMinutes,
       screensaverSecondsPerImage: this.screensaverSecondsPerImage,
