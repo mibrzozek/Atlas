@@ -12,6 +12,7 @@ import { useStore } from '../contexts/StoreContext';
 import { DnDAttribute, TagDnDProvider } from '../contexts/TagDnDContext';
 import { ClientTag } from '../entities/Tag';
 import { ClientCollection } from '../entities/Collection';
+import { galleryCorner } from './ContentView/utils';
 import { useCollectionDnD } from './Outliner/CollectionsPanel/useCollectionDnD';
 import { TagMerge } from './Outliner/TagsPanel/TagMerge';
 import useLocalStorage from '../hooks/useLocalStorage';
@@ -551,6 +552,7 @@ const TagManager = observer(() => {
       icon={IconSet.TAG_GROUP}
       onCancel={uiStore.closeTagManager}
       isMovable
+      placeAt={galleryCorner}
     >
       {uiStore.isTagManagerOpen && <TagManagerContent />}
     </Dialog>
