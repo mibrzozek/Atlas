@@ -16,4 +16,5 @@
   --titlebar-background-color-alt: rgb(27, 27, 27);
   --titlebar-color: rgb(124, 124, 124);
   --accent-color: rgb(51, 153, 255);
+  --text-color-on-accent: rgb(10, 10, 10);
 }

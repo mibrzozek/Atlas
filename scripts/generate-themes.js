@@ -54,6 +54,8 @@ function createTheme(name, [fore, back, accentBase]) {
   const away = isDark ? WHITE : BLACK;
   const text = readable(fore, back, away, 5);
   const accent = readable(accentBase, back, away, 3);
+  // Text on the accent (a tooltip): white, unless the theme's own background reads better on it
+  const onAccent = contrast(back, accent) > contrast(WHITE, accent) ? back : WHITE;
   // Panels are a step away from the background, inputs and borders two steps:
   // darker, except where the background is nearly black already
   const isNearBlack = Math.max(...back) < 24;
@@ -75,6 +77,7 @@ function createTheme(name, [fore, back, accentBase]) {
     'titlebar-background-color-alt': shade1,
     'titlebar-color': mix(text, back, 0.4),
     'accent-color': accent,
+    'text-color-on-accent': onAccent,
   };
 
   const label = name.replace(/-/g, ' ');
