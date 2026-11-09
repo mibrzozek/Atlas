@@ -9,6 +9,7 @@ import {
   moveInCollage,
   swapInCollage,
 } from 'common/collage';
+import { shuffledBySeed } from 'common/core';
 import { exportFilesToDirectory } from 'common/export';
 import { getThumbnailPath } from 'common/fs';
 import { ScreensaverImage } from 'common/screensaver';
@@ -96,6 +97,11 @@ class FileStore {
   /** For a moment after collage mode is switched on or off: the images glide to their new places */
   @observable isCollageAnimating = false;
   private collageAnimationTimeout: number | undefined;
+  /**
+   * The random order, kept until a new one is asked for: loading the images again (the start-up scan, a
+   * change) leaves them where they are. A new one every start
+   */
+  private shuffleSeed = Math.random() * 2 ** 32;
 
   debouncedRefetch: () => void;
   debouncedSaveFilesToSave: () => Promise<void>;
@@ -286,6 +292,9 @@ class FileStore {
   }
 
   @action.bound orderFilesBy(prop: OrderBy<FileDTO> = 'dateAdded'): void {
+    if (prop === 'random') {
+      this.shuffleSeed = Math.random() * 2 ** 32;
+    }
     this.setOrderBy(prop);
     this.refetch();
   }
@@ -1030,6 +1039,9 @@ class FileStore {
     );
     backendFiles = backendFiles.filter((f) => !f.tags.some((t) => hiddenTagIds.has(t)));
 
+    if (this.orderBy === 'random') {
+      backendFiles = shuffledBySeed(backendFiles, (file) => file.id, this.shuffleSeed);
+    }
     // In collage mode the order is the one made by hand for this view
     backendFiles = this.inCollageOrder(backendFiles);
 

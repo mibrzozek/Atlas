@@ -1,3 +1,5 @@
+import { shuffled } from './core';
+
 export interface ScreensaverSettings {
   isEnabled: boolean;
   /** How long the system has to be idle before the screensaver starts */
@@ -96,16 +98,6 @@ export function shouldStartScreensaver(
     (idle.isWindowInFront || !settings.onlyWhenInFront) &&
     idle.systemIdleSeconds >= settings.idleMinutes * 60
   );
-}
-
-/** Returns the items in a random order, without changing the given list */
-export function shuffled<T>(items: readonly T[], random: () => number = Math.random): T[] {
-  const result = items.slice();
-  for (let i = result.length - 1; i > 0; i--) {
-    const j = Math.floor(random() * (i + 1));
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
 }
 
 /** An image of the screensaver */

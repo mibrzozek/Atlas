@@ -1,6 +1,6 @@
 import Dexie, { Collection, IndexableType, Table, WhereClause } from 'dexie';
 
-import { retainArray, shuffleArray } from '../../common/core';
+import { retainArray, shuffled } from '../../common/core';
 import { DataStorage } from '../api/data-storage';
 import {
   ArrayConditionDTO,
@@ -70,7 +70,7 @@ export default class Backend implements DataStorage {
   async fetchFiles(order: OrderBy<FileDTO>, fileOrder: OrderDirection): Promise<FileDTO[]> {
     console.info('IndexedDB: Fetching files...');
     if (order === 'random') {
-      return shuffleArray(await this.#files.toArray());
+      return shuffled(await this.#files.toArray());
     }
 
     const collection = this.#files.orderBy(order);
@@ -116,7 +116,7 @@ export default class Backend implements DataStorage {
     const collection = await filter(this.#files, criterias, matchAny ? 'or' : 'and');
 
     if (order === 'random') {
-      return shuffleArray(await collection.toArray());
+      return shuffled(await collection.toArray());
     }
     // table.reverse() can be an order of magnitude slower than a javascript .reverse() call
     // (tested at ~5000 items, 500ms instead of 100ms)

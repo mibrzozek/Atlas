@@ -13,11 +13,11 @@ import {
   layoutShowcase,
   planScreens,
   shouldStartScreensaver,
-  shuffled,
   snapToDevicePixels,
   withoutDuplicates,
   wasUsedSinceStart,
 } from '../common/screensaver';
+import { seededRandom, shuffled, shuffledBySeed } from '../common/core';
 
 describe('shouldStartScreensaver', () => {
   const settings = { ...DEFAULT_SCREENSAVER_SETTINGS, idleMinutes: 5 };
@@ -84,6 +84,36 @@ describe('shuffled', () => {
     expect(items).toEqual([1, 2, 3, 4, 5, 6]);
     expect(result.slice().sort()).toEqual(items);
     expect(result).not.toEqual(items);
+  });
+
+  it('gives the same order again for the same seed, another for another seed', () => {
+    const items = Array.from({ length: 20 }, (_, i) => i);
+    const a = shuffled(items, seededRandom(7));
+    expect(shuffled(items, seededRandom(7))).toEqual(a);
+    expect(shuffled(items, seededRandom(8))).not.toEqual(a);
+    const random = seededRandom(1);
+    const values = Array.from({ length: 1000 }, random);
+    expect(Math.min(...values)).toBeGreaterThanOrEqual(0);
+    expect(Math.max(...values)).toBeLessThan(1);
+  });
+});
+
+describe('shuffledBySeed', () => {
+  const ids = Array.from({ length: 30 }, (_, i) => `id-${i}`);
+  const byId = (id: string) => id;
+
+  it('gives the same order for the same seed, whatever order the items come in', () => {
+    const a = shuffledBySeed(ids, byId, 42);
+    expect(a.slice().sort()).toEqual(ids.slice().sort());
+    expect(a).not.toEqual(ids);
+    expect(shuffledBySeed(ids.slice().reverse(), byId, 42)).toEqual(a);
+    expect(shuffledBySeed(ids, byId, 43)).not.toEqual(a);
+  });
+
+  it('leaves the others in their order when one is added or left out', () => {
+    const a = shuffledBySeed(ids, byId, 42);
+    expect(shuffledBySeed([...ids, 'new'], byId, 42).filter((id) => id !== 'new')).toEqual(a);
+    expect(shuffledBySeed(ids.slice(1), byId, 42)).toEqual(a.filter((id) => id !== ids[0]));
   });
 });
 
