@@ -6,6 +6,7 @@
  */
 
 import { Crop, cropFromRow, refitCrop } from './crop';
+import { VideoProject, videoFromRow } from './video';
 
 export interface Point {
   x: number;
@@ -92,6 +93,8 @@ export interface WorkspaceRow {
   isLocked: boolean;
   /** The groups of layers, those with layers in them */
   layerGroups: LayerGroup[];
+  /** Its video, once one was started (`common/video.ts`) */
+  video?: VideoProject;
 }
 
 // The camera
@@ -1323,7 +1326,8 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
   if (typeof row !== 'object' || row === null) {
     return undefined;
   }
-  const { id, name, index, items, camera, isLocked, layerGroups } = row as Partial<WorkspaceRow>;
+  const { id, name, index, items, camera, isLocked, layerGroups, video } =
+    row as Partial<WorkspaceRow>;
   const { groups } = row as { groups?: unknown };
   if (typeof id !== 'string') {
     return undefined;
@@ -1445,6 +1449,7 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
         name: groupName,
         isLocked: isGroupLocked === true,
       })),
+    video: videoFromRow(video),
   };
 }
 

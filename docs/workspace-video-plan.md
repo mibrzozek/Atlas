@@ -1,88 +1,173 @@
 # Workspace videos: plan
 
-Animate what is on a workspace and save it as a video to share on social media. Not started; this is
-the plan, and what was measured to choose it (2026-10-16). The bar is that the motion is smooth and
-beautiful, on every computer, in the file that is shared.
+> **Revised 2026-10-21:** shots were replaced by lanes (camera, layout, motion, music) on one timeline,
+> the beat driving the edit. "Status" at the end describes the editor as it is; the sections in between
+> are the first plan, kept for the reasoning behind it (smoothness, encoding, measurements), which holds.
+
+Animate what is on a workspace and save it as a video to share on social media, with music and video
+clips. Agreed with the user on 2026-10-20; the libraries mp4-muxer and mp4box.js are approved. The bar is
+that the motion is smooth and beautiful, on every computer, in the file that is shared.
 
 ## How it works for the user
 
-A video is a list of **shots** on a workspace, played one after the other.
+**Video mode.** A button in the workspace's tool bar turns it on. The video frame shows on the workspace
+and a panel opens along the bottom. Turning it off hides both; nothing is lost.
 
-- **The frame.** A video has a format: Reels / TikTok / Stories (1080 × 1920), feed (1080 × 1350), square
-  (1080 × 1080) or landscape (1920 × 1080). Its frame is drawn on the workspace as a rectangle of that
-  shape, like a sheet, and shows what will be in the video.
-- **A shot** is the workspace as it is when "Add shot" is pressed: where the frame is (and how large, which
-  is the zoom) and where every object is. The user arranges the next moment with the tools there are
-  already (drag, Arrange, snap, swap, texts, sheets) and adds the next shot.
-- **Between shots everything glides**: the frame pans and zooms (a Ken Burns move), and each object moves,
-  grows, shrinks, turns up or fades from where it was to where it is next, as Keynote's Magic Move does.
-  Each shot has a duration, a hold (how long it rests before moving on) and an easing.
-- **Entrances**: objects that are new in a shot can come in by fading, rising, scaling or sliding, one
-  after another (a stagger of, say, 60 ms), so a grid fills in like a wave rather than at once.
-- **A timeline** along the bottom of the workspace shows the shots as small pictures with their
-  durations: click to go to one, drag to reorder, play to preview. The preview plays in the workspace
-  itself.
-- **Save as video**: the same kind of dialog as Save as picture (a name of one's own, the format, 30 or 60
-  frames a second), then a folder. Progress shows in the bar at the foot of the side panel; the window
-  stays usable.
+**The frame** is a rectangle on the workspace in the video's shape, like a sheet: what is inside it is what
+the video shows. Moving or sizing it is the camera (sizing it is the zoom).
+
+**The bottom panel** (its height can be dragged):
+- **the timeline** across the top, always there: play/pause, the time, a playhead, and lanes for shots,
+  objects (their keyframes), clips and audio. Ctrl + wheel zooms it.
+- **tabs** underneath:
+  - **Video**: the format (9:16 Reels/TikTok/Stories, 4:5 feed, 1:1, 16:9, or a custom width × height),
+    the frame rate (30, default, or 60), the background colour, loop.
+  - **Animation**: for the selected object its keyframes, easing, entrance, delay and stagger.
+  - **Audio**: music tracks: where each starts, trim, fade in and out, volume; later beat markers.
+  - **Clips**: the video clips in the project: trim, speed, volume.
+  - **Export**: a name, then Save video (as Save as picture: a folder, never over another file).
+
+**Shots** are the quick way. A shot is the workspace as it is when "Add shot" is pressed: where the frame
+is and where every object is. Arrange the next moment with the tools there are (drag, Arrange, crop,
+swap, texts, sheets) and add the next shot. Between shots everything glides: the frame pans and zooms,
+objects move, grow, shrink and get cropped from where they were to where they are next; what is new
+fades in, what is gone fades out. Each shot has a duration (of the move into it), a hold and an easing
+(smooth, gentle, snappy, spring). Clicking a shot in the timeline shows that moment on the workspace;
+changing anything then changes that shot. Shots are dragged to reorder, their edges to time them.
+
+**Keyframes and drawn paths** are the precise way, per object, on top of shots. Select an object, move the
+playhead, change it (move, size, turn, fade, crop): a keyframe appears in its lane, and the object is
+animated between its keyframes. Holding a key while dragging an object records its route as a smooth
+path, at the speed it was drawn or stretched to a length; the path shows dotted and can be reshaped. An
+object follows its own keyframes where it has them, the shots elsewhere.
+
+**Entrances**: objects new in a shot come in by fading, rising, scaling or sliding, one after another
+(a stagger), so a grid fills in like a wave.
+
+**Music**: audio files (mp3, m4a, wav, ogg, flac) in lanes under the shots, as waveforms: slid to where
+they start, trimmed, faded, set louder or softer. Several can overlap. Later: fit the video to the song,
+and beat markers that shots snap to.
+
+**Video clips**: dropped onto the workspace or the timeline in video mode. A clip is an object like an
+image (moved, sized, cropped, animated) with a bar in the timeline for when it plays (slid, trimmed), and
+its sound as an audio track. Clips belong to the video, not to the library.
 
 ## Why it will be smooth
 
 1. **The video is not recorded off the screen.** Every frame is drawn on its own at its exact time
    (frame 37 of 60 per second is drawn as it is at 0.6167 s), as long as that takes. A slow computer
-   takes longer to save; it never drops or repeats a frame. (Recording the screen with `MediaRecorder`
-   is real time and stutters whenever drawing does; rejected.)
-2. **Movement is computed, not stepped**: positions are eased curves of time (cubic Béziers, and a spring
-   for "settle" moves), sampled at the frame's time, so 60 frames a second are 60 different positions.
-   Sub-pixel positions are kept; images are drawn with high-quality smoothing.
-3. **Images are decoded before, at the size they need.** For each image, the largest it is on screen in
-   any shot decides the size it is decoded at, once, in the image workers (`SharpImages`), before the
-   first frame. No frame waits for a decode; nothing is drawn from a thumbnail that is too small.
-4. **The preview uses only `transform` and `opacity`** (as the screensaver does), on elements that
-   already have their pixels, so it plays at the screen's frame rate; what the preview shows and what the
-   video holds come from the same timing function.
-5. Later, if wanted: **motion blur** by drawing a few moments within each frame and blending them; it
-   makes fast moves look filmed rather than digital.
+   takes longer to save; it never drops or repeats a frame.
+2. **Movement is computed, not stepped**: positions are eased curves of time, sampled at the frame's
+   time. Sub-pixel positions are kept; images are drawn with high-quality smoothing.
+3. **Images are decoded before, at the size they need**, once, before the first frame.
+4. **The preview uses only `transform` and `opacity`** on elements that already have their pixels, and
+   what the preview shows and what the video holds come from the same function of time (`stateAt`).
+5. Clip frames are decoded for the exact time of each video frame (WebCodecs `VideoDecoder`).
+6. Music is mixed exactly to the video's length, off screen (`OfflineAudioContext`).
+
+## Measured in this Electron (21, Chromium 106)
+
+- Video encoding (`VideoEncoder`): H.264 baseline (`avc1.42002a`) at 1080 × 1920 and 1920 × 1080, 30 and
+  60 fps; 120 frames of 1080 × 1920 in 1.45 s (about 80 a second). Main and high profiles: not supported.
+  VP9 and AV1: supported.
+- Audio encoding (`AudioEncoder`, 2026-10-20): AAC (`mp4a.40.2`) and Opus reported supported (not yet
+  encoded for real: the first thing to check in step 4).
+- Decoding for clips and music: H.264 up to 4K, VP9, AV1; AAC, Opus, MP3. **HEVC / H.265 (the iPhone's
+  default) is not supported**: an Electron upgrade brings it (the system's decoder), or iPhones set to
+  "Most Compatible"; ffmpeg is the fallback.
+- WebCodecs only exists on a secure page: the app's file page is one, `about:blank` is not.
 
 ## How it is made
 
-- **Model** (`common/video.ts`, tested): `VideoFormat`, `Shot { frame: Rect; items: positions;
-  duration; hold; easing }`, and `stateAt(shots, time)`: where the frame and every object are at a
-  time, with entrances and stagger. Pure, so it is tested like the rest of the workspace maths. Shots are
-  stored on the workspace row (a new field, so the workspaces database, not the library's).
-- **Drawing a frame**: an `OffscreenCanvas` of the output size in a worker; images, texts and sheets
-  drawn as the saved picture draws them (`workspacePicture.ts` already composes a workspace into a canvas;
-  that code is shared), from the pre-decoded bitmaps.
-- **Encoding**: WebCodecs `VideoEncoder`, measured in this Electron (Chromium 106) in a hidden window:
-  - H.264 **baseline** profile (`avc1.42002a`) at 1080 × 1920 and 1920 × 1080, 30 and 60 fps:
-    supported. 120 frames of 1080 × 1920 encoded in 1.45 s (about 80 frames a second, software).
-  - H.264 main and high profiles: not supported in this build. Baseline plays everywhere and Instagram
-    and TikTok re-encode anyway; at 16 Mbit/s it is clean.
-  - VP9 and AV1: supported (VP9 120 frames in 1.1 s), for a WebM if wanted.
-  - `MediaRecorder` to MP4: not supported (and not wanted, see above).
-- **The file**: the encoded frames are put in an MP4 container by
-  [mp4-muxer](https://github.com/Vanilagy/mp4-muxer) (MIT, plain JavaScript, no binaries). A new
-  dependency: to be agreed first. The alternative is bundling ffmpeg (about 80 MB, also GPL-compatible),
-  only needed if a profile WebCodecs lacks becomes necessary.
-- **Saving**: `writeNewFile`, never over another file; the name from the dialog (`fileNameOf`).
-- **Expected speed**: drawing a frame of some 50 images at 1080 × 1920 is a few milliseconds, encoding
-  about 12 ms; a 30-second video at 60 frames a second (1,800 frames) should take about half a minute to
-  save. To be measured with real photos.
+- **Model** (`common/video.ts`, tested): `VideoFormat`, `Shot` (frame, the place of every object,
+  duration, hold, easing), keyframes per object, and `stateAt(video, items, time)`: where the frame and
+  every object are at a time. Pure. Stored on the workspace row (`video`), in the workspaces database.
+- **Frames**: drawn into a canvas of the output size as the saved picture draws a workspace
+  (`workspacePicture.ts`), from bitmaps decoded beforehand at the size they need.
+- **Encoding**: WebCodecs `VideoEncoder` (H.264) and `AudioEncoder` (AAC), put in an MP4 by
+  **mp4-muxer**. Clips are read with **mp4box.js** (MP4 demuxing) and `VideoDecoder`.
+- **Saving**: `writeNewFile`, never over another file.
+
+## The full-window player
+
+The ` key shows the video over the whole window, with the timeline under it (never over the picture).
+More ways of watching will be added there, so its bar is laid out once, for all of them:
+
+```
+┌ deck, 11rem, always this wide ┐┌ timeline (read only, half height) ─────────────────────┐
+│ [▶]  0:02.7 / 0:08.0          ││ ruler with beats, the end marker                       │
+│ ☐ Loop  ☐ …  ☐ …              ││ Camera · Layout · Motion · Music                       │
+│ ☐ …     ☐ …                   ││                                                        │
+└───────────────────────────────┘└────────────────────────────────────────────────────────┘
+                                                          Back to editing (`)  ← top right of the picture
+```
+
+- **The deck** (`.workspace-video-deck`) is a column of one width on the left. On top, always where it is:
+  play/pause and the time (`.workspace-video-transport`). Under it, rows of small options
+  (`.workspace-video-deck-options`), as many rows as the timeline is tall: two, about six options. The
+  deck never grows wider and the timeline never moves when an option comes or goes.
+- **An option is a small toggle or a short choice** (a checkbox like Loop, or a few joined buttons like the
+  `Choices` of the Selected tab, at the deck's smaller size). Nothing in the deck opens a dialog. Anything
+  that changes the video itself (its format, its blocks) stays in the panel: the full-window player only
+  changes how it is watched.
+- **Shared with the panel:** every option that also makes sense while editing is one component used in
+  both places (`LoopCheckbox` is the pattern), with its state on `VideoPlayer` (not stored) or on
+  `UiStore` (stored) when it should survive a restart.
+- **More than fits:** once the two rows are full, the least used go into a "⋯" menu at the end of the last
+  row (the app's `MenuButton`), rather than a third row or a wider deck.
+- **Shortcuts:** every option has a key, shown in its tooltip, in `hotkeyMap` so it is listed under
+  Settings, Shortcuts. The keys of video mode (Space, `, Escape) are written into `WorkspaceView` today:
+  they move to `hotkeyMap` first (`videoPlay`, `videoFullWindow`), then each option gets its own.
+- **Idle:** while playing with the mouse at rest only the pointer and "Back to editing" fade; the deck
+  and the timeline stay, so the time can always be read.
+
+Options foreseen, in the order they would come (each a small step of its own):
+
+| Option | Kind | Key (proposed) | State |
+|---|---|---|---|
+| Loop | checkbox | Shift+L | `player.isLooping` (done) |
+| Mute the music | checkbox | M | `player.isMuted` |
+| Speed: ½× · 1× · 2× | choices | `[` / `]` | `player.speed` |
+| Frame by frame | buttons ◀ ▶ (in the transport, after the time) | , / . | moves the playhead one frame |
+| To the start / end | keys only | Home / End | |
+| Safe areas (where a platform's buttons and captions cover the picture) | checkbox | S | `UiStore`, stored |
+| Beat click (hear the beats found) | checkbox | B | `player.isClicking` |
+| Loop between two marks (In/Out on the ruler) | checkbox, with I / O to set them | I, O | `player.loopFrom/To` |
+
+Shift+L for Loop, because L alone locks a workspace.
 
 ## Steps
 
-1. **Formats and the frame** on the workspace, and the `Shot` model with `stateAt` and its tests.
-2. **The timeline and preview**: add, select, reorder and time shots; play and scrub in the workspace.
-3. **Frame drawing** in a worker from pre-decoded images, checked frame by frame against `stateAt`.
-4. **Encoding and saving** (needs the decision on mp4-muxer), with progress and cancel.
-5. **Entrances and stagger**, easing presets (smooth, gentle, snappy, spring), a held last frame, and a
-   loop option for Reels.
-6. **Polish**: motion blur, a video of the selected sheet only, and an audio track if ever wanted (the
-   social apps add music themselves, so not at first).
+1. **Video mode, the bottom panel, the formats and the frame; shots; preview; saving an MP4**: the first
+   working version, without sound.
+2. **Music**: the audio lane, trim, fades, volume, AAC in the MP4.
+3. **Keyframes and drawn paths** per object.
+4. **Video clips** (best after the Electron upgrade, for iPhone videos).
+5. **Entrances, stagger, loop, beat markers, motion blur.**
 
-## Open questions for the user
+## Status
 
-- The mp4-muxer dependency (step 4), or ffmpeg.
-- 60 frames a second by default, or 30 (smaller files; Instagram plays 30).
-- Upgrading Electron later would bring hardware H.264 (main/high profile) and faster encoding; not needed
-  for this.
+**2026-10-21: the editor is rebuilt around lanes**, after trying shots: the user found shots and clips
+did not fit (this is camera movement over one canvas, not cutting between recordings) and asked for a
+timeline of lanes, the beat driving the edit, and a layout that can stay fixed or change.
+
+What works, checked in a hidden copy with real input and a made-up song (clicks at 120 a minute):
+- Every camera stop is a shot on the workspace: dotted when not selected; selected, the view glides to
+  it, the rest blurred, and it is locked until "Edit shot" (drag to move, corner to size, lined up with
+  the shot before it). (Until 2026-10-22 the frame was a viewfinder fixed on the screen.)
+- **Camera lane:** stops added beside the one before (+) or framing what is selected; each arrives by
+  glide, whip, cut or scroll and stays still, pushes in, pulls out or drifts; ends dragged, blocks
+  reordered.
+- **Layout lane:** optional arrangements; selecting one puts everything there, and changes go into it.
+- **Motion lane:** pop in, drop in, slide in, fade in, jiggle, float, breathe, pulse on the beat, shake,
+  spin, pop out, fly out, fade out, on the photos selected, from the playhead, with strength, speed and a
+  stagger; moved and stretched by their edges, in rows where they overlap.
+- **Music lane:** a song from the computer (read only), its tempo and beats found (120.1 for 120), its
+  waveform, the beats marked on the ruler; every dragged edge snaps to them (Alt: not). Volume, where it
+  begins, how much of its start is skipped.
+- Preview with the music; saving an MP4 with picture and AAC sound (checked: both the same length).
+- Default timeline of a minute, the wheel over the panel zooming it; Space plays, Delete removes.
+
+Not yet: effects (light leaks, film burn, grain...: next, as a lane of their own), recording a camera
+move live, beat markers in the motion lane (pulse uses them already), the beat finder on real music (only
+made-up songs so far), trying it on the real library and screen.

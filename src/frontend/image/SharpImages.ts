@@ -37,6 +37,11 @@ class SharpImages {
   private readonly jobs = new Map<string, Job>();
   /** Object URLs of the drawn images, least recently used first */
   private readonly cache = new Map<string, string>();
+  /** Images being drawn to be handed back as a bitmap (`drawBitmap`), by request */
+  private readonly bitmapJobs = new Map<
+    number,
+    { resolve: (bitmap: ImageBitmap) => void; reject: (error: Error) => void }
+  >();
 
   private getWorker(id: string): Worker {
     if (this.workers === undefined) {
@@ -57,7 +62,23 @@ class SharpImages {
     return this.workers[hash % this.workers.length];
   }
 
-  private handleResponse({ requestId, blob, error, isCancelled }: ScreensaverImageResponse) {
+  private handleResponse({
+    requestId,
+    blob,
+    bitmap,
+    error,
+    isCancelled,
+  }: ScreensaverImageResponse) {
+    const bitmapJob = this.bitmapJobs.get(requestId);
+    if (bitmapJob !== undefined) {
+      this.bitmapJobs.delete(requestId);
+      if (bitmap !== undefined) {
+        bitmapJob.resolve(bitmap);
+      } else {
+        bitmapJob.reject(new Error(error ?? 'Could not draw image'));
+      }
+      return;
+    }
     for (const [key, job] of this.jobs) {
       if (job.requestId !== requestId) {
         continue;
@@ -158,6 +179,28 @@ class SharpImages {
         }
       },
     };
+  }
+
+  /**
+   * The image drawn at the given size, in device pixels, as a bitmap to draw on a canvas (the frames of a
+   * video): decoded in a background thread like the others, turned as the camera stored it. Not kept
+   */
+  drawBitmap(image: { id: string; absolutePath: string }, size: SharpSize): Promise<ImageBitmap> {
+    const requestId = this.nextRequestId++;
+    const promise = new Promise<ImageBitmap>((resolve, reject) =>
+      this.bitmapJobs.set(requestId, { resolve, reject }),
+    );
+    const request: ScreensaverImageRequest = {
+      type: 'draw',
+      requestId,
+      id: image.id,
+      src: image.absolutePath,
+      width: size.width,
+      height: size.height,
+      once: true,
+    };
+    this.getWorker(image.id).postMessage(request);
+    return promise;
   }
 }
 

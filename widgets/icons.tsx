@@ -111,6 +111,9 @@ import CROP from 'resources/icons/crop.svg';
 import COPY from 'resources/icons/copy.svg';
 import CHECK from 'resources/icons/check.svg';
 import GRID_DOTS from 'resources/icons/grid-dots.svg';
+import VIDEO from 'resources/icons/video.svg';
+import PLAY from 'resources/icons/play.svg';
+import PAUSE from 'resources/icons/pause.svg';
 import TAG_ADD from 'resources/icons/tag-add.svg';
 // import TAG_ADD_COLLECTION from 'resources/icons/tag-add-collection.svg';
 import TAG_BLANCO from 'resources/icons/tag-blanco.svg';
@@ -229,6 +232,9 @@ const IconSet = {
   CROP: toSvg(CROP),
   COPY: toSvg(COPY),
   CHECK: toSvg(CHECK),
+  VIDEO: toSvg(VIDEO),
+  PLAY: toSvg(PLAY),
+  PAUSE: toSvg(PAUSE),
   // SMALL_ARROW_DOWN: toSvg(SMALL_ARROW_DOWN),
   // SMALL_ARROW_RIGHT: toSvg(SMALL_ARROW_RIGHT),
   SORT: toSvg(SORT),

@@ -1,5 +1,6 @@
 import { observable, runInAction } from 'mobx';
 
+import { DEFAULT_BLOCK_LENGTH, videoLength } from '../common/video';
 import { WorkspaceItem } from '../common/workspace';
 import { DataStorage } from '../src/api/data-storage';
 import { WorkspaceDatabase } from '../src/backend/workspace-db';
@@ -200,6 +201,26 @@ describe('WorkspaceStore', () => {
     expect(ids.map(placeOf)).toEqual(shuffledOnce);
   });
 
+  it('cuts its video to the beat as one change to undo, another seed another edit', async () => {
+    const { store } = setup();
+    const workspace = await store.create([
+      { label: 'Film', images: images('a', 'b', 'c', 'd', 'e', 'f', 'g', 'h') },
+    ]);
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.cutToTheBeat('cuts', 1);
+    });
+    const video = workspace.video!;
+    expect(videoLength(video)).toBeCloseTo(30, 5);
+    expect(video.camera.length).toBeGreaterThan(4);
+    expect(video.motions.length).toBeGreaterThan(0);
+    const first = JSON.stringify(video.camera.map((stop) => stop.frame));
+    runInAction(() => workspace.cutToTheBeat('cuts', 2));
+    expect(JSON.stringify(workspace.video!.camera.map((stop) => stop.frame))).not.toBe(first);
+    runInAction(() => workspace.undo());
+    expect(JSON.stringify(workspace.video!.camera.map((stop) => stop.frame))).toBe(first);
+  });
+
   it('undoes changes one at a time, back to where it began', async () => {
     const { store } = setup();
     const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
@@ -375,17 +396,165 @@ describe('WorkspaceStore', () => {
     expect(workspace.items.slice()).toEqual(before);
   });
 
-  it('duplicates a workspace right after it, with everything on it, and opens it', async () => {
+  it('makes a video of layouts: selecting one puts everything back, and changes go into it', async () => {
+    const { store, reopen } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    const a = () => workspace.items.slice().find((i) => i.id === 'a')!;
+    const start = { x: a().x, y: a().y };
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.addLayout();
+    });
+    const first = workspace.selectedBlock!.id;
+    // Moved while the first layout is selected: the layout takes it over
+    runInAction(() => workspace.moveItems(new Set(['a']), 300, 0));
+    expect(workspace.video!.layouts[0].poses.a.x).toBe(start.x + 300);
+    // Back where it was, and a second layout with it moved further
+    runInAction(() => {
+      workspace.moveItems(new Set(['a']), -300, 0);
+      workspace.clearBlockSelection();
+      workspace.moveItems(new Set(['a']), 500, 0);
+      workspace.addLayout();
+    });
+    expect(workspace.video!.layouts.map((l) => l.poses.a.x)).toEqual([start.x, start.x + 500]);
+    // Selecting the first puts a back, as one change to undo
+    runInAction(() => workspace.selectBlock('layout', first));
+    expect(a().x).toBe(start.x);
+    runInAction(() => workspace.undo());
+    expect(a().x).toBe(start.x + 500);
+    // Stored with the workspace
+    await settle();
+    const read = (await reopen()).workspaceList[0];
+    expect(read.video!.layouts.length).toBe(2);
+  });
+
+  it('shows a selected shot over everything where the layout on as it begins has it', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    const a = () => workspace.items.slice().find((i) => i.id === 'a')!;
+    const start = a().x;
+    // Two layouts, a moved in the second, and a shot in each: the workspace shows the second
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.addLayout();
+      workspace.clearBlockSelection();
+      workspace.moveItems(new Set(['a']), 500, 0);
+      workspace.addLayout();
+      workspace.clearBlockSelection();
+      workspace.addCameraStop();
+      workspace.addCameraStop();
+      workspace.clearBlockSelection();
+    });
+    const [first, second] = workspace.video!.camera;
+    runInAction(() => workspace.selectBlock('camera', first.id));
+    expect(a().x).toBe(start);
+    runInAction(() => workspace.selectBlock('camera', second.id));
+    expect(a().x).toBe(start + 500);
+    // Each one change to undo
+    runInAction(() => workspace.undo());
+    expect(a().x).toBe(start);
+    // Locked, nothing moves: it is only shown there, until unlocked
+    const shown = () => workspace.shownItems.find((i) => i.id === 'a')!;
+    runInAction(() => {
+      workspace.toggleLock();
+      workspace.selectBlock('camera', second.id);
+    });
+    expect([a().x, shown().x]).toEqual([start, start + 500]);
+    runInAction(() => workspace.toggleLock());
+    expect(shown().x).toBe(start);
+  });
+
+  it('adds shots beside each other, to be placed, locked once selected, and puts motions on objects', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.addCameraStop();
+    });
+    // The first shot is the frame of the video, being placed
+    const first = workspace.video!.camera[0];
+    expect(first.frame).toEqual(workspace.video!.frame);
+    expect(workspace.isEditingShot).toBe(true);
+    runInAction(() => workspace.setShotFrame(first.id, { x: 10, y: 20, width: 90, height: 160 }));
+    // The next one beside it, as large, selected and being placed
+    runInAction(() => workspace.addCameraStop());
+    const second = workspace.video!.camera[1];
+    expect(second.frame.x).toBeGreaterThan(10 + 90);
+    expect([second.frame.y, second.frame.width, second.frame.height]).toEqual([20, 90, 160]);
+    expect(workspace.selectedBlock?.id).toBe(second.id);
+    expect(workspace.isEditingShot).toBe(true);
+    // Selected again it is locked; Edit shot frees it, Lock shot locks it
+    runInAction(() => workspace.selectBlock('camera', first.id));
+    expect(workspace.isEditingShot).toBe(false);
+    runInAction(() => workspace.editShot());
+    expect(workspace.isEditingShot).toBe(true);
+    runInAction(() => workspace.lockShot());
+    expect(workspace.isEditingShot).toBe(false);
+    // A block of another lane: no shot selected, none edited
+    runInAction(() => {
+      workspace.editShot();
+      workspace.addMotion('pop-in', ['a', 'b'], 1);
+    });
+    expect(workspace.isEditingShot).toBe(false);
+    expect(workspace.video!.motions[0]).toMatchObject({
+      kind: 'pop-in',
+      targets: ['a', 'b'],
+      start: 1,
+    });
+    // Taking a stop off can be undone
+    runInAction(() => workspace.removeBlock('camera', workspace.video!.camera[1].id));
+    expect(workspace.video!.camera.length).toBe(1);
+    runInAction(() => workspace.undo());
+    expect(workspace.video!.camera.length).toBe(2);
+    // A shot's place typed or nudged step by step (X and Y of the Selected tab): one change to undo
+    const shot = workspace.video!.camera[0];
+    runInAction(() => {
+      workspace.setShotFrame(shot.id, { ...shot.frame, x: 11 });
+      workspace.setShotFrame(shot.id, { ...shot.frame, x: 12 }, true);
+      workspace.setShotFrame(shot.id, { ...shot.frame, x: 13 }, true);
+    });
+    expect(workspace.video!.camera[0].frame.x).toBe(13);
+    runInAction(() => workspace.undo());
+    expect(workspace.video!.camera[0].frame.x).toBe(shot.frame.x);
+    // The arrow keys move only the shot being edited; a key held down is one change to undo
+    runInAction(() => workspace.selectBlock('camera', shot.id));
+    runInAction(() => workspace.nudgeShot(1, 0));
+    expect(workspace.video!.camera[0].frame.x).toBe(shot.frame.x);
+    runInAction(() => {
+      workspace.editShot();
+      workspace.nudgeShot(1, 0);
+      workspace.nudgeShot(1, 0, true);
+      workspace.nudgeShot(0, -10);
+    });
+    expect(workspace.video!.camera[0].frame).toMatchObject({
+      x: shot.frame.x + 2,
+      y: shot.frame.y - 10,
+    });
+    runInAction(() => workspace.undo());
+    expect(workspace.video!.camera[0].frame).toMatchObject({
+      x: shot.frame.x + 2,
+      y: shot.frame.y,
+    });
+    runInAction(() => workspace.undo());
+    expect(workspace.video!.camera[0].frame.x).toBe(shot.frame.x);
+  });
+
+  it('duplicates a workspace right after it, with everything on it and its video, and opens it', async () => {
     const { store, reopen, uiStore } = setup();
     const first = await store.create([{ label: 'Film', images: images('a', 'b') }]);
     const last = await store.create([]);
-    runInAction(() => first.rename('Film'));
+    runInAction(() => {
+      first.rename('Film');
+      first.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      first.addCameraStop();
+    });
     const copy = await store.duplicate(first);
     expect(store.workspaceList.map((w) => w.id)).toEqual([first.id, copy.id, last.id]);
     expect(store.workspaceList.map((w) => w.index)).toEqual([0, 1, 2]);
     expect(copy.id).not.toBe(first.id);
     expect(copy.name).toBe('Film copy');
     expect(copy.items.slice()).toEqual(first.items.slice());
+    expect(copy.video).toEqual(first.video);
     expect(uiStore.openWorkspace).toHaveBeenCalledWith(copy);
     // Nothing shared: a change to the copy leaves the original as it was
     const before = first.items.slice();
@@ -401,6 +570,162 @@ describe('WorkspaceStore', () => {
       'Film copy',
       'Workspace 2',
     ]);
+  });
+
+  it('undoes a change of the objects without taking back what was changed in the video since', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.addCameraStop();
+      workspace.clearBlockSelection();
+    });
+    const stop = workspace.video!.camera[0].id;
+    const x = workspace.items.slice().find((i) => i.id === 'a')!.x;
+    runInAction(() => {
+      workspace.moveItems(new Set(['a']), 100, 0);
+      // Not changes to undo: a dragged edge, the end marker, the music
+      workspace.setBlockLength('camera', stop, 8);
+      workspace.setVideoEnd(6);
+    });
+    runInAction(() => workspace.undo());
+    expect(workspace.items.slice().find((i) => i.id === 'a')!.x).toBe(x);
+    expect(workspace.video!.camera[0].length).toBe(8);
+    expect(workspace.video!.end).toBe(6);
+  });
+
+  it('undoes a change of the video: a shot moved or added, another shape', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a') }]);
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.addCameraStop();
+    });
+    const shot = workspace.video!.camera[0];
+    runInAction(() => workspace.setShotFrame(shot.id, { ...shot.frame, x: 300 }));
+    runInAction(() => workspace.addCameraStop());
+    expect(workspace.video!.camera.length).toBe(2);
+    runInAction(() => workspace.undo());
+    expect(workspace.video!.camera.length).toBe(1);
+    expect(workspace.video!.camera[0].frame.x).toBe(300);
+    runInAction(() => workspace.undo());
+    expect(workspace.video!.camera[0].frame.x).toBe(shot.frame.x);
+    // Another shape: undone, the frame has the old shape again
+    const { width, height } = workspace.video!;
+    runInAction(() => workspace.setVideoSize({ width: 1080, height: 1080 }));
+    runInAction(() => workspace.undo());
+    expect([workspace.video!.width, workspace.video!.height]).toEqual([width, height]);
+    expect(workspace.video!.frame.width / workspace.video!.frame.height).toBeCloseTo(
+      width / height,
+    );
+  });
+
+  it('undoes a change of the objects with a layout selected, the layout along', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a') }]);
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.addLayout();
+    });
+    const x = workspace.video!.layouts[0].poses.a.x;
+    runInAction(() => workspace.moveItems(new Set(['a']), 100, 0));
+    expect(workspace.video!.layouts[0].poses.a.x).toBe(x + 100);
+    runInAction(() => workspace.undo());
+    expect(workspace.video!.layouts[0].poses.a.x).toBe(x);
+  });
+
+  it('never lets a layout take over the workspace when the workspace does not show it', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a') }]);
+    const xOf = (layout: number) => workspace.video!.layouts[layout].poses.a.x;
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.addLayout();
+      workspace.moveItems(new Set(['a']), 300, 0);
+      workspace.addLayout();
+    });
+    const [first, second] = workspace.video!.layouts.map((l) => l.id);
+    const [x1, x2] = [xOf(0), xOf(1)];
+    // Locked: selecting the first moves nothing, so a setting changed then leaves it alone
+    runInAction(() => {
+      workspace.toggleLock();
+      workspace.selectBlock('layout', first);
+      workspace.setVideoOptions({ fps: 60 });
+      workspace.toggleLock();
+      workspace.moveItems(new Set(['a']), 5, 0);
+    });
+    expect(xOf(0)).toBe(x1);
+    // Selecting the second, undone: the objects are back where the first has them, and the second
+    // does not take over the next move
+    runInAction(() => workspace.selectBlock('layout', first));
+    runInAction(() => workspace.selectBlock('layout', second));
+    runInAction(() => workspace.undo());
+    runInAction(() => workspace.moveItems(new Set(['a']), 7, 0));
+    expect(xOf(1)).toBe(x2);
+  });
+
+  it('leaves nothing to redo once a setting of the video changes', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a') }]);
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.addCameraStop();
+    });
+    runInAction(() => workspace.undo());
+    runInAction(() => workspace.setVideoOptions({ fps: 60 }));
+    runInAction(() => workspace.redo());
+    expect(workspace.video!.camera.length).toBe(0);
+    expect(workspace.video!.fps).toBe(60);
+  });
+
+  it('lets the video be edited and undone while the objects are locked', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a') }]);
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.toggleLock();
+      workspace.addCameraStop();
+      workspace.moveItems(new Set(['a']), 100, 0);
+    });
+    expect(workspace.video!.camera.length).toBe(1);
+    runInAction(() => workspace.undo());
+    expect(workspace.video!.camera.length).toBe(0);
+  });
+
+  it('keeps the music within the song: never a start or a skip below 0', async () => {
+    const { store } = setup();
+    const workspace = await store.create([]);
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.setMusic({
+        path: 'song.mp3',
+        name: 'Song',
+        start: 0,
+        trim: 0,
+        duration: 0.5,
+        volume: 1,
+        bpm: 0,
+        beats: [],
+      });
+      workspace.changeMusic({ trim: 3, start: -2, volume: 4 });
+    });
+    expect(workspace.video!.music).toMatchObject({ trim: 0, start: 0, volume: 1 });
+  });
+
+  it('moves the end marker to the end of a camera stop that is added', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a') }]);
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.addCameraStop();
+      workspace.setVideoEnd(2.5);
+    });
+    expect(videoLength(workspace.video!)).toBe(2.5);
+    runInAction(() => workspace.addCameraStop());
+    expect(videoLength(workspace.video!)).toBe(2 * DEFAULT_BLOCK_LENGTH);
+    // Undone with the stop
+    runInAction(() => workspace.undo());
+    expect(videoLength(workspace.video!)).toBe(2.5);
   });
 
   it('ungroups what is selected, its layers staying where they are', async () => {

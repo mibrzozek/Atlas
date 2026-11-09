@@ -1,7 +1,8 @@
 import { reaction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
+import { videoLength } from 'common/video';
 import { boundsOf, isStartCamera, textInk, WorkspaceItem } from 'common/workspace';
 import { useStore } from '../../contexts/StoreContext';
 import { comboMatches, getKeyCombo, parseKeyCombo } from '../../hotkeyParser';
@@ -10,9 +11,21 @@ import CropOverlay, { CropTools } from './CropOverlay';
 import { GroupLayersDialog } from './GroupLayersDialog';
 import LayersPanel from './LayersPanel';
 import { carriesLibraryBatch, dropEffectFor, readLibraryBatch } from './libraryDrop';
+import VideoPanel from './VideoPanel';
+import { VideoPlayer } from './VideoPlayer';
+import VideoPreview from './VideoPreview';
+import VideoShots from './VideoShots';
 import WorkspaceObject, { SelectionFrame } from './WorkspaceObject';
 import { WorkspaceImages } from './WorkspaceImages';
 import { VisibleItems, WorkspaceSurface } from './WorkspaceSurface';
+
+/** Which way each arrow key moves the shot being edited */
+const SHOT_NUDGES: Record<string, [dx: number, dy: number]> = {
+  ArrowLeft: [-1, 0],
+  ArrowRight: [1, 0],
+  ArrowUp: [0, -1],
+  ArrowDown: [0, 1],
+};
 
 /**
  * A workspace on screen, over the Library (which stays as it was underneath, scroll position and all), with
@@ -28,7 +41,16 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
   const tileCanvas = useRef<HTMLCanvasElement>(null);
   const cropWorld = useRef<HTMLDivElement>(null);
   const cropTools = useRef<HTMLDivElement>(null);
+  const shots = useRef<HTMLDivElement>(null);
+  const placeShots = useCallback(() => surface.current?.placeShots(), []);
+  // The playhead and the preview of the video; not stored
+  const [player] = useState(() => new VideoPlayer());
   const surface = useRef<WorkspaceSurface>();
+  // How much of the workspace the video panel lies over (it does not take room from it), as tall as it
+  // is now: what the camera glides to, and the preview, stay above that
+  const videoCover =
+    uiStore.isWorkspaceVideoMode && workspace.video !== undefined ? uiStore.videoPanelHeight : 0;
+  useEffect(() => surface.current?.setVideoInset(videoCover), [videoCover]);
   const [visible, setVisible] = useState<VisibleItems>({ ids: new Set() });
   // Prepared by the store when the workspace was opened, and kept while switching tabs
   const images = workspaceStore.imagesOf(workspace)!;
@@ -47,6 +69,7 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
         world: world.current!,
         crop: cropWorld.current!,
         cropTools: cropTools.current!,
+        shots: shots.current!,
       },
       workspace,
       images.tiles,
@@ -64,7 +87,7 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
     workspaceStore.surface = created;
     // What is on it, whenever that changes
     const stopFollowing = reaction(
-      () => workspace.items.slice(),
+      () => workspace.shownItems,
       (items) => created.setItems(items),
       { fireImmediately: true },
     );
@@ -86,11 +109,109 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
   const isSlowScroll = uiStore.isWorkspaceSlowScroll;
   useEffect(() => surface.current?.setSlowScroll(isSlowScroll), [isSlowScroll]);
 
+  // Video mode: a workspace without a video gets one, its frame on what is in view
+  const isVideoMode = uiStore.isWorkspaceVideoMode;
+  useEffect(() => {
+    if (!isVideoMode) {
+      player.close();
+      return;
+    }
+    const area = surface.current?.visibleArea;
+    if (area !== undefined && workspace.video === undefined) {
+      workspace.startVideo(area);
+    }
+  }, [isVideoMode, workspace, player]);
+  // Then, in the room left by the panel (which is shown once there is a video, and is in the page by
+  // now): the surface measures it at once, and keeps the frame where it is on the screen from then on
+  const hasVideo = workspace.video !== undefined;
+  useEffect(() => {
+    surface.current?.resize();
+    surface.current?.setVideoMode(isVideoMode && hasVideo);
+  }, [isVideoMode, hasVideo]);
+  // The ` key: what the camera sees at the playhead over the whole window, and back. While it is shown
+  // Space plays and pauses and Escape goes back, wherever the focus is (not while typing)
+  useEffect(() => {
+    if (!isVideoMode) {
+      return;
+    }
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (target?.matches('input, textarea, select, [contenteditable="true"]')) {
+        return;
+      }
+      if (event.code === 'Backquote' && !event.ctrlKey && !event.altKey && !event.metaKey) {
+        event.preventDefault();
+        player.toggleFullscreen();
+      } else if (
+        (event.key === 'Enter' || event.key === 'Escape') &&
+        workspace.isEditingShot &&
+        // Only while the shots are what is on screen: the preview, a crop, a dialog or a focused
+        // button have the key to themselves
+        !player.isShowing &&
+        workspace.cropping === undefined &&
+        target?.closest('dialog[open], button') == null
+      ) {
+        // The shot being edited stays where it is, wherever the focus is (the button that freed it is
+        // gone from the page)
+        event.preventDefault();
+        workspace.lockShot();
+      } else if (
+        event.key in SHOT_NUDGES &&
+        workspace.isEditingShot &&
+        !player.isShowing &&
+        workspace.cropping === undefined &&
+        target?.closest('dialog[open]') == null
+      ) {
+        // The shot being edited moved by a pixel, or ten with Shift; also with the focus on the button
+        // that freed it, which has no use for the arrows
+        event.preventDefault();
+        const [dx, dy] = SHOT_NUDGES[event.key];
+        const step = event.shiftKey ? 10 : 1;
+        workspace.nudgeShot(dx * step, dy * step, event.repeat);
+      } else if (player.isFullscreen && event.key === 'Escape') {
+        event.preventDefault();
+        player.close();
+      } else if (player.isFullscreen && event.key === ' ' && workspace.video !== undefined) {
+        event.preventDefault();
+        if (event.repeat) {
+          // Held down: once
+        } else if (player.isPlaying) {
+          player.pause();
+        } else {
+          player.play(videoLength(workspace.video));
+        }
+      } else {
+        return;
+      }
+      event.stopPropagation();
+    };
+    // A focused button takes Space on its way up, and would toggle the playing straight back
+    const onKeyUp = (event: KeyboardEvent) => {
+      if (player.isFullscreen && event.key === ' ') {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+    window.addEventListener('keydown', onKey, true);
+    window.addEventListener('keyup', onKeyUp, true);
+    return () => {
+      window.removeEventListener('keydown', onKey, true);
+      window.removeEventListener('keyup', onKeyUp, true);
+    };
+  }, [isVideoMode, player, workspace]);
+
   // The keys are in Settings, Shortcuts; Backspace, Escape and copying always do what they do
   const handleKeyDown = (event: React.KeyboardEvent) => {
     const combo = getKeyCombo(event.nativeEvent);
     const { hotkeyMap } = uiStore;
     const matches = (keys: string) => comboMatches(combo, parseKeyCombo(keys));
+    // Escape leaves the preview of the video, back to editing
+    if (event.key === 'Escape' && player.isShowing) {
+      player.close();
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (workspace.cropping !== undefined) {
       // While cropping, keys only end it: anything else would act on what is under it
       if (event.key === 'Enter' || matches(hotkeyMap.workspaceCrop)) {
@@ -160,7 +281,7 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
       : undefined;
   const shown: WorkspaceItem[] = [];
   const backgrounds: WorkspaceItem[] = [];
-  for (const item of workspace.items.slice()) {
+  for (const item of workspace.shownItems) {
     if (visible.ids.has(item.id)) {
       (item.kind === 'background' ? backgrounds : shown).push(item);
     }
@@ -186,74 +307,91 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
 
   return (
     <div className="workspace-area">
-      <div
-        ref={viewport}
-        className="workspace"
-        tabIndex={-1}
-        aria-label={workspace.name}
-        data-locked={isLocked}
-        data-drop-target={isDropTarget}
-        data-cropping={cropping !== undefined}
-        onKeyDown={handleKeyDown}
-        onDragOver={(event) => {
-          if (!isLocked && carriesLibraryBatch(event.dataTransfer)) {
-            event.preventDefault();
-            event.dataTransfer.dropEffect = dropEffectFor(event.dataTransfer);
-            setIsDropTarget(true);
-          }
-        }}
-        onDragLeave={(event) => {
-          if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      <div className="workspace-row">
+        <div
+          ref={viewport}
+          className="workspace"
+          tabIndex={-1}
+          aria-label={workspace.name}
+          data-locked={isLocked}
+          data-drop-target={isDropTarget}
+          data-cropping={cropping !== undefined}
+          onKeyDown={handleKeyDown}
+          onDragOver={(event) => {
+            if (!isLocked && carriesLibraryBatch(event.dataTransfer)) {
+              event.preventDefault();
+              event.dataTransfer.dropEffect = dropEffectFor(event.dataTransfer);
+              setIsDropTarget(true);
+            }
+          }}
+          onDragLeave={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setIsDropTarget(false);
+            }
+          }}
+          onDrop={(event) => {
             setIsDropTarget(false);
-          }
-        }}
-        onDrop={(event) => {
-          setIsDropTarget(false);
-          const batch = readLibraryBatch(event.dataTransfer, workspaceStore.rootStore);
-          if (batch !== undefined && surface.current !== undefined) {
-            event.preventDefault();
-            // Its top left where it was let go
-            workspaceStore.addBatch(workspace, batch, surface.current.worldAt(event));
-            viewport.current?.focus();
-          }
-        }}
-      >
-        {/* From the bottom: the grid, the backgrounds, the tiles of small images, everything else */}
-        <canvas ref={canvas} className="workspace-backdrop" />
-        <div ref={backgroundWorld} className="workspace-world">
-          {backgrounds.map(objectOf)}
-        </div>
-        <canvas ref={tileCanvas} className="workspace-backdrop" />
-        <div ref={world} className="workspace-world">
-          {shown.map(objectOf)}
-          {selectionBounds !== undefined && (
-            <SelectionFrame bounds={selectionBounds} zoom={settledZoom} />
-          )}
-        </div>
-        {/* Over all of it, which is blurred while an image is cropped */}
-        <div ref={cropWorld} className="workspace-world workspace-crop-world">
-          {cropping !== undefined && (
-            <CropOverlay
+            const batch = readLibraryBatch(event.dataTransfer, workspaceStore.rootStore);
+            if (batch !== undefined && surface.current !== undefined) {
+              event.preventDefault();
+              // Its top left where it was let go
+              workspaceStore.addBatch(workspace, batch, surface.current.worldAt(event));
+              viewport.current?.focus();
+            }
+          }}
+        >
+          {/* From the bottom: the grid, the backgrounds, the tiles of small images, everything else */}
+          <canvas ref={canvas} className="workspace-backdrop" />
+          <div ref={backgroundWorld} className="workspace-world">
+            {backgrounds.map(objectOf)}
+          </div>
+          <canvas ref={tileCanvas} className="workspace-backdrop" />
+          <div ref={world} className="workspace-world">
+            {shown.map(objectOf)}
+            {selectionBounds !== undefined && (
+              <SelectionFrame bounds={selectionBounds} zoom={settledZoom} />
+            )}
+          </div>
+          {/* Over all of it, which is blurred while an image is cropped */}
+          <div ref={cropWorld} className="workspace-world workspace-crop-world">
+            {cropping !== undefined && (
+              <CropOverlay
+                workspace={workspace}
+                source={images.sources.get(cropping.id)}
+                zoom={settledZoom}
+              />
+            )}
+          </div>
+          {/* The shots of the video's camera, over their frames: where the surface puts them */}
+          <div ref={shots} className="workspace-video-shots">
+            {isVideoMode && !player.isShowing && cropping === undefined && (
+              <VideoShots workspace={workspace} place={placeShots} />
+            )}
+          </div>
+          {/* The tools of cropping, in pixels of the screen: placed by the surface */}
+          <div ref={cropTools} className="workspace-crop-tools-layer">
+            {cropping !== undefined && <CropTools workspace={workspace} />}
+          </div>
+          <PreparingOverlay images={images} />
+          {isVideoMode && player.isShowing && workspace.video !== undefined && (
+            <VideoPreview
               workspace={workspace}
-              source={images.sources.get(cropping.id)}
-              zoom={settledZoom}
+              player={player}
+              sources={images.sources}
+              bottom={videoCover}
             />
           )}
+          <div
+            className="workspace-slow-scroll"
+            data-active={isSlowScroll}
+            aria-hidden={!isSlowScroll}
+          >
+            Slow scrolling <span>Ctrl + wheel click to turn off</span>
+          </div>
         </div>
-        {/* The tools of cropping, in pixels of the screen: placed by the surface */}
-        <div ref={cropTools} className="workspace-crop-tools-layer">
-          {cropping !== undefined && <CropTools workspace={workspace} />}
-        </div>
-        <PreparingOverlay images={images} />
-        <div
-          className="workspace-slow-scroll"
-          data-active={isSlowScroll}
-          aria-hidden={!isSlowScroll}
-        >
-          Slow scrolling <span>Ctrl + wheel click to turn off</span>
-        </div>
+        {uiStore.isWorkspaceLayersOpen && <LayersPanel workspace={workspace} images={images} />}
       </div>
-      {uiStore.isWorkspaceLayersOpen && <LayersPanel workspace={workspace} images={images} />}
+      {isVideoMode && <VideoPanel workspace={workspace} player={player} />}
       {uiStore.isNamingLayerGroup && <GroupLayersDialog workspace={workspace} />}
     </div>
   );

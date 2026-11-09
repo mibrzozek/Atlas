@@ -1,8 +1,9 @@
-import { action, computed, makeObservable, observable, runInAction } from 'mobx';
+import { action, computed, makeObservable, observable, runInAction, when } from 'mobx';
 
 import { moveItem, uniqueName } from 'common/collections';
 import { encodeFilePath } from 'common/fs';
 import { notEmpty } from 'common/core';
+import { MusicTrack, VideoSize } from 'common/video';
 import {
   addGroup,
   MeasureText,
@@ -21,6 +22,8 @@ import { generateId, ID } from '../../api/id';
 import { WorkspaceDatabase } from '../../backend/workspace-db';
 import type { TileCache } from '../containers/Workspace/TileImages';
 import { WorkspaceImages } from '../containers/Workspace/WorkspaceImages';
+import { musicFrom } from '../containers/Workspace/videoMusic';
+import { saveVideoWithProgress } from '../containers/Workspace/workspaceVideo';
 import { measureText as measureInPage } from '../containers/Workspace/measureText';
 import { AppToaster } from '../components/Toaster';
 import { ClientCollection } from '../entities/Collection';
@@ -39,6 +42,8 @@ const SAVE_DELAY = 400;
 export const LARGE_WORKSPACE = 2000;
 /** The images of this many workspaces are kept ready, the ones opened last */
 const MAX_PREPARED = 3;
+/** How long a video saving waits for the images of its workspace to be ready, in ms */
+const IMAGES_READY_TIMEOUT = 5 * 60_000;
 
 /** Where an image of a workspace is shown from, and what it is called */
 export interface WorkspaceImageSource {
@@ -78,6 +83,9 @@ export const batchOfCollection = (collection: ClientCollection): LibraryBatch =>
   matchAny: true,
 });
 
+/** How a video saving went: where the new file is, given up (Stop), or why it could not be saved */
+export type VideoSaveResult = { saved: string } | { stopped: true } | { error: string };
+
 /** What the buttons above a workspace and the layers panel do to the surface on screen */
 export interface WorkspaceSurfaceControls {
   /** The surface on screen, which carries the colours of the theme (for a picture of the workspace) */
@@ -108,7 +116,8 @@ class WorkspaceStore {
   private readonly prepared = observable.map<ID, WorkspaceImages>({}, { deep: false });
   /** What was copied last, from any workspace: plain objects, as they were then */
   private copied: readonly WorkspaceItem[] = [];
-  /** A workspace of many images that is waiting to be confirmed */
+  /** Whether a video is being saved: one at a time (`saveVideo`) */
+  @observable isSavingVideo = false;
   /**
    * Something of many images waiting to be confirmed, as preparing them takes a while: a new workspace,
    * or (`adding`) a batch dropped on one. `confirm` does it.
@@ -227,6 +236,17 @@ class WorkspaceStore {
     // Selected, so that Arrange can change at once how they are laid out (the crop, the spacing)
     workspace.selectMany(workspace.fileIds, false);
     return workspace;
+  }
+
+
+  /**
+   * A song under a workspace's video, its beats found (the file is only read). What the + of the Music
+   * lane does once a song was chosen
+   */
+  async addMusic(workspace: ClientWorkspace, file: string): Promise<MusicTrack> {
+    const music = await musicFrom(file);
+    workspace.setMusic(music);
+    return music;
   }
 
   /**
@@ -368,6 +388,42 @@ class WorkspaceStore {
     return this.prepared.get(workspace.id);
   }
 
+  /**
+   * Saves the video of a workspace as an MP4 named `name` in `folder`, never over another file, at its
+   * own size or at `phone` size (small enough to be sent to a phone); how far it got shows at the bottom
+   * left. Waits for its images to be ready. One at a time: they share that message and its Stop
+   */
+  @action.bound async saveVideo(
+    workspace: ClientWorkspace,
+    options: { name: string; folder: string; size?: VideoSize },
+  ): Promise<VideoSaveResult> {
+    const images = this.imagesOf(workspace);
+    const { video } = workspace;
+    if (this.isSavingVideo) {
+      return { error: 'Another video is being saved' };
+    }
+    if (images === undefined || video === undefined || this.surface === undefined) {
+      return { error: 'Its workspace is not open, or it has no video' };
+    }
+    this.isSavingVideo = true;
+    try {
+      await when(() => workspace.fileIds.every((id) => images.sources.has(id)), {
+        timeout: IMAGES_READY_TIMEOUT,
+      });
+      return await saveVideoWithProgress(
+        video,
+        workspace.items.slice(),
+        images.sources,
+        this.surface.viewport,
+        options,
+      );
+    } catch (e) {
+      return { error: e instanceof Error ? e.message : String(e) };
+    } finally {
+      runInAction(() => (this.isSavingVideo = false));
+    }
+  }
+
   /** The images of a workspace that are being prepared right now, if any */
   @computed get preparing(): WorkspaceImages | undefined {
     return [...this.prepared.values()].find((images) => images.isPreparing);
@@ -400,8 +456,8 @@ class WorkspaceStore {
   }
 
   /**
-   * A copy of a workspace right after it, opened: everything on it, its groups, where it is looked at.
-   * Copied through JSON, so nothing is shared with the original; its tiles are (per image)
+   * A copy of a workspace right after it, opened: everything on it, its groups, where it is looked at,
+   * and its video. Copied through JSON, so nothing is shared with the original; its tiles are (per image)
    */
   @action.bound async duplicate(workspace: ClientWorkspace): Promise<ClientWorkspace> {
     const index = this.workspaceList.indexOf(workspace) + 1;

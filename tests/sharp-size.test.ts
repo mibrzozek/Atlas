@@ -1,8 +1,17 @@
-import { getSharpSize } from '../common/sharp-size';
+import { getSharpSize, thumbnailWidthOf } from '../common/sharp-size';
 
 // A photo from a 20 megapixel camera, and the same one held upright. Thumbnails are 600 pixels at most
 const landscape = { width: 5472, height: 3648, extension: 'jpg' };
 const portrait = { width: 3648, height: 5472, extension: 'jpg' };
+
+describe('thumbnailWidthOf', () => {
+  it('is 600 pixels on the longest side at most, a small image being its own', () => {
+    expect(thumbnailWidthOf(landscape)).toBe(600);
+    expect(thumbnailWidthOf(portrait)).toBe(400);
+    expect(thumbnailWidthOf({ width: 300, height: 200 })).toBe(300);
+    expect(thumbnailWidthOf({ width: 0, height: 0 })).toBe(0);
+  });
+});
 
 describe('getSharpSize', () => {
   it('needs nothing more than the thumbnail for small cells', () => {

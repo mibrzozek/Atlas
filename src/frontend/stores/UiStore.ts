@@ -47,6 +47,8 @@ export const enum ViewMethod {
 export type ThumbnailSize = 'small' | 'medium' | 'large' | number;
 type ThumbnailShape = 'square' | 'letterbox';
 export type UpscaleMode = 'smooth' | 'pixelated';
+/** The tabs of the video panel of a workspace */
+export type VideoPanelTab = 'video' | 'block' | 'export';
 export const PREFERENCES_STORAGE_KEY = 'preferences';
 
 export interface IHotkeyMap {
@@ -177,7 +179,8 @@ type PersistentPreferenceFields =
   | 'isSearchBarVisible'
   | 'isWorkspaceGridShown'
   | 'workspaceGridStyle'
-  | 'isWorkspaceLayersOpen';
+  | 'isWorkspaceLayersOpen'
+  | 'videoPanelHeight';
 
 class UiStore {
   static MIN_OUTLINER_WIDTH = 192; // default of 12 rem
@@ -223,6 +226,11 @@ class UiStore {
   @observable workspaceGridStyle: WorkspaceGridStyle = 'lines';
   /** Whether the layers panel is open next to a workspace, or folded away into its button */
   @observable isWorkspaceLayersOpen: boolean = true;
+  /** Whether workspaces show their video: its frame on the surface and the panel along the bottom */
+  @observable isWorkspaceVideoMode: boolean = false;
+  /** How tall the video panel is, in pixels */
+  @observable videoPanelHeight: number = 360;
+  @observable videoPanelTab: VideoPanelTab = 'video';
   /** A text on a workspace whose words are to be changed in the layers panel: it gets the focus */
   @observable workspaceTextToEdit: string | undefined = undefined;
   /** Whether the screensaver is being shown right now */
@@ -661,6 +669,27 @@ class UiStore {
 
   @action.bound toggleWorkspaceLayers(): void {
     this.isWorkspaceLayersOpen = !this.isWorkspaceLayersOpen;
+  }
+
+  /**
+   * Video mode on or off. Off, no workspace changes a shot or layout any more (every one, not only the
+   * open one: a layout selected in another stayed selected and took over its changes); nothing of the
+   * video is lost. (On, the workspace starts its video if it has none: `WorkspaceView` knows what is in
+   * view.)
+   */
+  @action.bound toggleWorkspaceVideoMode(): void {
+    this.isWorkspaceVideoMode = !this.isWorkspaceVideoMode;
+    if (!this.isWorkspaceVideoMode) {
+      this.rootStore.workspaceStore.workspaceList.forEach((w) => w.clearBlockSelection());
+    }
+  }
+
+  @action.bound setVideoPanelHeight(height: number): void {
+    this.videoPanelHeight = Math.round(Math.min(Math.max(height, 140), 640));
+  }
+
+  @action.bound setVideoPanelTab(tab: VideoPanelTab): void {
+    this.videoPanelTab = tab;
   }
 
   /** Opens the layers panel with the words of a text ready to be changed */
@@ -1322,6 +1351,9 @@ class UiStore {
         this.isWorkspaceGridShown = Boolean(prefs.isWorkspaceGridShown ?? true);
         this.workspaceGridStyle = prefs.workspaceGridStyle === 'dots' ? 'dots' : 'lines';
         this.isWorkspaceLayersOpen = Boolean(prefs.isWorkspaceLayersOpen ?? true);
+        if (typeof prefs.videoPanelHeight === 'number') {
+          this.setVideoPanelHeight(prefs.videoPanelHeight);
+        }
         if (Array.isArray(prefs.screensaverCollectionIds)) {
           this.screensaverCollectionIds.replace(
             prefs.screensaverCollectionIds.filter((id: unknown) => typeof id === 'string'),
@@ -1389,6 +1421,7 @@ class UiStore {
       isWorkspaceGridShown: this.isWorkspaceGridShown,
       workspaceGridStyle: this.workspaceGridStyle,
       isWorkspaceLayersOpen: this.isWorkspaceLayersOpen,
+      videoPanelHeight: this.videoPanelHeight,
     };
     return preferences;
   }

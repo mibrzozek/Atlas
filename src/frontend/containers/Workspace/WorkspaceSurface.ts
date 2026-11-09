@@ -38,6 +38,7 @@ import {
   movePhoto,
   zoomPhoto,
 } from 'common/crop';
+import { shotBefore } from 'common/video';
 import { ClientWorkspace } from '../../entities/Workspace';
 import { MAX_TILES, TileImages } from './TileImages';
 
@@ -102,6 +103,12 @@ const CROP_PADDING = 48;
 /** A band at the foot of the view kept free for the tools of cropping, and how far they are from the frame */
 const CROP_TOOLS_ROOM = 72;
 const CROP_TOOLS_GAP = 12;
+/** Room around a shot of the video the camera glides to, on the screen, its label above it included */
+const SHOT_PADDING = 56;
+/** The smallest a shot can be sized to, on the screen */
+const MIN_SHOT_PIXELS = 24;
+/** What the frame of a video without camera stops goes by among the shots (`VideoShots`) */
+export const VIDEO_FRAME_ID = 'video';
 /** How long the camera takes to glide to an image or to everything */
 const GLIDE_DURATION = 320;
 
@@ -122,6 +129,11 @@ export interface SurfaceLayers {
   world: HTMLElement;
   /** An image being cropped, over everything else (which is blurred under it), moved along with the world */
   crop: HTMLElement;
+  /**
+   * The shots of the video's camera stops (`VideoShots`), in pixels of the screen: the surface places each
+   * over its frame on the workspace in every frame (`placeShots`), so their lines stay as thin as they are
+   */
+  shots: HTMLElement;
   /** The tools of cropping, in pixels of the screen, placed under the frame (`placeCropTools`) */
   cropTools: HTMLElement;
 }
@@ -157,6 +169,11 @@ type Gesture =
     }
   /** Its width as sized so far, snapped */
   | { kind: 'resize'; item: WorkspaceItem; width: number }
+  /**
+   * The shot being edited moved, or sized by its corner (its shape stays): from where it was when pressed,
+   * lined up with what is near and with the other shots
+   */
+  | { kind: 'shot-move' | 'shot-size'; id: string; frame: Rect; others: Rect[] }
   /** While cropping: an edge or corner of the frame dragged, from where the frame was when pressed */
   | { kind: 'crop-frame'; handle: CropHandle; frame: Rect }
   /** While cropping: the photo moved under the frame, from where it was when pressed */
@@ -246,6 +263,12 @@ export class WorkspaceSurface {
 
   private readonly resizeObserver: ResizeObserver;
   private readonly stopFollowingCrop: () => void;
+  private readonly stopFollowingVideo: () => void;
+  private isVideoMode = false;
+  /** How much of the foot of the view the video panel lies over: what is shown is fitted above it */
+  private videoInset = 0;
+  /** Where the shot being moved or sized is, until it is let go and stored */
+  private shotDraft: { id: string; frame: Rect } | undefined;
 
   constructor(
     /** The surface on screen, which also carries the colours of the theme */
@@ -261,6 +284,11 @@ export class WorkspaceSurface {
     this.stopFollowingCrop = reaction(
       () => workspace.cropping,
       () => this.requestFrame(),
+    );
+    // A block of the video selected: the camera glides to what it is about (a shot, what a motion moves)
+    this.stopFollowingVideo = reaction(
+      () => workspace.selectedBlock,
+      () => this.isVideoMode && this.lookAtSelectedBlock(),
     );
     tileImages.onLoad = (id) => {
       this.drawIntoOverview(id);
@@ -294,6 +322,7 @@ export class WorkspaceSurface {
   dispose(): void {
     this.resizeObserver.disconnect();
     this.stopFollowingCrop();
+    this.stopFollowingVideo();
     // A crop is not stored: left for another tab, it would come back with its image hidden and out of view
     this.workspace.cancelCrop();
     this.viewport.removeEventListener('wheel', this.handleWheel);
@@ -372,6 +401,120 @@ export class WorkspaceSurface {
       this.glideTo(fitCamera(bounds, this.view));
     }
   };
+
+  /**
+   * How much of the foot of the view the panel of video mode covers (it lies over the workspace, which
+   * keeps its size): what the camera glides to is fitted above it
+   */
+  setVideoInset(pixels: number): void {
+    this.videoInset = pixels;
+  }
+
+  /** Video mode on or off: on, the shots of the camera are drawn, and the block selected is shown */
+  setVideoMode(isOn: boolean): void {
+    if (isOn && !this.isVideoMode) {
+      this.lookAtSelectedBlock();
+    }
+    this.isVideoMode = isOn;
+    this.requestFrame();
+  }
+
+  /**
+   * The camera glides to what the block selected is about: a camera stop's shot as it begins, the objects
+   * a motion moves; above the panel, with room around for the shot's label
+   */
+  private lookAtSelectedBlock() {
+    const { video, selectedBlock } = this.workspace;
+    if (video === undefined || selectedBlock === undefined) {
+      return;
+    }
+    let area: Rect | undefined;
+    if (selectedBlock.lane === 'camera') {
+      area = video.camera.find((stop) => stop.id === selectedBlock.id)?.frame;
+    } else if (selectedBlock.lane === 'motion') {
+      const motion = video.motions.find((m) => m.id === selectedBlock.id);
+      const moved = (motion?.targets ?? [])
+        .map((id) => this.items.get(id))
+        .filter((item): item is WorkspaceItem => item !== undefined);
+      area = boundsOf(moved);
+    }
+    if (area !== undefined) {
+      const above = {
+        width: this.view.width,
+        height: Math.max(1, this.view.height - this.videoInset),
+      };
+      this.glideTo(fitCamera(area, above, SHOT_PADDING, MAX_ZOOM));
+    }
+  }
+
+  /** Where a shot is on the workspace: as it is being moved, or as the video has it */
+  private shotFrame(id: string | undefined): Rect | undefined {
+    const { video } = this.workspace;
+    const draft = this.shotDraft;
+    if (draft !== undefined && draft.id === id) {
+      return draft.frame;
+    }
+    return id === VIDEO_FRAME_ID ? video?.frame : video?.camera.find((s) => s.id === id)?.frame;
+  }
+
+  /**
+   * Every shot over its frame on the workspace, in pixels of the screen: in every frame, and whenever they
+   * are drawn anew (`VideoShots` asks). The selected one is cut out of the veil around it and out of the
+   * other shots, so that it shows its part of the workspace as it is, with no other line in it
+   */
+  placeShots = (): void => {
+    const { selectedBlock } = this.workspace;
+    const selectedFrame =
+      selectedBlock?.lane === 'camera' ? this.shotFrame(selectedBlock.id) : undefined;
+    const selected = selectedFrame !== undefined ? this.onScreen(selectedFrame) : undefined;
+    for (const element of Array.from(this.layers.shots.children) as HTMLElement[]) {
+      if (element.classList.contains('workspace-shot-veil')) {
+        element.style.clipPath =
+          selected !== undefined
+            ? holeIn({ x: 0, y: 0, width: this.view.width, height: this.view.height }, selected)
+            : '';
+        continue;
+      }
+      const id = element.dataset.shotId;
+      const frame = this.shotFrame(id);
+      if (frame === undefined) {
+        continue;
+      }
+      const at = this.onScreen(frame);
+      element.style.transform = `translate(${at.x}px, ${at.y}px)`;
+      element.style.width = `${at.width}px`;
+      element.style.height = `${at.height}px`;
+      const isOther = selected !== undefined && id !== selectedBlock?.id;
+      element.style.clipPath = isOther
+        ? holeIn(
+            { x: 0, y: 0, width: at.width, height: at.height },
+            { ...selected, x: selected.x - at.x, y: selected.y - at.y },
+          )
+        : '';
+    }
+  };
+
+  /** Where a rectangle of the workspace is on the screen */
+  private onScreen(rect: Rect): Rect {
+    const corner = toScreen(this.camera, rect);
+    const { zoom } = this.camera;
+    return { x: corner.x, y: corner.y, width: rect.width * zoom, height: rect.height * zoom };
+  }
+
+  /**
+   * What a shot lines up with when it is moved or sized: the shot before it only, where the camera comes
+   * from (lining up with every photo near made it hard to place freely)
+   */
+  private shotOthers(id: string): Rect[] {
+    const { video } = this.workspace;
+    const before = video !== undefined ? shotBefore(video, id) : undefined;
+    return before !== undefined ? [before.frame] : [];
+  }
+
+  /** What is in view, on the workspace */
+  get visibleArea(): Rect {
+    return visibleRect(this.camera, this.view);
+  }
 
   /** 100%: one unit of the workspace is one pixel, around the middle of the view */
   zoomToActualSize = (): void => {
@@ -472,6 +615,9 @@ export class WorkspaceSurface {
   private handleWheel = (event: WheelEvent) => {
     // Also stops the browser from zooming the whole window on Ctrl + wheel
     event.preventDefault();
+    if (isOnOverlay(event)) {
+      return;
+    }
     // The wheel held down to pan turns a notch now and then while it is dragged: that is no scrolling,
     // and moved the workspace away from under the pointer
     if ((event.buttons & MIDDLE_BUTTON) !== 0) {
@@ -609,7 +755,11 @@ export class WorkspaceSurface {
   }
 
   private handlePointerDown = (event: PointerEvent) => {
-    if ((event.button !== 0 && event.button !== 1) || this.press !== undefined) {
+    if (
+      (event.button !== 0 && event.button !== 1) ||
+      this.press !== undefined ||
+      isOnOverlay(event)
+    ) {
       return;
     }
     event.preventDefault();
@@ -653,7 +803,19 @@ export class WorkspaceSurface {
     const id = target.closest<HTMLElement>('.workspace-object')?.dataset.id;
     const isAdditive = event.shiftKey || event.ctrlKey || event.metaKey;
 
-    if (event.button === 1 || this.isSpaceDown || workspace.isLocked) {
+    if (event.button === 1 || this.isSpaceDown) {
+      return { kind: 'pan' };
+    }
+    // The shot being edited: moved, or sized by its corner. Also on a locked workspace, whose lock is for
+    // its objects
+    const shotId = target.closest<HTMLElement>('.workspace-shot[data-editing="true"]')?.dataset
+      .shotId;
+    const shot = this.shotFrame(shotId);
+    if (shotId !== undefined && shot !== undefined) {
+      const kind = target.closest('.workspace-shot-handle') !== null ? 'shot-size' : 'shot-move';
+      return { kind, id: shotId, frame: shot, others: this.shotOthers(shotId) };
+    }
+    if (workspace.isLocked) {
       return { kind: 'pan' };
     }
     // Cropping: the frame's handles size it, a drag on the photo moves it under the frame, and a press
@@ -827,6 +989,31 @@ export class WorkspaceSurface {
         this.drawGuides(snapped.guides);
         break;
       }
+      case 'shot-move': {
+        const snapped = press.isAltDown
+          ? { dx: total.x, dy: total.y, guides: [] }
+          : snapMove(gesture.frame, gesture.others, total.x, total.y, threshold);
+        const { frame } = gesture;
+        this.shotDraft = {
+          id: gesture.id,
+          frame: { ...frame, x: frame.x + snapped.dx, y: frame.y + snapped.dy },
+        };
+        this.drawGuides(snapped.guides);
+        this.requestFrame();
+        break;
+      }
+      case 'shot-size': {
+        const { frame } = gesture;
+        const wanted = Math.max(MIN_SHOT_PIXELS / this.camera.zoom, frame.width + total.x);
+        const snapped = press.isAltDown
+          ? { width: wanted, guides: [] }
+          : snapSize(frame, gesture.others, wanted, threshold);
+        const height = (snapped.width * frame.height) / frame.width;
+        this.shotDraft = { id: gesture.id, frame: { ...frame, width: snapped.width, height } };
+        this.drawGuides(snapped.guides);
+        this.requestFrame();
+        break;
+      }
       case 'crop-frame': {
         const { cropping } = this.workspace;
         if (cropping !== undefined) {
@@ -986,6 +1173,18 @@ export class WorkspaceSurface {
       case 'scale':
         this.drawGuides([]);
         break;
+      case 'shot-move':
+      case 'shot-size': {
+        this.drawGuides([]);
+        const draft = this.shotDraft;
+        this.shotDraft = undefined;
+        // Only while the shot is as it was when pressed: not after it was taken off, or undone meanwhile
+        if (hasMoved && draft !== undefined && this.shotFrame(gesture.id) === gesture.frame) {
+          this.workspace.setShotFrame(gesture.id, draft.frame);
+        }
+        this.requestFrame();
+        break;
+      }
       case 'resize':
         this.drawGuides([]);
         if (hasMoved) {
@@ -1139,7 +1338,11 @@ export class WorkspaceSurface {
     this.events.onSettle(this.camera);
   };
 
-  private resize() {
+  /**
+   * Measures the view again. Its observer does that after the page has been laid out; what needs the new
+   * size in the same moment (the panel of video mode just opened) calls this
+   */
+  resize() {
     const { width, height } = this.viewport.getBoundingClientRect();
     this.view = { width: Math.max(1, width), height: Math.max(1, height) };
     this.requestFrame();
@@ -1177,6 +1380,7 @@ export class WorkspaceSurface {
     // What has to be as large on the screen at every zoom (the handles of a crop) is sized by this
     this.layers.crop.style.setProperty('--zoom', String(zoom));
     this.placeCropTools();
+    this.placeShots();
 
     // Whether an image gets an element is decided at steps of the zoom, not in every frame: while zooming,
     // the images that change from a tile to an element and back do so a few at a time instead of always
@@ -1484,6 +1688,32 @@ function cropSource(tile: ImageBitmap, item: WorkspaceImageItem): [number, numbe
     crop.width * tile.width,
     crop.height * tile.height,
   ];
+}
+
+/**
+ * Whether a press or a wheel is on something laid over the surface with controls of its own (the preview
+ * of a video): those are its own. The surface listens on the element they are in, before React does, and
+ * would otherwise take the pointer away from their buttons
+ */
+function isOnOverlay(event: Event): boolean {
+  return (event.target as Element | null)?.closest('[data-surface-overlay]') != null;
+}
+
+/**
+ * A clip path that keeps all of `box` (and what reaches out of it, such as a label) but for `hole`, both
+ * in the element's own pixels. What is kept is the box joined with the hole: with the even-odd rule a hole
+ * outside of it is drawn instead of cut, and a shot far larger than the screen (zoomed in on a small one)
+ * then showed its lines only inside the selected shot
+ */
+function holeIn(box: Rect, hole: Rect): string {
+  const reach = 64;
+  const left = Math.min(box.x, hole.x) - reach;
+  const top = Math.min(box.y, hole.y) - reach;
+  const right = Math.max(box.x + box.width, hole.x + hole.width) + reach;
+  const bottom = Math.max(box.y + box.height, hole.y + hole.height) + reach;
+  const path = ({ x, y, width, height }: Rect) => `M${x} ${y} h${width} v${height} h${-width} Z`;
+  const outer = { x: left, y: top, width: right - left, height: bottom - top };
+  return `path(evenodd, '${path(outer)} ${path(hole)}')`;
 }
 
 function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {

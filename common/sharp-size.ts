@@ -3,6 +3,12 @@ import { thumbnailMaxSize } from './config';
 /** The formats the browser can decode in a worker. Others keep being shown the way they were */
 export const SHARP_DECODABLE = new Set(['jpg', 'jpeg', 'jfif', 'png', 'webp', 'avif', 'bmp']);
 
+/** How many pixels across the thumbnail of an image has: a small image is its own thumbnail */
+export function thumbnailWidthOf(image: { width: number; height: number }): number {
+  const longest = Math.max(image.width, image.height);
+  return longest > 0 ? Math.round(image.width * Math.min(1, thumbnailMaxSize / longest)) : 0;
+}
+
 export interface SharpSize {
   /** In device pixels */
   width: number;

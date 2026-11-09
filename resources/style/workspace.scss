@@ -5,8 +5,17 @@
   position: absolute;
   inset: 0;
   display: flex;
+  flex-direction: column;
   // Solid: the Library underneath must not show through, also not while the layers panel slides in
   background: var(--background-color);
+}
+
+// The surface and its layers panel, over the video panel when that is open
+.workspace-row {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
 }
 
 .workspace {

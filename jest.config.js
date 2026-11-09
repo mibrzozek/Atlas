@@ -12,6 +12,8 @@ module.exports = {
   moduleNameMapper: {
     // Stylesheets that components import: first, before their path is mapped below
     '\\.s?css$': '<rootDir>/tests/setup/style.js',
+    // The image workers: started from a URL of the bundle (`import.meta`), which a test does not have
+    '/image/SharpImages$': '<rootDir>/tests/setup/sharp-images.js',
     '^(common|src|widgets|resources)/(.*)$': '<rootDir>/$1/$2',
   },
 };

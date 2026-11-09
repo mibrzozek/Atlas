@@ -1,0 +1,1063 @@
+// Video mode of a workspace (Workspace/Video*.tsx): the frame on the surface, the preview over it, and
+// the panel along the bottom
+
+// The shots of the camera on the workspace (VideoShots.tsx), in pixels of the screen: the surface places
+// them over their frames. Dotted, light with a dark edge so they show over any photo; the shot before the
+// selected one fuller than the rest. The selected one in the accent colour, everything around it blurred
+// and darkened by a veil with a hole where it is; the other shots lie over the veil (sharp), and show
+// nothing inside the selected one (the surface cuts the same hole out of them). Only the shot being
+// edited takes the pointer.
+.workspace-video-shots {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.workspace-shot-veil {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(3px);
+}
+
+.workspace-shot {
+  // The dots: as wide as `--dot`, one every `--dot-every`. A dotted border cannot be spaced, so they are
+  // drawn: a row of round dots along each edge
+  --dot: 0.125rem;
+  --dot-every: 0.5rem;
+  --dot-color: rgba(255, 255, 255, 0.75);
+  --dots: radial-gradient(circle, var(--dot-color) 48%, transparent 58%);
+
+  position: absolute;
+  top: 0;
+  left: 0;
+  box-sizing: border-box;
+
+  &::before {
+    content: '';
+    position: absolute;
+    inset: calc(var(--dot) / -2);
+    background: var(--dots) 0 0 / var(--dot-every) var(--dot) repeat-x,
+      var(--dots) 0 100% / var(--dot-every) var(--dot) repeat-x,
+      var(--dots) 0 0 / var(--dot) var(--dot-every) repeat-y,
+      var(--dots) 100% 0 / var(--dot) var(--dot-every) repeat-y;
+    // A dark rim, so the dots show over a light photo as well
+    filter: drop-shadow(0 0 0.0625rem rgba(0, 0, 0, 0.7));
+    pointer-events: none;
+  }
+
+  // The shot before the one selected: where the camera comes from
+  &[data-previous='true'] {
+    --dot: 0.1875rem;
+    --dot-color: #fff;
+  }
+
+  &[data-selected='true'] {
+    border: 0.125rem solid var(--accent-color);
+
+    &::before {
+      display: none;
+    }
+
+    .workspace-shot-label {
+      background: var(--accent-color);
+      color: #fff;
+    }
+  }
+
+  &[data-editing='true'] {
+    cursor: move;
+    pointer-events: auto;
+    touch-action: none;
+  }
+}
+
+// Above its top left: its name, small and quiet, and what can be done while it is edited
+.workspace-shot-label {
+  position: absolute;
+  left: -0.125rem;
+  bottom: 100%;
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  margin-bottom: 0.3125rem;
+  padding: 0.125rem 0.4375rem;
+  border-radius: 0.25rem;
+  background: rgba(20, 21, 24, 0.72);
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  pointer-events: none;
+
+  small {
+    font-weight: 400;
+    opacity: 0.8;
+  }
+}
+
+// The corner that sizes the shot being edited, as the frame around a selection has
+.workspace-shot-handle {
+  position: absolute;
+  right: -0.4375rem;
+  bottom: -0.4375rem;
+  width: 0.75rem;
+  height: 0.75rem;
+  box-sizing: border-box;
+  border: 0.125rem solid #fff;
+  border-radius: 0.1875rem;
+  background: var(--accent-color);
+  box-shadow: 0 0.0625rem 0.25rem rgba(0, 0, 0, 0.4);
+  cursor: nwse-resize;
+}
+
+// The preview: the video as it will be saved, over the workspace
+.workspace-video-preview {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  background: rgba(10, 11, 13, 0.92);
+  outline: none;
+  animation: workspace-video-in 0.2s ease-out;
+
+  // The ` key: over the whole window, the video as large as fits above the timeline
+  &[data-fullscreen='true'] {
+    position: fixed;
+    z-index: 1000;
+    background: #000;
+
+    // Where the video ends: its edges are lost on the black around it
+    canvas {
+      outline: 0.0625rem solid var(--text-color-muted);
+      outline-offset: 0.0625rem;
+    }
+  }
+
+  canvas {
+    display: block;
+    border-radius: 0.25rem;
+    box-shadow: 0 0.5rem 2rem rgba(0, 0, 0, 0.5);
+  }
+}
+
+// Where the video is drawn: all the room the timeline leaves
+.workspace-video-stage {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+
+  > .workspace-spinner {
+    position: absolute;
+  }
+}
+
+// Under the full-window video, never over it: the deck of controls on the left, the timeline of the panel
+// at half its height beside it (plan: docs/workspace-video-plan.md, "The full-window player")
+.workspace-video-playback {
+  display: flex;
+  flex: none;
+  align-items: stretch;
+  gap: 0.75rem;
+  padding: 0.375rem 0.75rem;
+  border-top: 0.0625rem solid var(--border-color);
+  background: var(--background-color-alt);
+  font-size: 0.8125rem;
+
+  .workspace-video-timeline {
+    flex: 1;
+    min-width: 0;
+    margin: 0;
+  }
+
+  // Only watched: a press anywhere moves the playhead
+  .workspace-video-track,
+  .workspace-video-block,
+  .workspace-video-edge {
+    cursor: pointer;
+  }
+}
+
+// A column of one width, whatever is in it, so the timeline never moves as options come: playing and the
+// time at the top left, then rows of small options (as many as the timeline is tall: two)
+.workspace-video-deck {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 0.375rem;
+  width: 11rem;
+}
+
+.workspace-video-transport {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+
+  .workspace-video-time {
+    min-width: 0;
+  }
+}
+
+.workspace-video-deck-options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem 0.75rem;
+
+  .workspace-video-snap {
+    font-size: 0.75rem;
+  }
+}
+
+// The timeline under the full-window video, everything in it at half the size
+.workspace-video-timeline[data-playback='true'] {
+  .workspace-video-lane-names {
+    width: 4.5rem;
+  }
+
+  .workspace-video-lane-name {
+    padding-left: 0.5rem;
+    font-size: 0.625rem;
+    font-weight: 500;
+  }
+
+  .workspace-video-ruler {
+    span {
+      bottom: 0.0625rem;
+      font-size: 0.5625rem;
+    }
+
+    i {
+      height: 0.25rem;
+    }
+  }
+
+  .workspace-video-block {
+    top: 0.0625rem;
+    bottom: 0.0625rem;
+    border-radius: 0.1875rem;
+  }
+
+  .workspace-video-motion {
+    bottom: auto;
+  }
+
+  .workspace-video-block-name {
+    padding: 0 0.25rem;
+    font-size: 0.5625rem;
+
+    small {
+      display: none;
+    }
+  }
+
+  .workspace-video-waveform {
+    inset: 0.0625rem 0;
+    height: calc(100% - 0.125rem);
+  }
+
+  .workspace-video-scroller::-webkit-scrollbar {
+    height: 0.25rem;
+  }
+
+  .workspace-video-playhead::before {
+    left: -0.1875rem;
+    border-width: 0.25rem;
+  }
+}
+
+@keyframes workspace-video-in {
+  from {
+    opacity: 0;
+  }
+}
+
+// Playing full window with the mouse at rest: the close button and the pointer go (the timeline stays)
+.workspace-video-preview[data-idle='true'] {
+  cursor: none;
+
+  .workspace-video-preview-close {
+    transition: opacity 0.4s ease;
+    opacity: 0;
+  }
+}
+
+.workspace-video-preview-close {
+  position: absolute;
+  top: 0.75rem;
+  right: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  padding: 0.375rem 0.625rem;
+  border: none;
+  border-radius: 0.375rem;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font: inherit;
+  font-size: 0.8125rem;
+  cursor: pointer;
+
+  .custom-icon {
+    width: 0.625rem;
+    height: 0.625rem;
+    margin: 0;
+  }
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+}
+
+// The panel along the bottom
+// It lies over the foot of the workspace, which keeps its size: made taller, it covers more of it rather
+// than making it smaller (and zooming it out)
+.workspace-video-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-top: 0.0625rem solid var(--border-color);
+  background: var(--background-color-alt);
+  box-shadow: 0 -0.5rem 1.5rem rgba(0, 0, 0, 0.25);
+  font-size: 0.8125rem;
+}
+
+// Its top edge, dragged to make it taller or lower
+.workspace-video-resizer {
+  position: absolute;
+  top: -0.25rem;
+  left: 0;
+  right: 0;
+  height: 0.5rem;
+  z-index: 1;
+  cursor: ns-resize;
+}
+
+// The top row: the tabs on the left, playing on the right
+.workspace-video-bar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0 0.75rem;
+  border-bottom: 0.0625rem solid var(--border-color);
+
+  .spacer {
+    flex: 1;
+  }
+}
+
+.workspace-video-play {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  // Square, its corners softened like the other buttons, in the colours of the theme: framed at rest, the
+  // accent colour filling it while it plays
+  width: 1.75rem;
+  height: 1.75rem;
+  padding: 0;
+  border: 0.0625rem solid var(--border-color);
+  border-radius: 0.3125rem;
+  background: var(--background-color);
+  color: var(--accent-color);
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+
+  .custom-icon {
+    width: 0.625rem;
+    height: 0.625rem;
+    margin: 0;
+  }
+
+  &:hover:not(:disabled) {
+    border-color: var(--accent-color);
+    background: var(--hover-color);
+  }
+
+  &[data-playing='true'] {
+    border-color: var(--accent-color);
+    background: var(--accent-color);
+    color: #fff;
+  }
+
+  &:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+}
+
+.workspace-video-time {
+  min-width: 6.5rem;
+  color: var(--text-color-strong);
+  font-variant-numeric: tabular-nums;
+
+  span {
+    color: var(--text-color-muted);
+  }
+}
+
+// The timeline: the names of the lanes on the left (with what adds to them), and the lanes beside them,
+// under a ruler (click or drag to see the video at that moment) on which the beats are marked
+.workspace-video-timeline {
+  display: flex;
+  flex: none;
+  min-height: 0;
+  margin: 0 0.75rem 0.375rem;
+  border: 0.0625rem solid var(--border-color);
+  border-radius: 0.375rem;
+  background: var(--background-color);
+  overflow: hidden;
+}
+
+.workspace-video-lane-names {
+  flex: none;
+  width: 7.5rem;
+  border-right: 0.0625rem solid var(--border-color);
+}
+
+.workspace-video-lane-name {
+  display: flex;
+  align-items: center;
+  gap: 0.125rem;
+  padding: 0 0.25rem 0 0.625rem;
+  border-top: 0.0625rem solid var(--border-color);
+  box-sizing: border-box;
+  color: var(--text-color-strong);
+  font-size: 0.75rem;
+  font-weight: 600;
+
+  > span {
+    flex: 1;
+  }
+
+  // The + buttons, and the toolbar button of the motion menu
+  button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.25rem;
+    height: 1.25rem;
+    min-width: 0;
+    padding: 0;
+    border: none;
+    border-radius: 0.25rem;
+    background: none;
+    color: var(--text-color-muted);
+    cursor: pointer;
+
+    .custom-icon {
+      width: 0.75rem;
+      height: 0.75rem;
+      margin: 0;
+    }
+
+    .btn-content-text {
+      display: none;
+    }
+
+    &:hover:not(:disabled) {
+      background: var(--hover-color);
+      color: var(--text-color-strong);
+    }
+
+    &:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+  }
+}
+
+// Its scroll bar always there, thin: one that came only when zoomed in made the timeline taller, and
+// pushed the bottom of the panel out of sight
+.workspace-video-scroller {
+  flex: 1;
+  min-width: 0;
+  overflow-x: scroll;
+  overflow-y: hidden;
+
+  &::-webkit-scrollbar {
+    height: 0.5rem;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    border-radius: 0.25rem;
+    background: var(--hover-color);
+  }
+
+  &:hover::-webkit-scrollbar-thumb {
+    background: var(--text-color-muted);
+  }
+}
+
+// As wide as the time it shows: a minute at first, wider as it is zoomed in
+.workspace-video-track {
+  position: relative;
+}
+
+.workspace-video-ruler {
+  position: relative;
+  // The last mark would otherwise reach past the end, and make the timeline scroll when it all fits
+  overflow: hidden;
+  cursor: col-resize;
+
+  span {
+    position: absolute;
+    bottom: 0.1875rem;
+    padding-left: 0.1875rem;
+    border-left: 0.0625rem solid var(--border-color);
+    color: var(--text-color-muted);
+    font-size: 0.625rem;
+    line-height: 1;
+    pointer-events: none;
+  }
+
+  // A beat of the music
+  i {
+    position: absolute;
+    bottom: 0;
+    width: 0.0625rem;
+    height: 0.375rem;
+    background: var(--accent-color);
+    opacity: 0.6;
+    pointer-events: none;
+  }
+}
+
+.workspace-video-lane {
+  position: relative;
+  border-top: 0.0625rem solid var(--border-color);
+  box-sizing: border-box;
+}
+
+.workspace-video-lane-hint {
+  position: absolute;
+  left: 0.5rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-color-muted);
+  font-size: 0.75rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+// A block on a lane: a camera stop, a layout, a motion, the music
+.workspace-video-block {
+  position: absolute;
+  top: 0.1875rem;
+  bottom: 0.1875rem;
+  min-width: 0.375rem;
+  box-sizing: border-box;
+  display: flex;
+  align-items: stretch;
+  border: 0.0625rem solid var(--border-color);
+  border-radius: 0.3125rem;
+  background: var(--background-color-alt);
+  cursor: pointer;
+  user-select: none;
+  touch-action: none;
+
+  &:hover {
+    border-color: var(--text-color-muted);
+  }
+
+  &[aria-current='true'] {
+    border-color: var(--accent-color);
+    box-shadow: inset 0 0 0 0.0625rem var(--accent-color);
+  }
+
+  &[data-dragged='true'] {
+    opacity: 0.5;
+  }
+}
+
+// Motions coloured by what they do: coming in, while seen, going out
+.workspace-video-motion {
+  bottom: auto;
+
+  // (color-mix() is newer than this Chromium: a see-through tint over the block's colour instead)
+  &[data-group='enter'] {
+    background: linear-gradient(rgba(70, 140, 255, 0.2), rgba(70, 140, 255, 0.2)),
+      var(--background-color-alt);
+  }
+
+  &[data-group='exit'] {
+    background: linear-gradient(rgba(224, 160, 48, 0.2), rgba(224, 160, 48, 0.2)),
+      var(--background-color-alt);
+  }
+}
+
+.workspace-video-music {
+  overflow: hidden;
+  background: linear-gradient(rgba(63, 185, 80, 0.12), rgba(63, 185, 80, 0.12)),
+    var(--background-color-alt);
+}
+
+.workspace-video-waveform {
+  position: absolute;
+  inset: 0.25rem 0;
+  width: 100%;
+  height: calc(100% - 0.5rem);
+  color: rgba(63, 185, 80, 0.55);
+  pointer-events: none;
+}
+
+// The part of a block that is a move into it: striped
+.workspace-video-move {
+  flex: none;
+  height: 100%;
+  border-radius: 0.25rem 0 0 0.25rem;
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--hover-color),
+    var(--hover-color) 0.25rem,
+    transparent 0.25rem,
+    transparent 0.5rem
+  );
+}
+
+// Its name and what it does on one line, to fit the thin lanes
+.workspace-video-block-name {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+  min-width: 0;
+  padding: 0 0.375rem;
+  overflow: hidden;
+  color: var(--text-color-strong);
+  white-space: nowrap;
+  font-size: 0.6875rem;
+  line-height: 1;
+
+  small {
+    color: var(--text-color-muted);
+    font-size: 0.625rem;
+  }
+}
+
+// Where a dragged block would go
+.workspace-video-drop {
+  position: absolute;
+  width: 0.1875rem;
+  margin-left: -0.09375rem;
+  border-radius: 0.125rem;
+  background: var(--accent-color);
+  pointer-events: none;
+}
+
+// The edges of a block: dragged, it lasts longer or shorter
+.workspace-video-edge {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0.5rem;
+  z-index: 1;
+  cursor: ew-resize;
+
+  &[data-side='start'] {
+    left: -0.25rem;
+  }
+
+  &[data-side='end'] {
+    right: -0.25rem;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    top: 25%;
+    bottom: 25%;
+    left: calc(50% - 0.0625rem);
+    width: 0.125rem;
+    border-radius: 0.0625rem;
+    background: var(--text-color-muted);
+    opacity: 0;
+    transition: opacity 0.15s ease;
+  }
+
+  &:hover::after {
+    opacity: 1;
+  }
+}
+
+.workspace-video-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 0.125rem;
+  margin-left: -0.0625rem;
+  background: var(--accent-color);
+  pointer-events: none;
+  z-index: 2;
+
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -0.25rem;
+    border: 0.3125rem solid transparent;
+    border-top-color: var(--accent-color);
+  }
+}
+
+// The end of the video: a line down the lanes from a triangle pointing down on the ruler, and what comes
+// after it dimmed, as it is not saved. Only the triangle takes the pointer
+.workspace-video-end {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 0;
+  border-left: 0.0625rem solid var(--end-color);
+  background: rgba(0, 0, 0, 0.18);
+  pointer-events: none;
+  z-index: 3;
+  --end-color: #ff6b5e;
+}
+
+.workspace-video-end-handle {
+  position: absolute;
+  top: 0;
+  left: -0.4375rem;
+  width: 0.8125rem;
+  height: 0.6875rem;
+  background: var(--end-color);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+  cursor: ew-resize;
+  pointer-events: auto;
+  touch-action: none;
+
+  .workspace-video-timeline[data-playback='true'] & {
+    left: -0.3125rem;
+    width: 0.5625rem;
+    height: 0.5rem;
+    cursor: pointer;
+  }
+}
+
+.workspace-video-tempo,
+.workspace-video-snap {
+  display: flex;
+  align-items: center;
+  gap: 0.3125rem;
+  color: var(--text-color-muted);
+  font-size: 0.75rem;
+}
+
+.workspace-video-tempo {
+  padding: 0.125rem 0.5rem;
+  border-radius: 1rem;
+  background: var(--hover-color);
+}
+
+// A row of choices, one pressed
+// Joined buttons, the chosen one filled. The global [role='radiogroup'] rule (controls/radio.scss) puts a
+// gap between them, which showed the panel through: undone here
+.workspace-video-choices {
+  display: inline-flex;
+  flex: none;
+  gap: 0;
+  height: var(--control-height, 1.75rem);
+  border: 0.0625rem solid var(--border-color);
+  border-radius: 0.3125rem;
+  overflow: hidden;
+
+  button {
+    flex: none;
+    margin: 0;
+    padding: 0 0.625rem;
+    border-radius: 0;
+    white-space: nowrap;
+    border: none;
+    background: none;
+    color: var(--text-color);
+    font: inherit;
+    font-size: 0.75rem;
+    cursor: pointer;
+
+    & + button {
+      border-left: 0.0625rem solid var(--border-color);
+    }
+
+    &:hover {
+      background: var(--hover-color);
+    }
+
+    &[aria-checked='true'] {
+      background: var(--accent-color);
+      color: #fff;
+    }
+  }
+}
+
+.workspace-video-song {
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+// The tabs under the timeline. The settings window's [role='tab'] rules are global: undone here
+.workspace-video-tabs {
+  display: flex;
+  flex: none;
+  flex-direction: row;
+  gap: 0.25rem;
+  align-self: stretch;
+  height: auto;
+  // After playing and the time, apart from them by a line
+  margin: 0 0 0 0.25rem;
+  padding: 0 0 0 0.5rem;
+  border: none;
+  border-left: 0.0625rem solid var(--border-color);
+  background: none;
+
+  [role='tab'] {
+    position: relative;
+    width: auto;
+    padding: 0.5rem 0.625rem;
+    border: none;
+    background: none;
+    color: var(--text-color-muted);
+    font: inherit;
+    cursor: pointer;
+
+    &[aria-selected='true'] {
+      color: var(--text-color-strong);
+      font-weight: 600;
+
+      &::after {
+        content: '';
+        position: absolute;
+        left: 0.625rem;
+        right: 0.625rem;
+        bottom: -0.0625rem;
+        height: 0.125rem;
+        border-radius: 0.125rem 0.125rem 0 0;
+        background: var(--accent-color);
+      }
+    }
+  }
+}
+
+// The settings of the tab: at least two rows tall, whichever tab is open, so the panel does not change
+// size when switching. A tab that needs more (a narrow window, a large zoom) grows, and the panel with it
+.workspace-video-tab {
+  flex: none;
+  // Two rows of controls, the gap between them, and the padding
+  min-height: calc(2 * 1.75rem + 0.375rem + 1rem);
+  box-sizing: border-box;
+  padding: 0.5rem 0.75rem;
+}
+
+// Every tab the same: rows of fields, each a small label beside a control of one height. Every kind of
+// control has a width of its own in rem, so the rows look the same at every zoom of the app; a row wraps
+// only where there is no room for a whole field, never inside one. Buttons go to the right end of a row
+.workspace-video-settings {
+  --control-height: 1.75rem;
+
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+
+.workspace-video-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 1.25rem;
+  min-height: var(--control-height);
+
+  // The buttons of a row at its right end, together: when the row wraps they go to the next line as one
+  > .workspace-video-actions {
+    display: flex;
+    flex: none;
+    gap: 0.5rem;
+    margin-left: auto;
+
+    // As tall as the other controls: the app's buttons are at least 2rem (controls/button.scss), which made
+    // the rows with buttons taller than the others, and the panel's content jump between tabs
+    > button {
+      box-sizing: border-box;
+      height: var(--control-height);
+      min-height: 0;
+      white-space: nowrap;
+    }
+  }
+
+  // The label beside its control
+  > label {
+    display: flex;
+    flex: none;
+    align-items: center;
+    gap: 0.5rem;
+
+    > span:first-child {
+      flex: none;
+      color: var(--text-color-muted);
+      font-size: 0.6875rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      white-space: nowrap;
+    }
+
+    // A value shown, not changed (the song, its tempo)
+    > strong {
+      display: flex;
+      align-items: center;
+      height: var(--control-height);
+      color: var(--text-color-strong);
+      font-size: 0.8125rem;
+      white-space: nowrap;
+    }
+  }
+
+  // The first labels of the rows under one another
+  > label:first-child > span:first-child {
+    min-width: 5.5rem;
+  }
+
+  select,
+  input[type='number'],
+  input[type='color'],
+  .workspace-dialog-input,
+  .workspace-video-choices {
+    height: var(--control-height);
+    box-sizing: border-box;
+  }
+
+  select {
+    width: 9rem;
+
+    &.wide {
+      width: 15rem;
+    }
+  }
+
+  input[type='number'] {
+    width: 4.75rem;
+  }
+
+  .workspace-dialog-input {
+    width: 15rem;
+  }
+
+  // A colour: a swatch in a frame like the other controls
+  input[type='color'] {
+    width: 2.75rem;
+    padding: 0.1875rem;
+    border: 0.0625rem solid var(--border-color);
+    border-radius: 0.3125rem;
+    background: var(--input-color, var(--background-color));
+    cursor: pointer;
+    -webkit-appearance: none;
+
+    &::-webkit-color-swatch-wrapper {
+      padding: 0;
+    }
+
+    &::-webkit-color-swatch {
+      border: none;
+      border-radius: 0.1875rem;
+    }
+
+    &:hover {
+      border-color: var(--text-color-muted);
+    }
+  }
+
+  // A slider with its value after it, in a width of its own so that the value never moves the row
+  input[type='range'] {
+    width: 7rem;
+    height: var(--control-height);
+    margin: 0;
+  }
+
+  output {
+    min-width: 2.5rem;
+    color: var(--text-color);
+    font-size: 0.75rem;
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+// A width and a height side by side
+.workspace-video-size {
+  display: flex;
+  align-items: center;
+  gap: 0.375rem;
+
+  > span {
+    color: var(--text-color-muted);
+  }
+}
+
+// The time of the end marker, and the button that puts it back on the end of the camera. Its place is kept
+// while it is hidden, so the row does not move when it comes
+.workspace-video-end-field {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+
+  button[hidden] {
+    display: flex;
+    visibility: hidden;
+  }
+
+  button {
+    flex: none;
+    width: var(--control-height);
+    height: var(--control-height);
+    min-width: 0;
+    padding: 0;
+
+    .custom-icon {
+      width: 0.75rem;
+      height: 0.75rem;
+      margin: 0;
+    }
+  }
+}
+
+.workspace-video-hint {
+  margin: 0;
+  color: var(--text-color-muted);
+  font-size: 0.75rem;
+}
+
+// The Selected tab with nothing selected: what to do, in the middle
+.workspace-video-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.25rem;
+  height: 100%;
+  color: var(--text-color-muted);
+  font-size: 0.75rem;
+  text-align: center;
+
+  strong {
+    color: var(--text-color);
+    font-size: 0.8125rem;
+  }
+
+  // One line, so the tab is as tall as the others at every zoom
+  span {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}

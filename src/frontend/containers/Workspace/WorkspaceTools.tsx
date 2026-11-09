@@ -294,6 +294,17 @@ const WorkspaceTools = observer(() => {
         <SavePictureDialog workspace={workspace} onClose={() => setIsSaving(false)} />
       )}
       <ToolbarButton
+        icon={IconSet.VIDEO}
+        text="Video"
+        tooltip={
+          uiStore.isWorkspaceVideoMode
+            ? 'Leave video mode (the video stays)'
+            : 'Video mode: a frame on the workspace, shots and a timeline'
+        }
+        onClick={uiStore.toggleWorkspaceVideoMode}
+        pressed={uiStore.isWorkspaceVideoMode}
+      />
+      <ToolbarButton
         icon={IconSet.LAYERS}
         text="Layers"
         tooltip={uiStore.isWorkspaceLayersOpen ? 'Fold the layers away' : 'Show the layers'}
