@@ -9,17 +9,21 @@ import { useStore } from '../../contexts/StoreContext';
 import { SortCommand, ViewCommand } from './Menus';
 import Searchbar from './Searchbar';
 
+/** The side panel shown or hidden: always the first button of the top bar */
 export const OutlinerToggle = observer(() => {
   const { uiStore } = useStore();
 
   return (
     <ToolbarButton
       id="outliner-toggle"
-      text="Toggle Outliner"
-      icon={uiStore.isOutlinerOpen ? IconSet.DOUBLE_CARET : IconSet.MENU_HAMBURGER}
+      text="Side panel"
+      icon={IconSet.MENU_HAMBURGER}
       controls="outliner"
       pressed={uiStore.isOutlinerOpen}
       onClick={uiStore.toggleOutliner}
+      tooltip={`Show or hide the side panel (${keyComboToString(
+        uiStore.hotkeyMap.toggleOutliner,
+      )})`}
       tabIndex={0}
     />
   );
@@ -30,7 +34,6 @@ const PrimaryCommands = observer(() => {
 
   return (
     <>
-      <OutlinerToggle />
       <FileSelectionCommand />
       <TagOverlayToggle />
 

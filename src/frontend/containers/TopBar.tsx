@@ -23,15 +23,13 @@ const TopBar = observer(() => {
     // Its own layer for right-click menus (of the workspace tabs): the one in Main does not reach up here
     <ContextMenuLayer>
       <Toolbar id="top-bar" label="Navigation" controls="layout-container" isCompact>
-        {/* The button for the side panel is in the bar that is hidden */}
-        {isBarHidden && <OutlinerToggle />}
+        <OutlinerToggle />
         <ToolbarButton
           icon={IconSet.HOME}
           text="Home"
           tooltip="Go to your home gallery"
           onClick={uiStore.viewHomeGallery}
           pressed={uiStore.isHomeGallery}
-          tabIndex={0}
         />
         <ToolbarButton
           icon={IconSet.ADD_BOLD}
