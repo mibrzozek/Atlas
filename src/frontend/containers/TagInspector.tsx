@@ -16,6 +16,7 @@ import { FileDTO } from '../../api/file';
 import PopupWindow from '../components/PopupWindow';
 import { useStore } from '../contexts/StoreContext';
 import { ClientTag } from '../entities/Tag';
+import { galleryRect } from './ContentView/utils';
 
 /** The height of a row in the list of images, in pixels: the list draws only the rows in sight */
 const IMAGE_ROW_HEIGHT = 48;
@@ -70,7 +71,7 @@ function windowOnScreen(win: Window): ScreenRect {
  * app, from the top left of the page inside the window's frame
  */
 function galleryOnScreen(): ScreenRect {
-  const gallery = document.getElementById('gallery-content')?.getBoundingClientRect();
+  const gallery = galleryRect();
   const zoom = webFrame.getZoomFactor();
   const border = (window.outerWidth - window.innerWidth * zoom) / 2;
   const pageTop = window.screenY + (window.outerHeight - window.innerHeight * zoom) - border;
