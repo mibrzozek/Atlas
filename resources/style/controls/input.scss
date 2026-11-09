@@ -54,6 +54,43 @@
   }
 }
 
+// A slider in the theme's colours: Chromium's own ignores them (and styles none of its parts without this)
+input[type='range'] {
+  -webkit-appearance: none;
+  height: 1rem;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+
+  &::-webkit-slider-runnable-track {
+    height: 0.25rem;
+    border-radius: 0.125rem;
+    background: var(--text-color-muted);
+  }
+
+  &::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 0.875rem;
+    height: 0.875rem;
+    margin-top: -0.3125rem; // centred on the track
+    border: none;
+    border-radius: 50%;
+    background: var(--accent-color);
+  }
+
+  &:hover::-webkit-slider-thumb {
+    filter: brightness(1.15);
+  }
+
+  &:focus {
+    outline: none;
+  }
+
+  &:focus-visible::-webkit-slider-thumb {
+    box-shadow: 0 0 0 0.125rem var(--text-color-strong);
+  }
+}
+
 /** We cannot use <input type="file" /> as we want to pick directories. However,
       I am too lazy to create an additional React component + SASS file. This
       seems even more overkill than having a Toggle component. At least there is
