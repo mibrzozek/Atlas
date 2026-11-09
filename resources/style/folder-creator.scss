@@ -52,41 +52,18 @@
     }
   }
 
-  // The folders already in here: one per line
+  // The folders, as a tree like the side panel's: a caret opens a folder, a click on a name selects it
   .folder-creator-list {
-    margin: 0;
-    padding: 0.25em 0;
-    list-style: none;
     height: min(13em, 28vh);
+    padding: 0.25em 0;
     overflow: hidden auto;
     border: 0.0625rem solid var(--border-color);
     border-radius: 0.25rem;
     background: var(--background-color-alt);
 
-    li {
-      display: block;
-    }
-
-    button {
-      display: flex;
-      align-items: center;
+    .tree-content-label {
       gap: 0.5em;
-      width: 100%;
-      min-height: 1.75em;
-      padding: 0 0.75em;
-      border: none;
-      border-radius: 0;
-      background: none;
-      color: inherit;
-      font: inherit;
-      text-align: left;
       cursor: pointer;
-
-      &:hover,
-      &:focus-visible {
-        background: var(--hover-color);
-        color: var(--text-color-strong);
-      }
 
       .custom-icon {
         flex: none;
@@ -94,18 +71,13 @@
       }
 
       span {
+        display: block;
         flex: 1;
         min-width: 0;
         overflow: hidden;
-        white-space: nowrap;
         text-overflow: ellipsis;
       }
     }
-  }
-
-  .folder-creator-empty {
-    padding: 0.25em 0.75em;
-    color: var(--text-color-muted);
   }
 
   // A two-way switch: a track with a thumb that slides under the chosen option

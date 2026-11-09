@@ -1,4 +1,5 @@
 import { shell } from 'electron';
+import { opendir } from 'fs/promises';
 import fse from 'fs-extra';
 import { runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
@@ -15,7 +16,6 @@ import {
   dateFolderNames,
   detectFolderSeries,
   formatFolderDate,
-  folderSeriesName,
   folderSeriesNames,
   invalidFolderNameReason,
 } from 'common/folder-series';
@@ -23,9 +23,11 @@ import { createFolders } from 'common/folder-create';
 import { RendererMessenger } from 'src/ipc/renderer';
 import { Button, IconSet } from 'widgets';
 import { Dialog } from 'widgets/popovers';
+import Tree, { ITreeItem, createBranchOnKeyDown, createLeafOnKeyDown } from 'widgets/tree';
 import { useStore } from '../contexts/StoreContext';
 import { ClientStringSearchCriteria } from '../entities/SearchCriteria';
 import RootStore from '../stores/RootStore';
+import { galleryCorner } from './ContentView/utils';
 
 const LAST_DIRECTORY_STORAGE_KEY = 'folder-creator-directory';
 
@@ -33,8 +35,6 @@ const naturalOrder = new Intl.Collator(undefined, { numeric: true, sensitivity: 
 
 interface Listing {
   directory: string;
-  /** Names of the folders in the directory */
-  folders: string[];
   /** Lower-cased names of everything in the directory, files included: none of them can be used */
   taken: Set<string>;
   series: FolderSeries | undefined;
@@ -52,9 +52,101 @@ async function listDirectory(directory: string): Promise<Listing> {
     .sort(naturalOrder.compare);
   return {
     directory,
-    folders,
     taken: new Set(entries.map((entry) => entry.name.toLowerCase())),
     series: detectFolderSeries(folders),
+  };
+}
+
+/** A folder in the tree: whether it holds folders of its own decides whether it gets a caret */
+interface FolderNode {
+  path: string;
+  name: string;
+  hasFolders: boolean;
+}
+
+/** Whether a folder holds another folder: names only, read until the first folder is found */
+async function hasSubfolder(path: string): Promise<boolean> {
+  try {
+    // Leaving the loop early closes the folder again
+    for await (const entry of await opendir(path)) {
+      if (entry.isDirectory()) {
+        return true;
+      }
+    }
+  } catch {
+    // A folder that cannot be read has nothing to open
+  }
+  return false;
+}
+
+/** The folders in a folder, in natural order. Only names are read, nothing is changed */
+async function subfoldersOf(path: string): Promise<FolderNode[]> {
+  const entries = await fse.readdir(path, { withFileTypes: true });
+  const names = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => entry.name)
+    .sort(naturalOrder.compare);
+  return Promise.all(
+    names.map(async (name) => {
+      const child = SysPath.join(path, name);
+      return { path: child, name, hasFolders: await hasSubfolder(child) };
+    }),
+  );
+}
+
+interface FolderTreeData {
+  /** Where the new folders go */
+  selected: string | undefined;
+  expanded: ReadonlySet<string>;
+  select: (path: string) => void;
+  toggle: (path: string) => void;
+}
+
+const isFolderExpanded = (node: FolderNode, tree: FolderTreeData) => tree.expanded.has(node.path);
+const isFolderSelected = (node: FolderNode, tree: FolderTreeData) => node.path === tree.selected;
+const toggleFolder = (node: FolderNode, tree: FolderTreeData) => tree.toggle(node.path);
+const selectFolder = (node: FolderNode, tree: FolderTreeData) => tree.select(node.path);
+
+const FolderLabel = ({
+  nodeData,
+  treeData,
+}: {
+  nodeData: FolderNode;
+  treeData: FolderTreeData;
+}) => (
+  <div
+    className="tree-content-label"
+    data-tooltip="Create the new folders in here"
+    onClick={() => treeData.select(nodeData.path)}
+  >
+    {IconSet.FOLDER_CLOSE}
+    <span>{nodeData.name}</span>
+  </div>
+);
+
+/** A folder and, once it was opened, the folders in it; until they are read, a row that says so */
+function folderItem(node: FolderNode, read: ReadonlyMap<string, FolderNode[]>): ITreeItem {
+  const subfolders = read.get(node.path);
+  return {
+    id: node.path,
+    label: FolderLabel,
+    nodeData: node,
+    isExpanded: isFolderExpanded,
+    isSelected: isFolderSelected,
+    children:
+      subfolders !== undefined
+        ? subfolders.map((subfolder) => folderItem(subfolder, read))
+        : node.hasFolders
+        ? [
+            {
+              id: node.path + SysPath.sep,
+              label: 'Loading…',
+              nodeData: node,
+              isExpanded: () => false,
+              children: [],
+            },
+          ]
+        : [],
   };
 }
 
@@ -156,8 +248,14 @@ const FolderCreatorForm = observer(() => {
   const { uiStore, locationStore } = rootStore;
 
   const [listing, setListing] = useState<Listing>();
-  const [directory, setDirectory] = useState<string | undefined>(() => initialDirectory(rootStore));
+  // The folder the tree starts from (a source, or one browsed to), and the one selected in it: where
+  // the new folders go, and whose folders the suggested pattern continues
+  const [root, setRoot] = useState<string | undefined>(() => initialDirectory(rootStore));
+  const [directory, setDirectory] = useState<string | undefined>(root);
   const [readError, setReadError] = useState<string>();
+  // The folders of every folder opened in the tree so far, and which are open
+  const [read, setRead] = useState<ReadonlyMap<string, FolderNode[]>>(new Map());
+  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
 
   const [prefix, setPrefix] = useState('');
   const [suffix, setSuffix] = useState('');
@@ -217,10 +315,53 @@ const FolderCreatorForm = observer(() => {
     }
   }, [directory, load]);
 
+  /** Reads the folders of a folder in the tree (again) */
+  const readFolders = useCallback((dir: string) => {
+    subfoldersOf(dir)
+      .catch(() => [])
+      .then((subfolders) => setRead((before) => new Map(before).set(dir, subfolders)));
+  }, []);
+
+  // A new folder to start from: the tree begins there, opened
+  useEffect(() => {
+    if (root !== undefined) {
+      setRead(new Map());
+      setExpanded(new Set([root]));
+      readFolders(root);
+    }
+  }, [root, readFolders]);
+
+  /** Starts the tree from a folder, which is also selected */
   const open = useCallback((dir: string) => {
     setResult(undefined);
+    setRoot(dir);
     setDirectory(dir);
   }, []);
+
+  const treeData = useMemo(
+    (): FolderTreeData => ({
+      selected: directory,
+      expanded,
+      select: (path) => {
+        setResult(undefined);
+        setDirectory(path);
+      },
+      toggle: (path) => {
+        const isOpening = !expanded.has(path);
+        const now = new Set(expanded);
+        if (isOpening) {
+          now.add(path);
+          if (!read.has(path)) {
+            readFolders(path);
+          }
+        } else {
+          now.delete(path);
+        }
+        setExpanded(now);
+      },
+    }),
+    [directory, expanded, read, readFolders],
+  );
 
   const browse = useCallback(async () => {
     try {
@@ -238,6 +379,17 @@ const FolderCreatorForm = observer(() => {
 
   const parent = directory !== undefined ? SysPath.dirname(directory) : undefined;
   const hasParent = parent !== undefined && parent !== directory;
+
+  // The first row of the tree: the folder it starts from, by the name of its source if it is one
+  const rootNode = useMemo((): FolderNode | undefined => {
+    if (root === undefined) {
+      return undefined;
+    }
+    const source = runInAction(() =>
+      locationStore.locationList.find((location) => location.path === root),
+    );
+    return { path: root, name: source?.name ?? (SysPath.basename(root) || root), hasFolders: true };
+  }, [root, locationStore]);
 
   // What would be created
   const startNumber = parseWholeNumber(start);
@@ -330,6 +482,13 @@ const FolderCreatorForm = observer(() => {
     await load(dir);
     countInput.current?.focus();
     if (created.length > 0) {
+      // The new folders in the tree: under the folder, opened, and its caret if it had none
+      readFolders(dir);
+      setExpanded((before) => new Set(before).add(dir));
+      const parentDir = SysPath.dirname(dir);
+      if (read.has(parentDir)) {
+        readFolders(parentDir);
+      }
       const location = runInAction(() =>
         locationStore.locationList.find(
           (loc) => dir === loc.path || dir.startsWith(loc.path + SysPath.sep),
@@ -338,7 +497,7 @@ const FolderCreatorForm = observer(() => {
       location?.refreshSublocations().catch(console.error);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canCreate, listing, load, locationStore, names, mode, dateStart, dateSettings.step]);
+  }, [canCreate, listing, load, locationStore, names, mode, dateStart, dateSettings.step, read]);
 
   const { series } = listing ?? {};
   const seriesHint =
@@ -348,12 +507,7 @@ const FolderCreatorForm = observer(() => {
       ? 'No numbered folders here yet: choose a prefix or suffix to start a series.'
       : `Continues the ${series.size} numbered folder${
           series.size === 1 ? '' : 's'
-        } here: the last one is ${folderSeriesName(
-          series.prefix,
-          series.next - 1,
-          series.digits,
-          series.suffix,
-        )}.`;
+        } here: the last one is ${series.last}.`;
 
   // 1, 2, 3 up to 000001, and whatever longer style the folders here already use
   const numberStyles = [1, 2, 3, 4, 5, 6];
@@ -421,7 +575,7 @@ const FolderCreatorForm = observer(() => {
               key={location.id}
               type="button"
               className="btn-minimal"
-              aria-pressed={location.path === directory}
+              aria-pressed={location.path === root}
               onClick={() => open(location.path)}
             >
               {location.name}
@@ -433,23 +587,20 @@ const FolderCreatorForm = observer(() => {
       {readError !== undefined ? (
         <p className="folder-creator-error">{readError}</p>
       ) : (
-        <ul className="folder-creator-list" aria-label="Folders in this folder">
-          {listing?.folders.map((name) => (
-            <li key={name}>
-              <button
-                type="button"
-                data-tooltip="Open this folder"
-                onClick={() => open(SysPath.join(listing.directory, name))}
-              >
-                {IconSet.FOLDER_CLOSE}
-                <span>{name}</span>
-              </button>
-            </li>
-          ))}
-          {listing !== undefined && listing.folders.length === 0 && (
-            <li className="folder-creator-empty">No folders in here yet</li>
-          )}
-        </ul>
+        rootNode !== undefined && (
+          <Tree
+            className="folder-creator-list"
+            children={[folderItem(rootNode, read)]}
+            treeData={treeData}
+            toggleExpansion={toggleFolder}
+            onBranchKeyDown={(event, node, tree) =>
+              createBranchOnKeyDown(event, node, tree, isFolderExpanded, selectFolder, toggleFolder)
+            }
+            onLeafKeyDown={(event, node, tree) =>
+              createLeafOnKeyDown(event, node, tree, selectFolder)
+            }
+          />
+        )
       )}
 
       <div
@@ -668,6 +819,7 @@ const FolderCreator = observer(() => {
       icon={IconSet.ADD_BOLD}
       onCancel={uiStore.closeFolderCreator}
       isMovable
+      placeAt={galleryCorner}
     >
       {/* Mounted only while open, so it starts from the folder being looked at every time */}
       {uiStore.isFolderCreatorOpen && <FolderCreatorForm />}

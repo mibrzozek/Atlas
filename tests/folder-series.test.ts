@@ -15,6 +15,37 @@ describe('detectFolderSeries', () => {
       next: 5,
       digits: 0,
       size: 4,
+      last: 'S4',
+    });
+  });
+
+  it('continues folders numbered in front of titles that all differ', () => {
+    const series = detectFolderSeries([
+      '001 Beach',
+      '002 Park',
+      '006 Games',
+      '006 Wallpapers',
+      '016 05012023 Release',
+      '016 05012024 Release',
+      '017 Pier',
+      '126 Harbour',
+    ]);
+    // Not the pair that only shares "016 … Release": the number in front, after the highest
+    expect(series).toMatchObject({
+      prefix: '',
+      suffix: '',
+      next: 127,
+      digits: 3,
+      last: '126 Harbour',
+    });
+    expect(folderSeriesNames(series!.prefix, series!.next, series!.digits, '', 1)).toEqual(['127']);
+  });
+
+  it('keeps a series with the same text around the number before one of leading numbers', () => {
+    // As many folders follow "2024 Roll n" as "2024 + any title": the exact pattern wins
+    expect(detectFolderSeries(['2024 Roll 1', '2024 Roll 2', '2024 Roll 3'])).toMatchObject({
+      prefix: '2024 Roll ',
+      next: 4,
     });
   });
 

@@ -12,45 +12,75 @@ export interface FolderSeries {
   digits: number;
   /** How many of the given names belong to the series */
   size: number;
+  /** The name of the folder with the highest number */
+  last: string;
 }
 
 export const MAX_FOLDERS_PER_BATCH = 500;
 
-// The last run of digits is the counter: "2024 Roll 3" continues as "2024 Roll 4"
+// The last run of digits is the counter, the text around it the same: "2024 Roll 3" continues as
+// "2024 Roll 4"
 const NUMBERED_NAME = /^(.*?)(\d+)(\D*)$/;
+// Or the first run of digits, followed by a title of any kind: "126 Harbour" continues as "127"
+const LEADING_NUMBER = /^(\D*?)(\d+)(.*)$/;
 
 /**
  * Finds the numbering pattern most of the given folder names follow, if any.
- * With S1, S2, S3, S4 this returns the prefix "S" and 5 as the next number.
+ * With S1, S2, S3, S4 this returns the prefix "S" and 5 as the next number. Folders numbered in front of
+ * titles that all differ (001 Beach, 002 Park, ...) are a series too, continued with the number alone;
+ * it is taken only when more folders follow it than follow one with the same text around the number,
+ * so a stray pair like "016 05012023 Release" and "016 05012024 Release" does not lead the way.
  */
 export function detectFolderSeries(names: readonly string[]): FolderSeries | undefined {
-  const groups = new Map<string, FolderSeries>();
+  const exact = new Map<string, FolderSeries>();
+  const titled = new Map<string, FolderSeries>();
   for (const name of names) {
-    const match = NUMBERED_NAME.exec(name);
-    // More than 15 digits cannot be counted exactly; such names are IDs rather than counters anyway
-    if (!match || match[2].length > 15) {
-      continue;
-    }
-    const [, prefix, number, suffix] = match;
-    const value = parseInt(number, 10);
-    const digits = number.length > 1 && number.startsWith('0') ? number.length : 0;
-    // Folder names only differing in case are the same series on Windows and macOS
-    const key = `${prefix}\u0000${suffix}`.toLowerCase();
-    const group = groups.get(key);
-    if (!group) {
-      groups.set(key, { prefix, suffix, next: value + 1, digits, size: 1 });
-    } else {
-      group.size += 1;
-      group.digits = Math.max(group.digits, digits);
-      if (value + 1 > group.next) {
-        group.next = value + 1;
-        // Take the spelling of the latest folder
-        group.prefix = prefix;
-        group.suffix = suffix;
-      }
+    countIn(exact, name, NUMBERED_NAME, true);
+    countIn(titled, name, LEADING_NUMBER, false);
+  }
+  const bestExact = largest(exact);
+  const bestTitled = largest(titled);
+  return bestTitled !== undefined && (bestExact === undefined || bestTitled.size > bestExact.size)
+    ? bestTitled
+    : bestExact;
+}
+
+/** Counts a name into the series it belongs to by `pattern`: the text before the counter, and after it */
+function countIn(
+  groups: Map<string, FolderSeries>,
+  name: string,
+  pattern: RegExp,
+  isSuffixFixed: boolean,
+) {
+  const match = pattern.exec(name);
+  // More than 15 digits cannot be counted exactly; such names are IDs rather than counters anyway
+  if (!match || match[2].length > 15) {
+    return;
+  }
+  const [, prefix, number, rest] = match;
+  const suffix = isSuffixFixed ? rest : '';
+  const value = parseInt(number, 10);
+  const digits = number.length > 1 && number.startsWith('0') ? number.length : 0;
+  // Folder names only differing in case are the same series on Windows and macOS
+  const key = `${prefix}\u0000${suffix}`.toLowerCase();
+  const group = groups.get(key);
+  if (!group) {
+    groups.set(key, { prefix, suffix, next: value + 1, digits, size: 1, last: name });
+  } else {
+    group.size += 1;
+    group.digits = Math.max(group.digits, digits);
+    if (value + 1 > group.next) {
+      group.next = value + 1;
+      group.last = name;
+      // Take the spelling of the latest folder
+      group.prefix = prefix;
+      group.suffix = suffix;
     }
   }
+}
 
+/** The series most folders follow; of two as large, the one that has come furthest */
+function largest(groups: Map<string, FolderSeries>): FolderSeries | undefined {
   let best: FolderSeries | undefined;
   for (const group of groups.values()) {
     if (!best || group.size > best.size || (group.size === best.size && group.next > best.next)) {
