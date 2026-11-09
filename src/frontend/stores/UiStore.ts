@@ -235,6 +235,8 @@ class UiStore {
   @observable workspaceTextToEdit: string | undefined = undefined;
   /** Whether the screensaver is being shown right now */
   @observable isScreensaverActive: boolean = false;
+  /** Until when the screensaver may not start (`holdScreensaver`), in ms since 1970; not stored */
+  screensaverHeldUntil = 0;
   @observable isScreensaverEnabled: boolean = DEFAULT_SCREENSAVER_SETTINGS.isEnabled;
   @observable screensaverIdleMinutes: number = DEFAULT_SCREENSAVER_SETTINGS.idleMinutes;
   @observable screensaverSecondsPerImage: number = DEFAULT_SCREENSAVER_SETTINGS.secondsPerImage;
@@ -798,6 +800,17 @@ class UiStore {
 
   @action.bound removeScreensaverTag(tag: ClientTag): void {
     this.screensaverTagIds.remove(tag.id);
+  }
+
+  /**
+   * Keeps the screensaver from starting for `ms` from now (and ends one that runs): while work is done
+   * on the window that the user is not there to see. Not stored; it runs out by itself
+   */
+  @action.bound holdScreensaver(ms: number): void {
+    this.screensaverHeldUntil = Date.now() + ms;
+    if (this.isScreensaverActive) {
+      this.stopScreensaver();
+    }
   }
 
   @action.bound startScreensaver(): void {

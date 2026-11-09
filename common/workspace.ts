@@ -435,8 +435,49 @@ export interface ArrangeOptions {
   crop?: CropShape;
   /** For rows and columns: spaced out so that every row (column) reaches both edges (`spreadToEdges`) */
   fill?: boolean;
+  /**
+   * No row or column of a single image: the count is changed as little as needed (`evenGridColumns`,
+   * and for rows and columns the count nearest the one asked for that leaves none alone)
+   */
+  even?: boolean;
   /** The ids in the order they are laid out in, instead of their reading order: for a shuffle */
   order?: readonly string[];
+  /** Laid out under everything else, from its left edge, instead of where they are: apart from the rest */
+  below?: boolean;
+}
+
+/**
+ * How many columns a grid of `count` images gets, near `wanted`, so that its last row is not a lone
+ * image: `wanted` itself when its last row is at least half full (the grid keeps the shape asked for),
+ * else one that divides them, or else one whose last row is at least half full; the nearest such
+ */
+export function evenGridColumns(count: number, wanted: number): number {
+  if (count < 2) {
+    return 1;
+  }
+  const near = (c: number) => Math.abs(c - wanted);
+  // From 2 on: a grid of one column is nothing but rows of one image
+  const candidates = Array.from({ length: count - 1 }, (_, i) => i + 2).sort(
+    (a, b) => near(a) - near(b),
+  );
+  const lastRow = (c: number) => count % c || c;
+  const isHalfFull = (c: number) => lastRow(c) * 2 >= c && lastRow(c) > 1;
+  return (
+    candidates.find((c) => near(c) === 0 && isHalfFull(c)) ??
+    candidates.find((c) => near(c) <= 3 && count % c === 0) ??
+    candidates.find(isHalfFull) ??
+    candidates.find((c) => count % c === 0) ??
+    // All in one row: never reached, as `count` itself divides `count`
+    count
+  );
+}
+
+/** Whether a row (or column) of a layout has a single image in it, among more than one */
+export function hasLoneImage(rects: readonly Rect[], kind: 'rows' | 'columns'): boolean {
+  return (
+    rects.length > 1 &&
+    [...rowsAndColumnsOf(rects, kind).values()].some((line) => line.length === 1)
+  );
 }
 
 /** The rows (or columns) of a layout: its rects grouped by where they are across */
@@ -463,9 +504,11 @@ function layoutShape(item: WorkspaceItem): Size {
 }
 
 /**
- * Some of the objects laid out anew, in reading order (or in `options.order`), where the first of them was:
- * in `count` rows, or in `count` columns or a grid of `count` columns. They keep about the size they had (the
- * middle one of their sizes) and end up in front of everything else. Backgrounds stay where they are.
+ * Some of the objects laid out anew, in reading order (or in `options.order`), where the first of them
+ * was: in `count` rows, or in `count` columns or a grid of `count` columns. They keep about the size they
+ * had (the middle one of their sizes) and end up in front of everything else. Backgrounds stay where they
+ * are. With `options.even`, no row or column is left with a single image; with `options.below`, they
+ * are laid out under the rest instead.
  */
 export function arrangeItems(
   items: readonly WorkspaceItem[],
@@ -477,32 +520,53 @@ export function arrangeItems(
   const inReadingOrder = readingOrder(
     items.filter((item) => ids.has(item.id) && item.kind !== 'background'),
   );
-  const bounds = boundsOf(inReadingOrder);
-  if (bounds === undefined) {
+  const { order, gap, below } = options;
+  const rest = below
+    ? boundsOf(items.filter((item) => !ids.has(item.id) && item.kind !== 'background'))
+    : undefined;
+  const bounds =
+    rest !== undefined
+      ? { ...rest, y: rest.y + rest.height + gap, height: 0 }
+      : boundsOf(inReadingOrder);
+  if (bounds === undefined || inReadingOrder.length === 0) {
     return [...items];
   }
-  const n = Math.max(1, Math.round(count));
-  const { gap, order } = options;
   const place = new Map(order?.map((id, i) => [id, i]));
   const chosen =
     order !== undefined
       ? [...inReadingOrder].sort((a, b) => (place.get(a.id) ?? 0) - (place.get(b.id) ?? 0))
       : inReadingOrder;
   const shapes = chosen.map(layoutShape);
-  let layout: WorkspaceLayout;
-  if (kind === 'rows') {
-    const rowHeight = median(chosen.map((item) => item.height));
-    const widths = shapes.map((shape) => rowHeight * aspectOf(shape));
-    const total = widths.reduce((sum, width) => sum + width + gap, 0);
-    const widest = widths.reduce((max, width) => Math.max(max, width), 0);
-    layout = { kind, gap, rowHeight, width: Math.max(total / n - gap, widest) };
-  } else if (kind === 'columns') {
-    layout = { kind, gap, columns: n, columnWidth: median(chosen.map((item) => item.width)) };
-  } else {
-    const cell = median(chosen.map((item) => Math.max(item.width, item.height)));
-    layout = { kind, gap, columns: n, cell, crop: options.crop };
+  const rowHeight = median(chosen.map((item) => item.height));
+  const widths = shapes.map((shape) => rowHeight * aspectOf(shape));
+  const total = widths.reduce((sum, width) => sum + width + gap, 0);
+  const widest = widths.reduce((max, width) => Math.max(max, width), 0);
+  const columnWidth = median(chosen.map((item) => item.width));
+  const cell = median(chosen.map((item) => Math.max(item.width, item.height)));
+  const layoutOf = (n: number): WorkspaceLayout =>
+    kind === 'rows'
+      ? { kind, gap, rowHeight, width: Math.max(total / n - gap, widest) }
+      : kind === 'columns'
+      ? { kind, gap, columns: n, columnWidth }
+      : { kind, gap, columns: n, cell, crop: options.crop };
+  const wanted = Math.max(1, Math.round(count));
+  let rects = layOut(shapes, bounds, layoutOf(wanted));
+  if (options.even && kind === 'grid') {
+    rects = layOut(shapes, bounds, layoutOf(evenGridColumns(chosen.length, wanted)));
+  } else if (options.even && kind !== 'grid' && hasLoneImage(rects, kind)) {
+    // The count nearest the one asked for that leaves no image alone, if there is one: tried outwards
+    // from it, one by one
+    for (let step = 1; step < Math.max(wanted, chosen.length); step++) {
+      const tried = [wanted - step, wanted + step]
+        .filter((n) => n >= 1 && n <= chosen.length)
+        .map((n) => layOut(shapes, bounds, layoutOf(n)))
+        .find((rectsOf) => !hasLoneImage(rectsOf, kind));
+      if (tried !== undefined) {
+        rects = tried;
+        break;
+      }
+    }
   }
-  const rects = layOut(shapes, bounds, layout);
   if (options.fill && kind !== 'grid') {
     spreadToEdges(rects, kind);
   }

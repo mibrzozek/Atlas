@@ -6,7 +6,7 @@
   "main": "build/main.bundle.js",
   "scripts": {
     "dev": "webpack --watch --config ./webpack.dev.js --progress --color",
-    "production": "webpack --config ./webpack.prod.js",
+    "production": "webpack --config ./webpack.prod.js && node scripts/check-production-bundle.js",
     "start": "electron ./build/main.bundle.js",
     "oobe": "node scripts/oobe.js",
     "lint": "eslint src/**/*{ts,tsx} widgets/**/*{ts,tsx} --fix",

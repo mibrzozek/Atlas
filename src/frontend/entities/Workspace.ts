@@ -17,6 +17,7 @@ import {
   LayerGroup,
   LayoutKind,
   layersFromTop,
+  PAPER_FORMATS,
   moveItems,
   moveLayers,
   Point,
@@ -60,7 +61,7 @@ import {
   withLength,
 } from 'common/video';
 import { autoEdit, EditStyle } from 'common/auto-edit';
-import { groupOf, Motion, MotionKind } from 'common/video-motion';
+import { groupOf, Motion, MotionKind, wavesAt } from 'common/video-motion';
 import { generateId, ID } from '../../api/id';
 import WorkspaceStore from '../stores/WorkspaceStore';
 
@@ -77,6 +78,10 @@ export interface CropSession {
 
 /** How many changes can be undone */
 const MAX_UNDO = 100;
+/** How long before the end of the video the last wave's crest comes at the latest, in seconds */
+const WAVE_ROOM = 1.5;
+/** The sheet behind a title when no colour is given: near black, so the photos stand out */
+const DARK_SHEET = '#0c0c0e';
 /** How long a video cut to the beat is when it has no length of its own yet, in seconds */
 const DEFAULT_EDIT_LENGTH = 30;
 
@@ -430,6 +435,54 @@ export class ClientWorkspace {
     );
   }
 
+  /**
+   * A title over the photos and as wide as they are, a line under it, and one sheet behind everything in
+   * `colors.sheet`: the texts and sheets that were there make way. One change to undo; whether it was made
+   */
+  @action.bound addTitle(
+    title: string,
+    line = '',
+    colors: { title?: string; sheet?: string } = {},
+  ): boolean {
+    const images = this.items.slice().filter((item) => item.kind === 'image');
+    const photos = boundsOf(images);
+    if (this.isLocked || photos === undefined) {
+      return false;
+    }
+    const { measureText } = this.store;
+    const z = frontZ(images);
+    const sized = createText(generateId(), title, photos, z, measureText);
+    const fontSize = (sized.fontSize * photos.width) / sized.width;
+    const heading = changeText(sized, { color: colors.title, fontSize }, measureText);
+    heading.y = photos.y - heading.height * 1.6;
+    const under =
+      line === ''
+        ? []
+        : [
+            createText(
+              generateId(),
+              line,
+              { x: photos.x, y: heading.y + heading.height * 1.1 },
+              z + 1,
+              measureText,
+              heading.height * 0.14,
+            ),
+          ];
+    const all = boundsOf([heading, ...under, photos])!;
+    const sheet = changeBackground(
+      createBackground(
+        generateId(),
+        { x: all.x + all.width / 2, y: all.y + all.height / 2 },
+        Math.max(all.height, all.width / PAPER_FORMATS[0].aspect) * 1.1,
+        images.reduce((min, item) => Math.min(min, item.z), 0) - 1,
+      ),
+      { color: colors.sheet ?? DARK_SHEET },
+    );
+    this.change([...images, heading, ...under, sheet]);
+    this.selection.clear();
+    return true;
+  }
+
   @action.bound moveItems(ids: ReadonlySet<string>, dx: number, dy: number): void {
     if (this.isLocked || ids.size === 0 || (dx === 0 && dy === 0)) {
       return;
@@ -766,6 +819,35 @@ export class ClientWorkspace {
     };
     this.selectedBlock = { lane: 'motion', id: motion.id };
     this.changeVideo({ ...video, motions: [...video.motions, motion] }, true);
+  }
+
+  /**
+   * A wave (`wavesAt`) through all its photos for every swell of its song, the crest rolling across them
+   * from the left as the sound swells, until the video ends; the waves there were make way. One change to
+   * undo; how many waves there are
+   */
+  @action.bound wavesToTheMusic(strength = 1): number {
+    const { video } = this;
+    if (video === undefined) {
+      return 0;
+    }
+    const middleOf = (item: WorkspaceItem) =>
+      item.x + item.width / 2 + (item.y + item.height / 2) / 4;
+    const photos = this.items
+      .slice()
+      .filter((item) => item.kind === 'image')
+      .sort((a, b) => middleOf(a) - middleOf(b))
+      .map((item) => item.id);
+    const end = videoLength(video);
+    // A crest at the very end would be cut off as it rises
+    const swells = videoSwells(video).filter((swell) => end === 0 || swell < end - WAVE_ROOM);
+    const waves = wavesAt(swells, photos, generateId, strength);
+    this.clearBlockSelection();
+    this.changeVideo(
+      { ...video, motions: [...video.motions.filter((m) => m.kind !== 'wave'), ...waves] },
+      true,
+    );
+    return waves.length;
   }
 
   /** The song under the video, its beats found (`findBeats`); one only */

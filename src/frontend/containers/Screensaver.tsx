@@ -43,7 +43,8 @@ const Screensaver = observer(() => {
       try {
         const idle = await RendererMessenger.getIdleState();
         const settings = runInAction(() => uiStore.screensaverSettings);
-        if (shouldStartScreensaver(settings, idle, uiStore.isScreensaverActive)) {
+        const isHeld = Date.now() < uiStore.screensaverHeldUntil;
+        if (!isHeld && shouldStartScreensaver(settings, idle, uiStore.isScreensaverActive)) {
           uiStore.startScreensaver();
         }
       } catch (e) {

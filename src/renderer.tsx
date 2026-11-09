@@ -55,6 +55,13 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
 
   const rootStore = await RootStore.main(backend, backup);
 
+  // The Director: development only, never in a build that is shipped (CLAUDE.md). The production build
+  // leaves this branch, and the module, out entirely; scripts/check-production-bundle.js checks that
+  if (process.env.NODE_ENV === 'development') {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    require('./frontend/director').installDirector(rootStore);
+  }
+
   // Recover global preferences
   try {
     const window_preferences = localStorage.getItem(WINDOW_STORAGE_KEY);

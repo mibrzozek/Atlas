@@ -2,7 +2,7 @@ import { action, computed, makeObservable, observable, runInAction, when } from 
 
 import { moveItem, uniqueName } from 'common/collections';
 import { encodeFilePath } from 'common/fs';
-import { notEmpty } from 'common/core';
+import { notEmpty, seededRandom, shuffled } from 'common/core';
 import { MusicTrack, VideoSize } from 'common/video';
 import {
   addGroup,
@@ -238,6 +238,39 @@ class WorkspaceStore {
     return workspace;
   }
 
+  /**
+   * A new workspace of a batch of the Library (a tag, a collection), laid out as the gallery shows it,
+   * named `name` (made unique) and opened. With `sample`, only that many of its images, picked at random
+   * (the same `seed`, the same ones). One of many images is not made here: those are asked about first
+   * (`largeWorkspaceRequest`), by hand
+   */
+  @action.bound async createOf(
+    batch: LibraryBatch,
+    name: string,
+    sample?: { count: number; seed: number },
+  ): Promise<ClientWorkspace> {
+    const found = 'images' in batch ? batch.images : await this.imagesFound(batch);
+    const images =
+      sample !== undefined && sample.count < found.length
+        ? shuffled(found, seededRandom(sample.seed)).slice(0, sample.count)
+        : found;
+    if (images.length === 0) {
+      throw new Error(`${batch.label} has no images`);
+    }
+    if (images.length >= LARGE_WORKSPACE) {
+      throw new Error(`${batch.label} has ${images.length} images: make it by hand`);
+    }
+    const layout = this.rootStore.uiStore.galleryLayout;
+    const workspace = await this.create([{ label: batch.label, images, layout }]);
+    workspace.rename(
+      uniqueName(
+        name,
+        this.workspaceList.filter((w) => w !== workspace).map((w) => w.name),
+      ),
+    );
+    this.rootStore.uiStore.openWorkspace(workspace);
+    return workspace;
+  }
 
   /**
    * A song under a workspace's video, its beats found (the file is only read). What the + of the Music

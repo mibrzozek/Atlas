@@ -549,7 +549,17 @@ if (!HAS_INSTANCE_LOCK) {
   // This method will be called when Electron has finished
   // initialization and is ready to create browser windows.
   // Some APIs can only be used after this event occurs.
-  app.whenReady().then(initialize);
+  app.whenReady().then(() => {
+    initialize();
+    // The Director: development only, never in a build that is shipped (CLAUDE.md). The production build
+    // leaves this branch, and the module, out entirely; scripts/check-production-bundle.js checks that
+    if (process.env.NODE_ENV === 'development') {
+      if (!app.isPackaged) {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        require('./director/main').startDirector(() => mainWindow);
+      }
+    }
+  });
 }
 
 app.on('activate', () => {

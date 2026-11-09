@@ -34,7 +34,9 @@ import {
   workspaceFromRow,
   zoomAt,
   arrangeItems,
+  evenGridColumns,
   layOut,
+  WorkspaceItem,
   LAYOUT_GAP,
   readingOrder,
   changeBackground,
@@ -349,12 +351,70 @@ describe('layouts, like the views of the Library', () => {
     }
   });
 
+  it('picks a grid whose last row is never a single image', () => {
+    expect(evenGridColumns(45, 7)).toBe(5); // 5 × 9, nothing left over
+    expect(evenGridColumns(43, 7)).toBe(5); // 8 rows of 5 and one of 3
+    expect(evenGridColumns(42, 7)).toBe(7);
+    expect(evenGridColumns(12, 5)).toBe(4);
+    // 6 × 9 with 4 in the last row keeps the shape asked for, where 4 × 13 would divide them
+    expect(evenGridColumns(52, 6)).toBe(6);
+    expect(evenGridColumns(1, 4)).toBe(1);
+    for (let n = 2; n <= 60; n++) {
+      for (const wanted of [3, 5, 7]) {
+        const columns = evenGridColumns(n, wanted);
+        expect([n, wanted, n % columns]).not.toEqual([n, wanted, 1]);
+      }
+    }
+  });
+
+  it('leaves no row or column with a single image when asked to, the count changed as little as needed', () => {
+    // 43 photos of mixed shapes: 7 rows, or a grid of 7, would leave one alone
+    const items = Array.from({ length: 43 }, (_, i) => ({
+      ...item(`${i}`, i * 300, 0, i, 100),
+      imageAspect: [1, 1.5, 0.75, 2, 0.66][i % 5],
+      width: 100 * [1, 1.5, 0.75, 2, 0.66][i % 5],
+    }));
+    const ids = new Set(items.map((i) => i.id));
+    const sizes = (arranged: WorkspaceItem[], across: 'x' | 'y') =>
+      Object.values(
+        arranged.reduce<Record<number, number>>(
+          (all, i) => ({ ...all, [i[across]]: (all[i[across]] ?? 0) + 1 }),
+          {},
+        ),
+      );
+    for (const count of [2, 3, 5, 7, 9]) {
+      // Cut square, so that a row's images share their top
+      const grid = arrangeItems(items, ids, 'grid', count, { gap: 8, even: true, crop: '1:1' });
+      expect(sizes(grid, 'y')).not.toContain(1);
+      const rows = arrangeItems(items, ids, 'rows', count, { gap: 8, even: true, fill: true });
+      expect(sizes(rows, 'y')).not.toContain(1);
+      const columns = arrangeItems(items, ids, 'columns', count, { gap: 8, even: true });
+      expect(sizes(columns, 'x')).not.toContain(1);
+    }
+  });
+
   it('lays them out in an order given, for a shuffle', () => {
     const items = Array.from({ length: 4 }, (_, i) => item(`${i}`, i * 300, 0, i, 100));
     const ids = new Set(items.map((i) => i.id));
     const arranged = arrangeItems(items, ids, 'grid', 4, { gap: 0, order: ['3', '1', '0', '2'] });
     const byX = [...arranged].sort((a, b) => a.x - b.x).map((i) => i.id);
     expect(byX).toEqual(['3', '1', '0', '2']);
+  });
+
+  it('lays them out under the rest when asked to, from its left edge', () => {
+    const items = [
+      item('a', 500, 500, 0, 100),
+      item('b', 900, 100, 1, 100),
+      item('row', 40, 0, 2, 100),
+      item('other', 300, 200, 3, 100),
+    ];
+    const arranged = arrangeItems(items, new Set(['a', 'b']), 'rows', 1, { gap: 8, below: true });
+    const at = (id: string) => arranged.find((i) => i.id === id)!;
+    // Under 'other', the lowest of the rest (its bottom at 300), at the left of 'row'
+    expect(at('b')).toMatchObject({ x: 40, y: 308 });
+    expect(at('a').y).toBe(308);
+    expect(at('a').x).toBeGreaterThan(at('b').x + at('b').width);
+    expect(at('other')).toBe(items[3]);
   });
 
   it('suggests a block about as wide as a monitor', () => {
