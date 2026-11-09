@@ -1264,7 +1264,8 @@ class UiStore {
     if (prefsString) {
       try {
         const prefs = JSON.parse(prefsString);
-        if (prefs.theme) {
+        // Anything else is handed to the main process, which throws on it
+        if (prefs.theme === 'light' || prefs.theme === 'dark') {
           this.setTheme(prefs.theme);
         }
         this.setIsOutlinerOpen(prefs.isOutlinerOpen);
