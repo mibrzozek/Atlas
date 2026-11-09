@@ -26,3 +26,15 @@ scratch-*/
 
 # Throwaway profile of "yarn oobe"
 .oobe-profile/
+
+# The Director's connection (port and token) and the hidden copy's profile: development only
+.director/
+.dev-hidden-profile/
+
+# Songs for workspace videos (copyrighted, never published) and the videos made from them
+audio/*
+!audio/README.md
+demo/
+
+# The knowledge graph of the code made by graphify (machine paths in it)
+graphify-out/

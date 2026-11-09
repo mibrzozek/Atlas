@@ -1,0 +1,10 @@
+# What graphify leaves out of the map of the code: the app's own pictures (icons, logos, screenshots,
+# test images), which say nothing about how the code fits together
+*.svg
+*.png
+*.jpg
+*.jpeg
+*.JPG
+*.Jpeg
+*.gif
+resources/test_images/
