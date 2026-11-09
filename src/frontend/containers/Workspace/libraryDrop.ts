@@ -2,9 +2,9 @@ import { runInAction } from 'mobx';
 import SysPath from 'path';
 
 import { DnDFolderType, DnDLocationType, DnDTagType } from '../../contexts/TagDnDContext';
-import { ClientTagSearchCriteria, folderCriteria } from '../../entities/SearchCriteria';
+import { folderCriteria } from '../../entities/SearchCriteria';
 import RootStore from '../../stores/RootStore';
-import { LibraryBatch } from '../../stores/WorkspaceStore';
+import { batchOfCollection, batchOfTag, LibraryBatch } from '../../stores/WorkspaceStore';
 import { COLLECTION_DND_TYPE } from '../Outliner/CollectionsPanel/useCollectionDnD';
 
 /** Images dragged out of the gallery leave as files, the way they would be dropped in a folder */
@@ -38,16 +38,12 @@ export function readLibraryBatch(
   return runInAction(() => {
     const tag = tagStore.get(dataTransfer.getData(DnDTagType));
     if (tag !== undefined) {
-      return { label: tag.name, criteria: [new ClientTagSearchCriteria('tags', tag.id)] };
+      return batchOfTag(tag);
     }
     const collectionId = dataTransfer.getData(COLLECTION_DND_TYPE);
     const collection = collectionStore.collectionList.find((c) => c.id === collectionId);
     if (collection !== undefined) {
-      return {
-        label: collection.name,
-        criteria: collection.tags.map((t) => new ClientTagSearchCriteria('tags', t.id)),
-        matchAny: true,
-      };
+      return batchOfCollection(collection);
     }
     const location = locationStore.get(dataTransfer.getData(DnDLocationType));
     if (location !== undefined) {

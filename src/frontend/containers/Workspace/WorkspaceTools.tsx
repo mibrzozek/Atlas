@@ -10,7 +10,8 @@ import {
   WorkspaceItem,
 } from 'common/workspace';
 import { IconSet, keyComboToString } from 'widgets';
-import { MenuButton, MenuCheckboxItem, MenuRadioItem } from 'widgets/menus';
+import { KeyCombo } from 'widgets/KeyCombo';
+import { MenuButton, MenuCheckboxItem, MenuItem, MenuRadioItem } from 'widgets/menus';
 import { MenuDivider, MenuSliderItem } from 'widgets/menus/menu-items';
 import { ToolbarButton } from 'widgets/toolbar';
 import { useStore } from '../../contexts/StoreContext';
@@ -52,6 +53,7 @@ function currentCrop(workspace: ClientWorkspace): CropShape | undefined {
  * out to every edge or not, and in a grid whole or cut to squares or portraits. Every change shows at once, and can be undone.
  */
 const ArrangeMenu = observer(({ workspace }: { workspace: ClientWorkspace }) => {
+  const { uiStore } = useStore();
   const count = workspace.selection.size;
   const [kind, setKind] = useState<LayoutKind>('grid');
   const [lines, setLines] = useState<number>();
@@ -143,6 +145,18 @@ const ArrangeMenu = observer(({ workspace }: { workspace: ClientWorkspace }) => 
           onClick={() => arrange({ fill: !fill })}
         />
       )}
+      <MenuItem
+        icon={IconSet.SHUFFLE}
+        text="Shuffle"
+        accelerator={<KeyCombo combo={uiStore.hotkeyMap.shuffle} />}
+        onClick={() =>
+          workspace.shuffleSelection(undefined, {
+            kind,
+            count: shownLines,
+            options: { gap, crop: shownCrop, fill },
+          })
+        }
+      />
       <MenuDivider />
       {kind === 'grid' &&
         CROPS.map((option) => (

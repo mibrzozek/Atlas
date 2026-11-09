@@ -432,6 +432,26 @@ export interface ArrangeOptions {
   crop?: CropShape;
   /** For rows and columns: spaced out so that every row (column) reaches both edges (`spreadToEdges`) */
   fill?: boolean;
+  /** The ids in the order they are laid out in, instead of their reading order: for a shuffle */
+  order?: readonly string[];
+}
+
+/** The rows (or columns) of a layout: its rects grouped by where they are across */
+export function rowsAndColumnsOf<T extends Rect>(
+  rects: readonly T[],
+  kind: 'rows' | 'columns',
+): Map<number, T[]> {
+  const across = kind === 'rows' ? 'y' : 'x';
+  const lines = new Map<number, T[]>();
+  for (const rect of rects) {
+    const line = lines.get(rect[across]);
+    if (line !== undefined) {
+      line.push(rect);
+    } else {
+      lines.set(rect[across], [rect]);
+    }
+  }
+  return lines;
 }
 
 /** The shape something is laid out in: an image whole, in the shape of its photo, unless it is cut */
@@ -440,9 +460,9 @@ function layoutShape(item: WorkspaceItem): Size {
 }
 
 /**
- * Some of the objects laid out anew, in reading order, where the first of them was: in `count` rows, or
- * in `count` columns or a grid of `count` columns. They keep about the size they had (the middle one of
- * their sizes) and end up in front of everything else. Backgrounds stay where they are.
+ * Some of the objects laid out anew, in reading order (or in `options.order`), where the first of them was:
+ * in `count` rows, or in `count` columns or a grid of `count` columns. They keep about the size they had (the
+ * middle one of their sizes) and end up in front of everything else. Backgrounds stay where they are.
  */
 export function arrangeItems(
   items: readonly WorkspaceItem[],
@@ -451,15 +471,20 @@ export function arrangeItems(
   count: number,
   options: ArrangeOptions = { gap: LAYOUT_GAP },
 ): WorkspaceItem[] {
-  const chosen = readingOrder(
+  const inReadingOrder = readingOrder(
     items.filter((item) => ids.has(item.id) && item.kind !== 'background'),
   );
-  const bounds = boundsOf(chosen);
+  const bounds = boundsOf(inReadingOrder);
   if (bounds === undefined) {
     return [...items];
   }
   const n = Math.max(1, Math.round(count));
-  const { gap } = options;
+  const { gap, order } = options;
+  const place = new Map(order?.map((id, i) => [id, i]));
+  const chosen =
+    order !== undefined
+      ? [...inReadingOrder].sort((a, b) => (place.get(a.id) ?? 0) - (place.get(b.id) ?? 0))
+      : inReadingOrder;
   const shapes = chosen.map(layoutShape);
   let layout: WorkspaceLayout;
   if (kind === 'rows') {
@@ -506,15 +531,10 @@ export function arrangeItems(
  * of one image stays where it is. Changes the rects given.
  */
 function spreadToEdges(rects: Rect[], kind: 'rows' | 'columns'): void {
-  const [along, size, across] =
-    kind === 'rows' ? (['x', 'width', 'y'] as const) : (['y', 'height', 'x'] as const);
+  const [along, size] = kind === 'rows' ? (['x', 'width'] as const) : (['y', 'height'] as const);
   const start = rects.reduce((min, rect) => Math.min(min, rect[along]), Infinity);
   const end = rects.reduce((max, rect) => Math.max(max, rect[along] + rect[size]), -Infinity);
-  const lines = new Map<number, Rect[]>();
-  for (const rect of rects) {
-    lines.set(rect[across], [...(lines.get(rect[across]) ?? []), rect]);
-  }
-  for (const line of lines.values()) {
+  for (const line of rowsAndColumnsOf(rects, kind).values()) {
     if (line.length < 2) {
       continue;
     }

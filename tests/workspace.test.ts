@@ -349,6 +349,14 @@ describe('layouts, like the views of the Library', () => {
     }
   });
 
+  it('lays them out in an order given, for a shuffle', () => {
+    const items = Array.from({ length: 4 }, (_, i) => item(`${i}`, i * 300, 0, i, 100));
+    const ids = new Set(items.map((i) => i.id));
+    const arranged = arrangeItems(items, ids, 'grid', 4, { gap: 0, order: ['3', '1', '0', '2'] });
+    const byX = [...arranged].sort((a, b) => a.x - b.x).map((i) => i.id);
+    expect(byX).toEqual(['3', '1', '0', '2']);
+  });
+
   it('suggests a block about as wide as a monitor', () => {
     expect(suggestedCount('grid', 16)).toBe(5);
     expect(suggestedCount('rows', 16)).toBe(4);

@@ -5,18 +5,11 @@ import { cropOf, photoRectOf } from 'common/crop';
 import { fileNameOf, writeNewFile } from 'common/export';
 import { encodeFilePath } from 'common/fs';
 import { SHARP_DECODABLE } from 'common/sharp-size';
-import {
-  boundsOf,
-  overlaps,
-  Rect,
-  TEXT_LINE_HEIGHT,
-  textInk,
-  WorkspaceItem,
-} from 'common/workspace';
+import { boundsOf, overlaps, Rect, textInk, WorkspaceItem } from 'common/workspace';
 import { AppToaster } from '../../components/Toaster';
 import { ClientWorkspace } from '../../entities/Workspace';
 import { WorkspaceImageSource } from '../../stores/WorkspaceStore';
-import { TEXT_FONT_WEIGHT } from './measureText';
+import { WorkspacePainter } from './paintWorkspace';
 
 /**
  * The longest side of the picture: some 700 dots per inch on A4. More would only make it slow (a picture
@@ -68,7 +61,7 @@ function pictureScale(
 }
 
 /** The image of a file, decoded as it is shown (turned by its Exif orientation, as an <img> is) */
-async function loadImage(source: WorkspaceImageSource): Promise<HTMLImageElement> {
+export async function loadImage(source: WorkspaceImageSource): Promise<HTMLImageElement> {
   const image = new Image();
   // The file itself where the browser can read it; the thumbnail for other formats (TIFF, PSD...)
   image.src = SHARP_DECODABLE.has(source.file.extension)
@@ -98,36 +91,23 @@ async function renderPicture(
   const canvas = document.createElement('canvas');
   canvas.width = Math.max(1, Math.round(area.width * scale));
   canvas.height = Math.max(1, Math.round(area.height * scale));
-  const context = canvas.getContext('2d')!;
-  context.imageSmoothingQuality = 'high';
-  // Colours of the theme are written as var(--...): they are looked up where the workspace is drawn
-  const style = getComputedStyle(themeOf);
-  const colorOf = (color: string, fallback: string) => {
-    const name = /^var\((--[\w-]+)\)$/.exec(color)?.[1];
-    return (name !== undefined ? style.getPropertyValue(name).trim() : color) || fallback;
-  };
-  const fontFamily = getComputedStyle(document.body).fontFamily;
+  const paint = new WorkspacePainter(canvas.getContext('2d')!, themeOf);
 
   for (const item of inArea) {
-    const x = (item.x - area.x) * scale;
-    const y = (item.y - area.y) * scale;
-    const width = item.width * scale;
-    const height = item.height * scale;
+    const at = {
+      x: (item.x - area.x) * scale,
+      y: (item.y - area.y) * scale,
+      width: item.width * scale,
+      height: item.height * scale,
+    };
     if (item.kind === 'background') {
-      context.fillStyle = colorOf(item.color, '#ffffff');
-      context.fillRect(x, y, width, height);
+      paint.background(item, at);
     } else if (item.kind === 'text') {
-      const fontSize = item.fontSize * scale;
-      const ink = textInk(item, inArea, (color) => colorOf(color, ''));
-      context.fillStyle = colorOf(
-        ink ?? '',
-        style.getPropertyValue('--text-color').trim() || '#000',
+      paint.text(
+        item,
+        at,
+        textInk(item, inArea, (color) => paint.colorOf(color, '')),
       );
-      context.font = `${TEXT_FONT_WEIGHT} ${fontSize}px ${fontFamily}`;
-      context.textBaseline = 'middle';
-      item.text.split('\n').forEach((line, i) => {
-        context.fillText(line, x, y + (i + 0.5) * fontSize * TEXT_LINE_HEIGHT);
-      });
     } else {
       const source = sources.get(item.fileId);
       if (source === undefined) {
@@ -136,18 +116,7 @@ async function renderPicture(
       try {
         const image = await loadImage(source);
         // The part of the photo it shows, as on screen
-        const crop = cropOf(item);
-        context.drawImage(
-          image,
-          crop.x * image.naturalWidth,
-          crop.y * image.naturalHeight,
-          crop.width * image.naturalWidth,
-          crop.height * image.naturalHeight,
-          x,
-          y,
-          width,
-          height,
-        );
+        paint.image(image, cropOf(item), at);
         image.src = ''; // let go of the decoded pixels
       } catch (e) {
         console.error('Could not draw an image into the picture', source.file.absolutePath, e);

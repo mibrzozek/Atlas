@@ -27,6 +27,7 @@ function setup() {
       galleryLayout: undefined,
       activeWorkspace: undefined,
       closedWorkspaceTabIds: observable<string>([]),
+      openWorkspace: jest.fn(),
     },
   };
   const open = () =>
@@ -169,6 +170,34 @@ describe('WorkspaceStore', () => {
     });
     expect(workspace.toRow().items).toEqual(before);
     expect(workspace.selection.size).toBe(0);
+  });
+
+  it('shuffles what is selected into the places of its last arrangement, one change to undo', async () => {
+    const { store } = setup();
+    const workspace = await store.create([
+      { label: 'Film', images: images('a', 'b', 'c', 'd', 'e', 'f') },
+    ]);
+    const ids = ['a', 'b', 'c', 'd', 'e', 'f'];
+    const placeOf = (id: string) => {
+      const item = workspace.items.slice().find((i) => i.id === id)!;
+      return `${Math.round(item.x)},${Math.round(item.y)}`;
+    };
+    runInAction(() => {
+      workspace.selectMany(ids, false);
+      workspace.arrangeSelection('grid', 3, { gap: 10, crop: '1:1' });
+    });
+    const places = new Set(ids.map(placeOf));
+    const before = ids.map(placeOf);
+    runInAction(() => workspace.shuffleSelection(4));
+    const shuffledOnce = ids.map(placeOf);
+    // The same places, taken by others
+    expect(new Set(shuffledOnce)).toEqual(places);
+    expect(shuffledOnce).not.toEqual(before);
+    // The same seed again: the same order
+    runInAction(() => workspace.undo());
+    expect(ids.map(placeOf)).toEqual(before);
+    runInAction(() => workspace.shuffleSelection(4));
+    expect(ids.map(placeOf)).toEqual(shuffledOnce);
   });
 
   it('undoes changes one at a time, back to where it began', async () => {
@@ -344,6 +373,34 @@ describe('WorkspaceStore', () => {
     // Nothing to undo: an undo leaves it as it is
     runInAction(() => workspace.undo());
     expect(workspace.items.slice()).toEqual(before);
+  });
+
+  it('duplicates a workspace right after it, with everything on it, and opens it', async () => {
+    const { store, reopen, uiStore } = setup();
+    const first = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    const last = await store.create([]);
+    runInAction(() => first.rename('Film'));
+    const copy = await store.duplicate(first);
+    expect(store.workspaceList.map((w) => w.id)).toEqual([first.id, copy.id, last.id]);
+    expect(store.workspaceList.map((w) => w.index)).toEqual([0, 1, 2]);
+    expect(copy.id).not.toBe(first.id);
+    expect(copy.name).toBe('Film copy');
+    expect(copy.items.slice()).toEqual(first.items.slice());
+    expect(uiStore.openWorkspace).toHaveBeenCalledWith(copy);
+    // Nothing shared: a change to the copy leaves the original as it was
+    const before = first.items.slice();
+    runInAction(() => copy.moveItems(new Set(['a']), 50, 0));
+    expect(first.items.slice()).toEqual(before);
+    // A second copy gets a name of its own; both are stored
+    expect((await store.duplicate(first)).name).toBe('Film copy 2');
+    await settle();
+    const read = await reopen();
+    expect(read.workspaceList.map((w) => w.name)).toEqual([
+      'Film',
+      'Film copy 2',
+      'Film copy',
+      'Workspace 2',
+    ]);
   });
 
   it('ungroups what is selected, its layers staying where they are', async () => {

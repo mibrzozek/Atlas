@@ -137,6 +137,9 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
       surface.current?.startCrop();
     } else if (matches(hotkeyMap.workspaceSwap)) {
       workspace.swapSelection();
+    } else if (matches(hotkeyMap.shuffle)) {
+      // As it was arranged last, in another order (the gallery's Shuffle key)
+      workspace.shuffleSelection();
     } else if (matches(hotkeyMap.workspaceAddText)) {
       const id = surface.current?.addText();
       if (id !== undefined) {

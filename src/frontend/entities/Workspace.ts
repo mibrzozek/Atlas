@@ -32,6 +32,7 @@ import {
   withGroupMates,
 } from 'common/workspace';
 import { croppedImage, frameInShape, photoRectOf } from 'common/crop';
+import { seededRandom, shuffled } from 'common/core';
 import { generateId, ID } from '../../api/id';
 import WorkspaceStore from '../stores/WorkspaceStore';
 
@@ -79,6 +80,8 @@ export class ClientWorkspace {
   @observable.ref cropping: CropSession | undefined = undefined;
   /** Not observable: nothing renders from it, the surface moves itself */
   camera: Camera;
+  /** How the selection was arranged last (`arrangeSelection`), for a shuffle; not stored */
+  private lastArrangement: { kind: LayoutKind; count: number; options: ArrangeOptions } | undefined;
   /** How it was before each change, for undoing them; not stored */
   private readonly history: (readonly WorkspaceItem[])[] = [];
   /** How it was before each undo, for redoing them, until the next change */
@@ -205,9 +208,7 @@ export class ClientWorkspace {
     if (cropping === undefined || this.isLocked || item?.kind !== 'image') {
       return;
     }
-    const isSame = (a: Rect, b: Rect) =>
-      a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;
-    if (isSame(cropping.frame, item) && isSame(cropping.photo, photoRectOf(item))) {
+    if (sameRect(cropping.frame, item) && sameRect(cropping.photo, photoRectOf(item))) {
       return;
     }
     this.change(
@@ -272,7 +273,27 @@ export class ClientWorkspace {
     if (this.isLocked || this.selection.size < 2) {
       return;
     }
+    this.lastArrangement = { kind, count, options: { ...options, order: undefined } };
     this.changeInSession(from, arrangeItems(from, this.selection, kind, count, options));
+  }
+
+  /**
+   * What is selected laid out again as `arrangement` (as the Arrange menu shows it; else as it was
+   * arranged last), its objects in another order: a variation to look at at once, one change to undo.
+   * The same `seed` gives the same order again. Whether there was an arrangement to shuffle
+   */
+  @action.bound shuffleSelection(seed?: number, arrangement = this.lastArrangement): boolean {
+    if (this.isLocked || this.selection.size < 2 || arrangement === undefined) {
+      return false;
+    }
+    this.lastArrangement = arrangement;
+    const ids = [...this.selection];
+    const random = seed !== undefined ? seededRandom(seed) : Math.random;
+    const order = shuffled(ids, random);
+    const items = this.items.slice();
+    const { kind, count, options } = arrangement;
+    this.change(arrangeItems(items, this.selection, kind, count, { ...options, order }));
+    return true;
   }
 
   /**
@@ -620,3 +641,6 @@ export class ClientWorkspace {
     this.store.saveSoon(this);
   }
 }
+
+const sameRect = (a: Rect, b: Rect): boolean =>
+  a.x === b.x && a.y === b.y && a.width === b.width && a.height === b.height;

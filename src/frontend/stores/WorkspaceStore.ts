@@ -12,6 +12,7 @@ import {
   WorkspaceItem,
   WorkspaceLayout,
   workspaceFromRow,
+  WorkspaceRow,
 } from 'common/workspace';
 import { DataStorage } from '../../api/data-storage';
 import { ConditionDTO } from '../../api/data-storage-search';
@@ -22,7 +23,9 @@ import type { TileCache } from '../containers/Workspace/TileImages';
 import { WorkspaceImages } from '../containers/Workspace/WorkspaceImages';
 import { measureText as measureInPage } from '../containers/Workspace/measureText';
 import { AppToaster } from '../components/Toaster';
-import { ClientFileSearchCriteria } from '../entities/SearchCriteria';
+import { ClientCollection } from '../entities/Collection';
+import { ClientFileSearchCriteria, ClientTagSearchCriteria } from '../entities/SearchCriteria';
+import { ClientTag } from '../entities/Tag';
 import { ClientWorkspace } from '../entities/Workspace';
 import RootStore from './RootStore';
 
@@ -61,6 +64,19 @@ export type LibraryBatch = { label: string } & (
   | { criteria: readonly ClientFileSearchCriteria[]; matchAny?: boolean }
   | { images: readonly WorkspaceImage[] }
 );
+
+/** The photos of a tag, as a batch for a workspace */
+export const batchOfTag = (tag: ClientTag): LibraryBatch => ({
+  label: tag.name,
+  criteria: [new ClientTagSearchCriteria('tags', tag.id)],
+});
+
+/** The photos of a collection (any of its tags), as a batch for a workspace */
+export const batchOfCollection = (collection: ClientCollection): LibraryBatch => ({
+  label: collection.name,
+  criteria: collection.tags.map((tag) => new ClientTagSearchCriteria('tags', tag.id)),
+  matchAny: true,
+});
 
 /** What the buttons above a workspace and the layers panel do to the surface on screen */
 export interface WorkspaceSurfaceControls {
@@ -381,6 +397,29 @@ class WorkspaceStore {
         ];
       }),
     );
+  }
+
+  /**
+   * A copy of a workspace right after it, opened: everything on it, its groups, where it is looked at.
+   * Copied through JSON, so nothing is shared with the original; its tiles are (per image)
+   */
+  @action.bound async duplicate(workspace: ClientWorkspace): Promise<ClientWorkspace> {
+    const index = this.workspaceList.indexOf(workspace) + 1;
+    const row: WorkspaceRow = JSON.parse(JSON.stringify(workspace.toRow()));
+    const copy = new ClientWorkspace(this, {
+      ...row,
+      id: generateId(),
+      name: uniqueName(
+        `${workspace.name} copy`,
+        this.workspaceList.map((w) => w.name),
+      ),
+      index,
+    });
+    this.workspaceList.splice(index, 0, copy);
+    this.updateIndices();
+    await this.db.save(copy.toRow());
+    this.rootStore.uiStore.openWorkspace(copy);
+    return copy;
   }
 
   @action.bound async remove(workspace: ClientWorkspace): Promise<void> {

@@ -92,10 +92,10 @@ const DeleteWorkspaceAlert = observer(() => {
 
 /**
  * The right-click menu of a workspace, the same on its tab and its row in the Workspaces panel: rename,
- * close the tab, delete. Deleting is only here, and asks first.
+ * duplicate, close the tab, delete. Deleting is only here, and asks first.
  */
 export function useWorkspaceMenu(workspace: ClientWorkspace, startRenaming: () => void) {
-  const { uiStore } = useStore();
+  const { uiStore, workspaceStore } = useStore();
   const showMenu = useContextMenu();
   return (event: React.MouseEvent) => {
     event.preventDefault();
@@ -104,6 +104,11 @@ export function useWorkspaceMenu(workspace: ClientWorkspace, startRenaming: () =
       event.clientY,
       <Menu>
         <MenuItem icon={IconSet.EDIT} text="Rename" onClick={startRenaming} />
+        <MenuItem
+          icon={IconSet.COPY}
+          text="Duplicate"
+          onClick={() => workspaceStore.duplicate(workspace)}
+        />
         <MenuItem
           icon={IconSet.CLOSE}
           text="Close tab"

@@ -84,6 +84,8 @@ const WHEEL_GLIDE_TIME = 70;
 const FRAME_TIME = 1000 / 60;
 /** A press that moves less than this is a click, not a drag */
 const CLICK_DISTANCE = 4;
+/** The middle button (the wheel) among the `buttons` of a mouse event */
+const MIDDLE_BUTTON = 4;
 /** How near, in screen pixels, an edge or middle of what is dragged comes before it snaps to another */
 const SNAP_PIXELS = 7;
 /**
@@ -470,6 +472,11 @@ export class WorkspaceSurface {
   private handleWheel = (event: WheelEvent) => {
     // Also stops the browser from zooming the whole window on Ctrl + wheel
     event.preventDefault();
+    // The wheel held down to pan turns a notch now and then while it is dragged: that is no scrolling,
+    // and moved the workspace away from under the pointer
+    if ((event.buttons & MIDDLE_BUTTON) !== 0) {
+      return;
+    }
     this.stopGlide();
     const scale = event.deltaMode === WheelEvent.DOM_DELTA_LINE ? WHEEL_LINE : 1;
     // Slow scrolling makes panning and zooming finer; sizing with Alt keeps its own pace
@@ -1093,9 +1100,10 @@ export class WorkspaceSurface {
       const progress = Math.min(1, (now - start) / GLIDE_DURATION);
       // Fast at first, gently at the end
       const eased = 1 - Math.pow(1 - progress, 3);
+      // Over before its last frame is drawn: what waits for the glide to arrive sees it has
+      this.glide = progress < 1 ? requestAnimationFrame(step) : undefined;
       this.moveCamera(progress < 1 ? cameraBetween(from, target, eased, this.view) : target);
       this.drawNow();
-      this.glide = progress < 1 ? requestAnimationFrame(step) : undefined;
     };
     this.glide = requestAnimationFrame(step);
   }
