@@ -43,7 +43,8 @@ const Content = observer(() => {
   const { fileStore, uiStore } = useStore();
   const dndData = useTagDnD();
   const { fileList } = fileStore;
-  const [contentRect, setContentRect] = useState({ width: 1, height: 1 });
+  // Unknown until measured: the first layout is made for the real size, not laid out again a moment later
+  const [contentRect, setContentRect] = useState<{ width: number; height: number }>();
   const container = useRef<HTMLDivElement>(null);
   const isMaximized = useIsWindowMaximized();
 
@@ -146,7 +147,7 @@ const Content = observer(() => {
       onClick={clearFileSelection}
       onKeyDown={handleKeyDown}
     >
-      <Layout contentRect={contentRect} />
+      {contentRect !== undefined && <Layout contentRect={contentRect} />}
       <MoveFilesToTrashBin />
       <ManyOpenExternal />
     </div>

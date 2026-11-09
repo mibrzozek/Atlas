@@ -52,9 +52,6 @@ const VirtualizedRenderer = observer(
 
     const determineRenderRegion = useCallback(
       (numImages: number, overdraw: number, setFirstItem = true) => {
-        if (!isMountedRef.current) {
-          return;
-        }
         const viewport = wrapperRef.current;
         const yOffset = viewport?.scrollTop || 0;
         const viewportHeight = viewport?.clientHeight || 0;
@@ -78,17 +75,19 @@ const VirtualizedRenderer = observer(
 
     const throttledRedetermine = useRef(
       debouncedThrottle(
+        // Later on, when the gallery may be gone
         (numImages: number, overdraw: number, setFirstItem?: boolean) =>
-          determineRenderRegion(numImages, overdraw, setFirstItem),
+          isMountedRef.current && determineRenderRegion(numImages, overdraw, setFirstItem),
         100,
       ),
     );
 
-    // Redetermine images in viewport when amount of images or the container dimensions change
+    // Redetermine images in viewport when amount of images or the container dimensions change.
+    // At once, not throttled: otherwise the first image is drawn alone before the others
     useLayoutEffect(() => {
       // setFirstItem = false: don't set the firstItem in view, so we can recover scroll position after layout updates,
       // in the useLayoutEffect with layoutUpdateDate dependency
-      throttledRedetermine.current(numImages, overscan, false);
+      determineRenderRegion(numImages, overscan, false);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [numImages, containerWidth, containerHeight]);
 
