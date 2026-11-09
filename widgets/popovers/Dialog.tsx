@@ -11,12 +11,20 @@ export interface DialogProps {
   children: React.ReactNode;
   /** Whether the dialog can be dragged around by its header */
   isMovable?: boolean;
+  /**
+   * Where it opens: its top left corner, in pixels of the page (it is kept inside the window). Without it,
+   * or when it gives nothing, it opens in its usual place in the middle
+   */
+  placeAt?: () => { left: number; top: number } | undefined;
   onCancel: () => void;
   onClose?: () => void;
 }
 
+/** How close a dialog opened at a place comes to the edges of the window, in pixels */
+const WINDOW_EDGE = 8;
+
 export const Dialog = (props: DialogProps) => {
-  const { open, title, icon, describedby, isMovable, onClose, onCancel, children } = props;
+  const { open, title, icon, describedby, isMovable, placeAt, onClose, onCancel, children } = props;
 
   const dialog = useRef<HTMLDialogElement>(null);
   const dialogTitleId = useId();
@@ -44,14 +52,34 @@ export const Dialog = (props: DialogProps) => {
   const offset = useRef({ x: 0, y: 0 });
 
   useEffect(() => {
-    if (dialog.current) {
-      if (open) {
-        // Always opens in its normal place
-        offset.current = { x: 0, y: 0 };
-        dialog.current.style.translate = '';
-      }
-      open ? dialog.current.showModal() : dialog.current.close();
+    const element = dialog.current;
+    if (element === null) {
+      return;
     }
+    if (!open) {
+      element.close();
+      return;
+    }
+    // Always opens in its normal place
+    offset.current = { x: 0, y: 0 };
+    element.style.translate = '';
+    element.showModal();
+    const at = placeAt?.();
+    if (at === undefined) {
+      element.style.margin = element.style.left = element.style.top = '';
+      element.style.right = element.style.bottom = '';
+      return;
+    }
+    // Measured once it is shown, so that all of it stays in the window
+    const { width, height } = element.getBoundingClientRect();
+    const keepIn = (value: number, room: number) =>
+      Math.max(WINDOW_EDGE, Math.min(value, room - WINDOW_EDGE));
+    element.style.margin = '0';
+    element.style.right = element.style.bottom = 'auto';
+    element.style.left = `${keepIn(at.left, window.innerWidth - width)}px`;
+    element.style.top = `${keepIn(at.top, window.innerHeight - height)}px`;
+    // Only when it opens: where it is wanted is read then
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const handleHeaderPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {

@@ -90,7 +90,7 @@ export const TooltipLayer = ({ document }: { document: Document }) => {
           update();
         }, 500);
       }
-      bar.current = (target as Element).closest?.('#toolbar, #top-bar') ?? null;
+      bar.current = (target as Element).closest('#toolbar, #top-bar') ?? null;
       const boundingRect = target.getBoundingClientRect();
       virtualElement.current.getBoundingClientRect = () => boundingRect;
       virtualElement.current.contextElement = target;
@@ -129,7 +129,16 @@ export const TooltipLayer = ({ document }: { document: Document }) => {
     document.addEventListener('dragstart', handleDragStart, true);
     document.addEventListener('mouseover', handleShow, true);
     document.addEventListener('mouseout', handleHide, true);
-    document.addEventListener('focus', handleShow, true);
+    // On focus only when it came from the keyboard: a menu that closes gives the focus back to its button,
+    // and its tooltip then stayed open over what lay under it
+    const handleFocus = (e: FocusEvent) => {
+      const target = e.target as Element | null;
+      if (typeof target?.matches === 'function' && target.matches(':focus-visible')) {
+        handleShow(e);
+      }
+    };
+
+    document.addEventListener('focus', handleFocus, true);
     document.addEventListener('blur', handleHide, true);
     document.addEventListener('keydown', handleEscape, true);
 
@@ -138,7 +147,7 @@ export const TooltipLayer = ({ document }: { document: Document }) => {
       document.removeEventListener('dragstart', handleDragStart, true);
       document.removeEventListener('mouseover', handleShow, true);
       document.removeEventListener('mouseout', handleHide, true);
-      document.removeEventListener('focus', handleShow, true);
+      document.removeEventListener('focus', handleFocus, true);
       document.removeEventListener('blur', handleHide, true);
       document.removeEventListener('keydown', handleEscape, true);
     };
