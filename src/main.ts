@@ -112,13 +112,17 @@ function createWindow() {
     // Should be same as body background: Only for split second before css is loaded
     backgroundColor: '#1c1e23',
     title: 'Atlas',
-    show: false, // only show once initial loading is finished
+    show: false,
     ...previousWindowState,
   };
 
   // Create the browser window.
   mainWindow = new BrowserWindow(mainOptions);
-  mainWindow.on('ready-to-show', () => mainWindow?.show());
+  // It opens see-through, at its real size (maximizing would show it anyway), so the page lays out the
+  // gallery for that size; it is seen once the page has drawn it (`onInitialized` below), or after a while
+  // if the page never says so
+  mainWindow.setOpacity(0);
+  setTimeout(revealMainWindow, REVEAL_LIMIT);
 
   // Customize new window opening
   // https://www.electronjs.org/docs/api/window-open
@@ -386,6 +390,8 @@ function createWindow() {
   // then maximize the window if it was previously
   if (previousWindowState.isMaximized) {
     mainWindow.maximize();
+  } else {
+    mainWindow.show();
   }
 
   // Emitted when the window is closed.
@@ -759,6 +765,22 @@ MainMessenger.onSendPreviewFiles((msg) => {
   }
 });
 
+function revealMainWindow() {
+  if (mainWindow !== null && mainWindow.getOpacity() < 1) {
+    mainWindow.setOpacity(1);
+    mainWindow.focus();
+  }
+}
+
+// The main window's page has drawn its gallery: it is shown, and told so, also after a reload when it already
+// was. The page waits for that before its start-up animation, which would otherwise begin unseen
+MainMessenger.onInitialized((sender) => {
+  if (mainWindow !== null && sender === mainWindow.webContents) {
+    revealMainWindow();
+    MainMessenger.revealed(sender);
+  }
+});
+
 // Set native window theme (frame, menu bar)
 MainMessenger.onSetTheme((msg) => (nativeTheme.themeSource = msg.theme));
 
@@ -904,6 +926,8 @@ const MIN_ZOOM_FACTOR = 0.5;
 const MAX_ZOOM_FACTOR = 2;
 const MIN_WINDOW_WIDTH = 240;
 const MIN_WINDOW_HEIGHT = 64;
+/** The main window is seen after this long at the latest, whether or not its page has drawn the gallery */
+const REVEAL_LIMIT = 8000;
 
 /**
  * The page of a screensaver window says `cursor: none`, but the pointer only takes the look of a page

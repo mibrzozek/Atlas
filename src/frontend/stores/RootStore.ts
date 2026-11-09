@@ -103,6 +103,7 @@ class RootStore {
     // It depends on tag store being initialized for reconstructing search criteria
     rootStore.uiStore.recoverPersistentPreferences();
     rootStore.fileStore.recoverPersistentPreferences();
+    rootStore.uiStore.holdStartup();
 
     // Anyone but a new user starts in their home gallery
     if (!isNewUser) {
@@ -113,31 +114,20 @@ class RootStore {
         console.error('Could not start in the home gallery', e);
       }
     }
-    const isSlideMode = runInAction(() => rootStore.uiStore.isSlideMode);
-
     const numCriterias = runInAction(() => rootStore.uiStore.searchCriteriaList.length);
 
-    // There may already be a search already present, recovered from a previous session
-    const fileStoreInit =
-      numCriterias === 0
-        ? rootStore.fileStore.fetchAllFiles
-        : () => {
-            // When searching by criteria, the file counts won't be set (only when fetching all files),
-            // so fetch them manually
-            rootStore.fileStore.refetchFileCounts().catch(console.error);
-            return rootStore.fileStore.fetchFilesByQuery();
-          };
-
-    // Load the files already in the database so user instantly sees their images
-    fileStoreInit().then(() => {
-      rootStore.tagStore.initializeFileCountsFromBackend().catch(console.error);
-
-      // If slide mode was recovered from previous session, it's disabled by setContentQuery :/
-      // hacky workaround
-      if (isSlideMode) {
-        rootStore.uiStore.enableSlideMode();
-      }
-    });
+    // The images and their counts are loaded before anything is shown, so the window opens with them in
+    // place instead of "No images" and counts of 0
+    if (numCriterias === 0) {
+      await rootStore.fileStore.fetchAllFiles();
+    } else {
+      // When searching by criteria, the file counts won't be set (only when fetching all files)
+      await Promise.all([
+        rootStore.fileStore.refetchFileCounts().catch(console.error),
+        rootStore.fileStore.fetchFilesByQuery(),
+      ]);
+    }
+    await rootStore.tagStore.initializeFileCountsFromBackend().catch(console.error);
 
     // Then, look for any new or removed images, and refetch if necessary
     rootStore.locationStore

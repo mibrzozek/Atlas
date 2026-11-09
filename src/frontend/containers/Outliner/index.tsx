@@ -25,9 +25,9 @@ const Outliner = () => {
   ]);
   const [heights, setHeights] = useLocalStorage('outliner-heights-6', [0, 0, 0, 0, 0]);
 
-  // The home button collapses all panels
+  // The home button collapses all panels, and so does the start, which asks before the outliner is there
   const collapseRequest = uiStore.outlinerCollapseRequest;
-  const handledCollapseRequest = useRef(collapseRequest);
+  const handledCollapseRequest = useRef(0);
   useEffect(() => {
     if (handledCollapseRequest.current !== collapseRequest) {
       handledCollapseRequest.current = collapseRequest;

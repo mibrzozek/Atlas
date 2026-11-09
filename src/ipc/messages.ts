@@ -23,6 +23,8 @@ export type SYSTEM_PATHS =
 
 /////////////////// General ////////////////////
 export const INITIALIZED = 'INITIALIZED';
+/** The answer to the main window's INITIALIZED: it is on screen */
+export const WINDOW_REVEALED = 'WINDOW_REVEALED';
 export const CLEAR_DATABASE = 'CLEAR_DATABASE';
 export const TOGGLE_DEV_TOOLS = 'TOGGLE_DEV_TOOLS';
 export const RELOAD = 'RELOAD';

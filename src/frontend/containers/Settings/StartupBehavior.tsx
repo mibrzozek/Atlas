@@ -18,11 +18,11 @@ export const StartupBehavior = observer(() => {
 
   return (
     <div className="vstack">
-      <Toggle
-        checked={uiStore.isRememberSearchEnabled}
-        onChange={uiStore.toggleRememberSearchQuery}
-      >
-        Restore and query last submitted search query
+      <Toggle checked={uiStore.isStartupIntroEnabled} onChange={uiStore.toggleStartupIntro}>
+        Show Atlas Logo splash screen
+      </Toggle>
+      <Toggle checked={uiStore.isLogoThemed} onChange={uiStore.toggleLogoThemed}>
+        Themed logo
       </Toggle>
       <Toggle checked={isAutoUpdateEnabled} onChange={toggleAutoUpdate}>
         Check for updates

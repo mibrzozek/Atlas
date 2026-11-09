@@ -17,7 +17,6 @@ import { IS_PREVIEW_WINDOW, WINDOW_STORAGE_KEY } from 'common/window';
 import { RendererMessenger } from 'src/ipc/renderer';
 import Backend from './backend/backend';
 import App from './frontend/App';
-import SplashScreen from './frontend/containers/SplashScreen';
 import StoreProvider from './frontend/contexts/StoreContext';
 import Overlay from './frontend/Overlay';
 import PreviewApp from './frontend/Preview';
@@ -37,8 +36,6 @@ async function main(): Promise<void> {
 
   const root = createRoot(container);
 
-  root.render(<SplashScreen />);
-
   const db = dbInit(DB_NAME);
 
   if (!IS_PREVIEW_WINDOW) {
@@ -57,8 +54,6 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
   ]);
 
   const rootStore = await RootStore.main(backend, backup);
-
-  RendererMessenger.initialized();
 
   // Recover global preferences
   try {
@@ -160,6 +155,51 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
   window.addEventListener('beforeunload', () => {
     rootStore.close();
   });
+
+  // The window is shown from here on (see `revealMainWindow` in main.ts), and the gallery comes into view.
+  // Its animation begins once the window is on screen and has painted, not while it is still appearing,
+  // which cut off the start of the logo's fade
+  await galleryDrawn();
+  const revealed = RendererMessenger.onceRevealed();
+  RendererMessenger.initialized();
+  await Promise.race([revealed, new Promise((resolve) => setTimeout(resolve, REVEALED_LIMIT))]);
+  await framesPainted();
+  rootStore.uiStore.playStartup();
+}
+
+/** How long the page waits for the main process to say the window is on screen */
+const REVEALED_LIMIT = 1000;
+
+/** Two frames later: what the page has drawn is on screen. At most 200 ms, should frames not come */
+function framesPainted(): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 200);
+    requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(resolve)));
+  });
+}
+
+/** How long the start waits for the gallery's images before the window is shown without them */
+const GALLERY_DRAWN_LIMIT = 4000;
+
+/**
+ * Resolves once the gallery has drawn the images in view, or shows that there are none: the window opens
+ * with nothing left to pop in. Thumbnails still to be made hold it up for `GALLERY_DRAWN_LIMIT` at most.
+ */
+async function galleryDrawn(): Promise<void> {
+  const until = performance.now() + GALLERY_DRAWN_LIMIT;
+  while (performance.now() < until) {
+    if (document.getElementById('content-placeholder') !== null) {
+      return;
+    }
+    const gallery = document.getElementById('gallery-content');
+    const images = Array.from(gallery?.querySelectorAll('img') ?? []);
+    // An image that could not be loaded keeps its spinner (`data-failed`): not waited for
+    if (images.length > 0 && gallery?.querySelector('.image-loading:not([data-failed])') === null) {
+      await Promise.all(images.map((image) => image.decode().catch(() => undefined)));
+      return framesPainted();
+    }
+    await new Promise((resolve) => setTimeout(resolve, 30));
+  }
 }
 
 async function runPreviewApp(db: Dexie, root: Root): Promise<void> {

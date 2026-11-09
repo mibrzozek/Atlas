@@ -1,12 +1,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { observer } from 'mobx-react-lite';
 
+import { startupStyle } from 'common/startup';
 import { useStore } from '../../contexts/StoreContext';
 
 import { IconSet } from 'widgets';
 import { MenuSubItem, Menu, useContextMenu } from 'widgets/menus';
 
 import Placeholder from './Placeholder';
+import StartupIntro from './StartupIntro';
 import Layout from './LayoutSwitcher';
 
 import { LayoutMenuItems, SortMenuItems } from '../AppToolbar/Menus';
@@ -16,6 +18,9 @@ import { useAction } from 'src/frontend/hooks/mobx';
 import useIsWindowMaximized from 'src/frontend/hooks/useIsWindowMaximized';
 import { ManyOpenExternal } from 'src/frontend/components/WarningAlert';
 import WorkspaceView from '../Workspace/WorkspaceView';
+
+/** The timing of the start's animations, for `startup.scss` */
+const STARTUP_STYLE = startupStyle() as React.CSSProperties;
 
 /** How far the wheel turns for one notch, as browsers report it */
 const WHEEL_NOTCH = 100;
@@ -31,8 +36,11 @@ const ContentView = observer(() => {
       className={`thumbnail-${uiStore.thumbnailSize} thumbnail-${uiStore.thumbnailShape} ${
         fileStore.isCollageMode ? 'collage' : ''
       } ${fileStore.isCollageAnimating ? 'collage-animating' : ''}`}
+      data-startup={uiStore.startupPhase}
+      style={STARTUP_STYLE}
     >
       {fileList.length === 0 ? <Placeholder /> : <Content />}
+      <StartupIntro />
       {/* Over the Library, which stays as it is underneath */}
       {workspace !== undefined && <WorkspaceView key={workspace.id} workspace={workspace} />}
     </div>

@@ -18,6 +18,7 @@ import {
   ImportExternalImageMessage,
   IMPORT_EXTERNAL_IMAGE,
   INITIALIZED,
+  WINDOW_REVEALED,
   PreviewFilesMessage,
   RunInBackgroundMessage,
   StoreFileMessage,
@@ -61,6 +62,12 @@ export class MainMessenger {
   static onceInitialized = async (): Promise<unknown> => {
     return new Promise((resolve) => ipcMain.once(INITIALIZED, resolve));
   };
+
+  /** Every time a window's page is ready, after a reload too */
+  static onInitialized = (cb: (sender: WebContents) => void) =>
+    ipcMain.on(INITIALIZED, (e) => cb(e.sender));
+
+  static revealed = (wc: WebContents) => wc.send(WINDOW_REVEALED);
 
   static onClearDatabase = (cb: () => void) => ipcMain.on(CLEAR_DATABASE, cb);
 

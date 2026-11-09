@@ -19,6 +19,7 @@ import {
   ImportExternalImageMessage,
   IMPORT_EXTERNAL_IMAGE,
   INITIALIZED,
+  WINDOW_REVEALED,
   PreviewFilesMessage,
   RunInBackgroundMessage,
   StoreFileMessage,
@@ -60,6 +61,10 @@ import {
 
 export class RendererMessenger {
   static initialized = () => ipcRenderer.send(INITIALIZED);
+
+  /** Once the main window is on screen, after `initialized` */
+  static onceRevealed = (): Promise<void> =>
+    new Promise((resolve) => ipcRenderer.once(WINDOW_REVEALED, () => resolve()));
 
   static clearDatabase = () => ipcRenderer.send(CLEAR_DATABASE);
 

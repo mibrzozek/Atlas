@@ -10,6 +10,7 @@ import { useStore } from '../../contexts/StoreContext';
 import { ClientFile } from '../../entities/File';
 import { ClientTag } from '../../entities/Tag';
 import { SharpSize, getSharpSize } from 'common/sharp-size';
+import { startupDelay } from 'common/startup';
 import { sharpImages } from '../../image/SharpImages';
 import { ViewMethod } from '../../stores/UiStore';
 import { usePromise } from '../../hooks/usePromise';
@@ -106,7 +107,13 @@ export const MasonryCell = observer(
       // The collage leaves room around every image
       isCollage ? 0.88 : 1,
     );
-    const style = { height, width, transform: `translate(${left}px,${top}px)` };
+    const style = {
+      height,
+      width,
+      transform: `translate(${left}px,${top}px)`,
+      // At the start the images fade in from the top left, one after another
+      '--startup-delay': `${startupDelay(top, left)}ms`,
+    } as React.CSSProperties;
     const eventManager = useMemo(() => new CommandDispatcher(file), [file]);
     // In collage mode, dragging an image moves it to another place instead of out of the window
     const collageDnD = useMemo(
@@ -253,7 +260,8 @@ export const Thumbnail = observer(({ file, mounted, forceNoThumbnail, sharpSize 
   if (!mounted) {
     return <span className="image-placeholder" />;
   } else if (loadError) {
-    return <span className="image-loading" />;
+    // Looks like loading, not like a broken image; marked as failed, so that the start does not wait for it
+    return <span className="image-loading" data-failed />;
   } else if (imageSource.tag === 'ready') {
     if ('ok' in imageSource.value) {
       const is_lowres = file.width < 320 || file.height < 320;

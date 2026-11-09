@@ -1,0 +1,115 @@
+///////////////////////////////// Start-up /////////////////////////////////
+// The home gallery is laid out and drawn unseen, the logo and the name come and go over it
+// (`StartupIntro`), then its images fade in one after another. The phases are `UiStore.startupPhase`;
+// every time is set on #content-view from `common/startup.ts`, the one home of the timing.
+
+#content-view {
+  // Every image is hidden by itself, as a layer about to be animated: Chromium then paints them while they are
+  // unseen, ahead of the fade. Hidden all together (opacity 0 on the gallery) they were skipped, and all
+  // painted at once as they began to fade in, while the logo was fading out: its frames stuttered
+  &[data-startup='waiting'],
+  &[data-startup='intro'],
+  &[data-startup='reveal'] {
+    [data-masonrycell] {
+      will-change: opacity, translate;
+    }
+  }
+
+  &[data-startup='waiting'],
+  &[data-startup='intro'] {
+    #gallery-content {
+      pointer-events: none;
+    }
+
+    [data-masonrycell],
+    #list,
+    #content-placeholder {
+      opacity: 0;
+      pointer-events: none;
+    }
+  }
+
+  &[data-startup='reveal'] {
+    // Placed with a transform of their own: the rise is a `translate` on top of it
+    [data-masonrycell] {
+      animation: startup-cell-in var(--startup-image-in) var(--startup-delay, 0ms) ease-out both;
+    }
+
+    // The list, and an empty home gallery, fade in as a whole
+    #list,
+    #content-placeholder {
+      animation: startup-image-in var(--startup-image-in) ease-out both;
+    }
+  }
+}
+
+@keyframes startup-image-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.75rem);
+  }
+}
+
+@keyframes startup-cell-in {
+  from {
+    opacity: 0;
+    translate: 0 0.75rem;
+  }
+}
+
+.startup-intro {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  pointer-events: none;
+  // Both fade out together as the images come in
+  animation: startup-fade-out var(--startup-intro-out) var(--startup-intro-out-delay) ease-in both;
+  // Layers of their own from the first frame: the animations run on the compositor without a hitch to start
+  will-change: opacity;
+}
+
+.startup-intro-mark {
+  animation: startup-mark-in var(--startup-mark-in) ease-out both;
+  will-change: opacity, transform;
+}
+
+.startup-intro-name {
+  animation: startup-fade-in var(--startup-name-in) var(--startup-name-delay) ease-out both;
+  will-change: opacity, transform;
+}
+
+@keyframes startup-mark-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+}
+
+@keyframes startup-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(0.5rem);
+  }
+}
+
+@keyframes startup-fade-out {
+  to {
+    opacity: 0;
+  }
+}
+
+// Less motion asked for: `playStartup` skips all of it; nothing here moves in case a phase is entered anyway
+@media (prefers-reduced-motion: reduce) {
+  #content-view[data-startup='reveal'] [data-masonrycell],
+  #content-view[data-startup='reveal'] #list,
+  #content-view[data-startup='reveal'] #content-placeholder,
+  .startup-intro,
+  .startup-intro * {
+    animation: none !important;
+  }
+}

@@ -15,7 +15,7 @@ import {
   clampSecondsPerImage,
 } from 'common/screensaver';
 import { ID } from '../../api/id';
-import { SearchCriteria } from '../../api/search-criteria';
+import { StartupPhase, startupPhases } from 'common/startup';
 import { RendererMessenger } from '../../ipc/renderer';
 import { AppToaster } from '../components/Toaster';
 import { ClientFile } from '../entities/File';
@@ -163,7 +163,7 @@ type PersistentPreferenceFields =
   | 'isThumbnailResolutionOverlayEnabled'
   | 'outlinerWidth'
   | 'inspectorWidth'
-  | 'isRememberSearchEnabled'
+  | 'isStartupIntroEnabled'
   | 'isLogoThemed'
   | 'isScreensaverEnabled'
   | 'screensaverIdleMinutes'
@@ -177,12 +177,7 @@ type PersistentPreferenceFields =
   | 'isSearchBarVisible'
   | 'isWorkspaceGridShown'
   | 'workspaceGridStyle'
-  | 'isWorkspaceLayersOpen'
-  // the following are only restored when isRememberSearchEnabled is enabled
-  | 'isSlideMode'
-  | 'firstItem'
-  | 'searchMatchAny'
-  | 'searchCriteriaList';
+  | 'isWorkspaceLayersOpen';
 
 class UiStore {
   static MIN_OUTLINER_WIDTH = 192; // default of 12 rem
@@ -259,10 +254,15 @@ class UiStore {
   @observable isThumbnailTagOverlayEnabled: boolean = true;
   @observable isThumbnailFilenameOverlayEnabled: boolean = false;
   @observable isThumbnailResolutionOverlayEnabled: boolean = false;
-  /** Whether to restore the last search query on start-up */
-  @observable isRememberSearchEnabled: boolean = true;
+  /** Whether the start shows the logo and the name (the splash screen) before the home gallery fades in */
+  @observable isStartupIntroEnabled: boolean = true;
   /** Whether the logo always takes the theme's colours, instead of its own wherever they stand out */
   @observable isLogoThemed: boolean = false;
+  /**
+   * Where the start is (`common/startup.ts`): the gallery is laid out and drawn unseen ('waiting'), the logo
+   * and the name come and go ('intro'), the images fade in ('reveal'). Other windows are 'done' from the start
+   */
+  @observable startupPhase: StartupPhase = 'done';
   /** Index of the first item in the viewport. Also acts as the current item shown in slide mode */
   // TODO: Might be better to store the ID to the file. I believe we were storing the index for performance, but we have instant conversion between index/ID now
   @observable firstItem: number = 0;
@@ -416,12 +416,29 @@ class UiStore {
     this.isThumbnailResolutionOverlayEnabled = !this.isThumbnailResolutionOverlayEnabled;
   }
 
-  @action.bound toggleRememberSearchQuery(): void {
-    this.isRememberSearchEnabled = !this.isRememberSearchEnabled;
+  @action.bound toggleStartupIntro(): void {
+    this.isStartupIntroEnabled = !this.isStartupIntroEnabled;
   }
 
   @action.bound toggleLogoThemed(): void {
     this.isLogoThemed = !this.isLogoThemed;
+  }
+
+  /** For the start of the main window: the gallery stays unseen until `playStartup` */
+  @action.bound holdStartup(): void {
+    this.startupPhase = 'waiting';
+  }
+
+  /** Once the gallery is drawn and the window shown: the splash screen, when it is on, then the images fade in */
+  @action.bound playStartup(): void {
+    const phases = startupPhases({
+      isSplashShown: this.isStartupIntroEnabled,
+      isMotionReduced: window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    });
+    for (const { phase, at } of phases) {
+      const enter = action(() => (this.startupPhase = phase));
+      at === 0 ? enter() : window.setTimeout(enter, at);
+    }
   }
 
   @action.bound openOutliner(): void {
@@ -809,24 +826,13 @@ class UiStore {
   }
 
   /**
-   * For start-up: makes the home gallery what is shown, instead of the search of the previous session.
+   * For start-up: opens the home gallery as the home button does, from its top with the panels of the
+   * outliner collapsed, instead of where the previous session was.
    * It does not load the images: the file store does that when it initializes.
    */
   @action.bound startInHomeGallery(homeTagId: ID): void {
-    const [crit] = this.searchCriteriaList;
-    const wasHomeGallery =
-      this.searchCriteriaList.length === 1 &&
-      crit instanceof ClientTagSearchCriteria &&
-      crit.value === homeTagId;
-    if (!wasHomeGallery) {
-      // Where the previous session was looking belongs to another set of images
-      this.firstItem = 0;
-      this.isSlideMode = false;
-    }
-    this.searchCriteriaList.forEach((c) => c.dispose());
-    // A restored search loses "including sub-tags", and is then shown as the text "Tags contains Home"
+    this.outlinerCollapseRequest += 1;
     this.searchCriteriaList.replace([new ClientTagSearchCriteria('tags', homeTagId)]);
-    this.searchMatchAny = false;
   }
 
   @action.bound openToolbarFileRemover(): void {
@@ -1332,25 +1338,7 @@ class UiStore {
           );
         }
 
-        this.isRememberSearchEnabled = Boolean(prefs.isRememberSearchEnabled);
-        if (this.isRememberSearchEnabled) {
-          // If remember search criteria, restore the search criteria list...
-          const serializedCriteriaList: SearchCriteria[] =
-            // BACKWARDS_COMPATIBILITY: searchCriteriaList used to be serialized to a string
-            typeof prefs.searchCriteriaList === 'string'
-              ? JSON.parse(prefs.searchCriteriaList ?? '[]')
-              : prefs.searchCriteriaList ?? [];
-          const newCrits = serializedCriteriaList.map((c) =>
-            ClientFileSearchCriteria.deserialize(c),
-          );
-          this.searchCriteriaList.push(...newCrits);
-
-          // and other content-related options. So it's just like you never closed Atlas!
-          this.firstItem = prefs.firstItem;
-          this.searchMatchAny = prefs.searchMatchAny;
-          this.isSlideMode = prefs.isSlideMode;
-        }
-
+        this.isStartupIntroEnabled = Boolean(prefs.isStartupIntroEnabled ?? true);
         this.isLogoThemed = Boolean(prefs.isLogoThemed ?? false);
         console.info('recovered', prefs);
       } catch (e) {
@@ -1386,7 +1374,7 @@ class UiStore {
       isThumbnailResolutionOverlayEnabled: this.isThumbnailResolutionOverlayEnabled,
       outlinerWidth: this.outlinerWidth,
       inspectorWidth: this.inspectorWidth,
-      isRememberSearchEnabled: this.isRememberSearchEnabled,
+      isStartupIntroEnabled: this.isStartupIntroEnabled,
       isLogoThemed: this.isLogoThemed,
       isScreensaverEnabled: this.isScreensaverEnabled,
       screensaverIdleMinutes: this.screensaverIdleMinutes,
@@ -1401,10 +1389,6 @@ class UiStore {
       isWorkspaceGridShown: this.isWorkspaceGridShown,
       workspaceGridStyle: this.workspaceGridStyle,
       isWorkspaceLayersOpen: this.isWorkspaceLayersOpen,
-      isSlideMode: this.isSlideMode,
-      firstItem: this.firstItem,
-      searchMatchAny: this.searchMatchAny,
-      searchCriteriaList: this.searchCriteriaList.map((c) => c.serialize(this.rootStore)),
     };
     return preferences;
   }
