@@ -11,6 +11,7 @@ import { runInAction } from 'mobx';
 
 import { EditStyle } from 'common/auto-edit';
 import {
+  arrivalTimeOf,
   EASINGS,
   FRAME_RATES,
   frameAround,
@@ -55,6 +56,7 @@ import {
   cutMoments,
   isFraming,
   isMiddleIn,
+  isTextCutOff,
   MotionChanges,
   motionChanges,
   numbered,
@@ -65,6 +67,7 @@ import {
   ShotChanges,
   shotFrame,
   shotSettings,
+  timelineWarnings,
 } from './edits';
 import { soundPicture } from './soundPicture';
 
@@ -626,22 +629,18 @@ export function installDirector(rootStore: RootStore): void {
         images.flatMap((item, i) =>
           item.kind === 'image' && item.imageAspect > 1 === isWide ? [i + 1] : [],
         );
-      return {
-        length: tenths(videoLength(video)),
-        isEndSet: video.end !== undefined,
-        fps: video.fps,
-        background: video.background,
-        photos: allPlaces.photos.length,
-        /** The photos by their shape: wider than high, or not */
-        wide: shaped(true),
-        tall: shaped(false),
-        shots: video.camera.map((stop, i) => {
-          const places = placesAt(workspace, middleOfShot(video, i));
-          const shown = places.photos.filter((photo) => {
-            const place = places.at.get(photo);
-            return place !== undefined && isMiddleIn(place, stop.frame);
-          });
-          return {
+      const beat =
+        video.music !== undefined && video.music.bpm > 0 ? 60 / video.music.bpm : undefined;
+      const found = video.camera.map((stop, i) => {
+        const places = placesAt(workspace, middleOfShot(video, i));
+        const arrived = placesAt(workspace, shotStarts[i] + arrivalTimeOf(stop));
+        const shown = places.photos.filter((photo) => {
+          const place = places.at.get(photo);
+          return place !== undefined && isMiddleIn(place, stop.frame);
+        });
+        const textsOf = (p: Places) => p.texts.flatMap((text) => p.at.get(text) ?? []);
+        return {
+          row: {
             n: i + 1,
             at: tenths(shotStarts[i]),
             length: tenths(stop.length),
@@ -653,8 +652,32 @@ export function installDirector(rootStore: RootStore): void {
             frame: [stop.frame.x, stop.frame.y, stop.frame.width, stop.frame.height].map(
               Math.round,
             ),
-          };
-        }),
+          },
+          facts: {
+            n: i + 1,
+            length: stop.length,
+            shows: shown.map((photo) => places.photos.indexOf(photo) + 1),
+            showsText: textsOf(places).some((text) => isMiddleIn(text, stop.frame)),
+            textsCutOff: [...textsOf(places), ...textsOf(arrived)].some((text) =>
+              isTextCutOff(text, stop.frame),
+            ),
+          },
+        };
+      });
+      return {
+        length: tenths(videoLength(video)),
+        isEndSet: video.end !== undefined,
+        fps: video.fps,
+        background: video.background,
+        photos: allPlaces.photos.length,
+        /** The photos by their shape: wider than high, or not */
+        wide: shaped(true),
+        tall: shaped(false),
+        shots: found.map((shot) => shot.row),
+        warnings: timelineWarnings(
+          found.map((shot) => shot.facts),
+          beat,
+        ),
         layouts: video.layouts.map((layout, i) => ({
           n: i + 1,
           at: tenths(layoutStarts[i]),

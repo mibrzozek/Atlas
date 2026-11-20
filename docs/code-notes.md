@@ -501,6 +501,9 @@ A review of all the video and Director work, by reading the code (not measured).
   `paintFrames`; `photos` the workspace at a moment; `contact` each photo alone and whole, decoded as the video
   saves it (`decodeAt`), fitted and letterboxed. `cutMoments` (`edits.ts`, tested) says which times `cuts`
   shows: the last moment of a shot, and the arrival of the next (`arrivalTimeOf`, capped inside the shot).
+- The `warnings` of `timeline` are `timelineWarnings` (`edits.ts`, tested): plain data per shot, collected in
+  `index.ts` from the middle of each shot and its arrival. A text cut off is one that reaches into the shot's
+  frame without being all in it (`isTextCutOff`). The beat is 60 / bpm, only with a song.
 - The buttons the Director uses are the user's too: Shuffle in the Arrange menu (Alt+R, `shuffleSelection`, the
   last arrangement again with another order), Cut to the beat in the Video tab (`cutToTheBeat`, rules in
   `common/auto-edit.ts`, tested; same seed, same edit), and the Size of Export (Phone, the default:

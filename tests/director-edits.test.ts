@@ -7,8 +7,10 @@ import {
   numbered,
   numberOf,
   Places,
+  ShotFacts,
   shotFrame,
   shotSettings,
+  timelineWarnings,
 } from '../src/frontend/director/edits';
 
 // Three photos in a row and a title over them
@@ -125,6 +127,40 @@ describe('the Director edits', () => {
     expect(isTextCutOff({ x: 90, y: 10, width: 20, height: 20 }, frame)).toBe(true);
     expect(isTextCutOff({ x: 100, y: 10, width: 20, height: 20 }, frame)).toBe(false);
     expect(isTextCutOff({ x: 200, y: 10, width: 20, height: 20 }, frame)).toBe(false);
+  });
+
+  it('warns about the weak spots of a timeline, by shot', () => {
+    const shot = (n: number, facts: Partial<ShotFacts> = {}): ShotFacts => ({
+      n,
+      length: 2,
+      shows: [n],
+      showsText: false,
+      textsCutOff: false,
+      ...facts,
+    });
+    expect(timelineWarnings([shot(1, { length: 0.4 })], 0.43)).toEqual([
+      'Shot 1: shorter than one beat (0.40 s < 0.43 s)',
+    ]);
+    expect(timelineWarnings([shot(1, { length: 0.4 })])).toEqual([]);
+    expect(
+      timelineWarnings([
+        shot(1, { shows: [7] }),
+        shot(2),
+        shot(3, { shows: [7] }),
+        shot(4, { shows: [7, 8] }),
+      ]),
+    ).toEqual(['Shot 3: repeats photo 7 of shot 1']);
+    expect(timelineWarnings([shot(1, { textsCutOff: true })])).toEqual([
+      'Shot 1: a title or text is cut off by its frame',
+    ]);
+    expect(timelineWarnings([shot(1, { shows: [] })])).toEqual(['Shot 1: opens on nothing']);
+    expect(timelineWarnings([shot(1, { shows: [], showsText: true })])).toEqual([]);
+    const quick = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) =>
+      shot(n, { length: n >= 4 && n <= 9 ? 1 : 3 }),
+    );
+    expect(timelineWarnings(quick)).toEqual(['Shot 4: no shot holds from shot 4 to 9']);
+    const four = [1, 2, 3, 4, 5].map((n) => shot(n, { length: n >= 2 && n <= 5 ? 1 : 3 }));
+    expect(timelineWarnings(four)).toEqual([]);
   });
 });
 

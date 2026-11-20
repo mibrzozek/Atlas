@@ -272,6 +272,67 @@ export function isTextCutOff(text: Rect, frame: Rect): boolean {
   return overlaps && !inside;
 }
 
+/** What the warnings of `timelineWarnings` need to know of a shot */
+export interface ShotFacts {
+  n: number;
+  length: number;
+  /** The photo numbers whose middle is in the shot's frame at its middle */
+  shows: number[];
+  /** Whether the middle of a text is in the frame at the middle of the shot */
+  showsText: boolean;
+  /** Whether a text is cut off by the frame, at the middle of the shot or when the shot has arrived */
+  textsCutOff: boolean;
+}
+
+/** A shot shorter than this many seconds is quick; more than `QUICK_RUN` of them in a row hold nothing */
+const QUICK_SHOT = 1.2;
+const QUICK_RUN = 4;
+
+/**
+ * The weak spots of a video's timeline, a short sentence each, starting with the shot's number: a shot
+ * shorter than a beat (`beat`, when there is music), one repeating the photo that was alone in an earlier
+ * shot, a text cut off, a first shot showing nothing, and a run of quick shots
+ */
+export function timelineWarnings(shots: readonly ShotFacts[], beat?: number): string[] {
+  const warnings: string[] = [];
+  // Photo number -> the first shot where it is the only photo
+  const aloneIn = new Map<number, number>();
+  shots.forEach((shot, i) => {
+    const { n, length } = shot;
+    if (beat !== undefined && length < beat) {
+      warnings.push(
+        `Shot ${n}: shorter than one beat (${length.toFixed(2)} s < ${beat.toFixed(2)} s)`,
+      );
+    }
+    if (shot.shows.length === 1) {
+      const [photo] = shot.shows;
+      const first = aloneIn.get(photo);
+      if (first === undefined) {
+        aloneIn.set(photo, n);
+      } else {
+        warnings.push(`Shot ${n}: repeats photo ${photo} of shot ${first}`);
+      }
+    }
+    if (i === 0 && shot.shows.length === 0 && !shot.showsText) {
+      warnings.push(`Shot ${n}: opens on nothing`);
+    }
+    if (shot.textsCutOff) {
+      warnings.push(`Shot ${n}: a title or text is cut off by its frame`);
+    }
+    // A run is counted from its first shot only
+    if (length < QUICK_SHOT && (i === 0 || shots[i - 1].length >= QUICK_SHOT)) {
+      let last = i;
+      while (last + 1 < shots.length && shots[last + 1].length < QUICK_SHOT) {
+        last++;
+      }
+      if (last - i + 1 > QUICK_RUN) {
+        warnings.push(`Shot ${n}: no shot holds from shot ${n} to ${shots[last].n}`);
+      }
+    }
+  });
+  return warnings;
+}
+
 const isRect = (rect: Rect | undefined): rect is Rect => rect !== undefined;
 
 const ALIGNS = ['start', 'middle', 'end'] as const;

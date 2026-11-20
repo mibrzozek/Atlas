@@ -84,7 +84,7 @@ them; **each command is one change to undo** (`rememberVideo`, and `isContinuing
 
 | Command | What it does |
 |---|---|
-| `timeline <id>` | Every shot (when, how long, arrival, stay, which photos it shows), layout and motion (which photos) |
+| `timeline <id>` | Every shot (when, how long, arrival, stay, which photos it shows), layout and motion (which photos), and `warnings`: weak spots by shot (`timelineWarnings`: shorter than a beat, a photo repeated from a shot where it was alone, a text cut off, a first shot showing nothing, more than four quick shots in a row) |
 | `photos <id> [time]` | Everything at that moment, each photo's number on it and the shot outlined: to choose by number |
 | `setShot <id> <n> {…}` | What it shows: `photo` (filled; with `room`, all of it), `photos`, `title`, `all` or `frame`; then `zoom`, `move`; and `length`, `arrival`, `arrivalTime`, `stay`, `easing` |
 | `addShot <id> <after> {…}` | A new shot after shot `after` (0: the first), the same changes; the end set by hand stays |
