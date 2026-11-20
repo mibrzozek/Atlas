@@ -18,6 +18,7 @@ import { DropContextProvider } from './contexts/DropContext';
 import Main from './containers/Main';
 import TopBar from './containers/TopBar';
 import FolderCreator from './containers/FolderCreator';
+import NewWorkspaceDialog from './containers/Workspace/NewWorkspaceDialog';
 import TagManager from './containers/TagManager';
 import Screensaver from './containers/Screensaver';
 import About from './containers/About';
@@ -105,6 +106,8 @@ const App = observer(() => {
             <Main />
 
             <FolderCreator />
+
+            <NewWorkspaceDialog />
 
             <TagManager />
 

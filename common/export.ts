@@ -68,15 +68,18 @@ const RESERVED_NAMES = /^(con|prn|aux|nul|com[0-9]|lpt[0-9])$/i;
 /** Long enough for any name, short enough for the folder and an extension to fit in a path */
 const MAX_NAME_LENGTH = 200;
 
+/** Text as a file name holds it: the letters Windows does not allow become spaces, runs of spaces one */
+export function fileTextOf(text: string): string {
+  return text.replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ');
+}
+
 /**
  * A name someone typed, as a file name: without the letters Windows does not allow in one, nor the dots
  * and spaces it drops from the end, not one of the names it keeps for devices, and not too long. Empty
  * when nothing is left.
  */
 export function fileNameOf(name: string): string {
-  const cleaned = name
-    .replace(/[<>:"/\\|?*\u0000-\u001f]/g, ' ')
-    .replace(/\s+/g, ' ')
+  const cleaned = fileTextOf(name)
     .slice(0, MAX_NAME_LENGTH)
     .replace(/[. ]+$/, '')
     .trim();

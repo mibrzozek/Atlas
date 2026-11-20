@@ -280,6 +280,13 @@ Probe pitfalls that cost time:
   image without its tile is drawn in that colour. Save as picture (`SavePictureDialog.tsx`,
   `workspacePicture.ts`) asks for a name (`fileNameOf`) and a format, then a folder, and writes with
   `writeNewFile` (`common/export.ts`), which never overwrites. Printing was taken out for now.
+  The + (top bar and Workspaces panel) opens `NewWorkspaceDialog.tsx`: a name (prefilled "Workspace", or
+  the next one), and how the pictures and videos saved from it are named (`fileNaming` on the row, read by
+  `fileNamingFromRow`). By pattern: a prefix (following the name until typed over), a number style and a
+  suffix; by date: a name and the date's style, from the day of saving. `nextFileName` (`common/file-naming.ts`,
+  tested) goes on from the highest number of the same prefix and suffix in the folder chosen, and
+  `nextFileNameIn` reads only the names there. The save dialogs show that next name as a hint; a name
+  typed there is kept as it is. The shared pieces (`NamingFields.tsx`) are the folder creator's, too.
   Several selected get a frame (`SelectionFrame`) whose handle sizes them together (`scaleItems`, the
   'scale' gesture, around the frame's top left, snapping its outer edges); Alt + wheel does the same
   around the middle (`scaleByWheel`). Both are sessions like Arrange's (`scaleSelection` with a `from`

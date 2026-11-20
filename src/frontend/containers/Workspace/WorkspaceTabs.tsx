@@ -15,7 +15,7 @@ import { WorkspaceNameInput } from './WorkspaceNameInput';
  * get narrower as there are more of them, and closing one leaves the workspace in the Workspaces panel.
  */
 const WorkspaceTabs = observer(() => {
-  const { uiStore, workspaceStore } = useStore();
+  const { uiStore } = useStore();
   const active = uiStore.activeWorkspace;
   const strip = useRef<HTMLDivElement>(null);
 
@@ -51,7 +51,7 @@ const WorkspaceTabs = observer(() => {
       </div>
       <button
         className="workspace-tab-add btn-icon"
-        onClick={workspaceStore.createFromLibrary}
+        onClick={uiStore.openNewWorkspace}
         aria-label="New workspace"
         data-tooltip="New workspace with the images the Library shows"
       >

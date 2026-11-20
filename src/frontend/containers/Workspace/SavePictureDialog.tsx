@@ -2,6 +2,8 @@ import { observer } from 'mobx-react-lite';
 import React, { useEffect, useRef, useState } from 'react';
 
 import { fileNameOf } from 'common/export';
+import { nextFileName, nextFileNameIn } from 'common/file-naming';
+import { folderDateOf } from 'common/folder-series';
 import { Button, IconSet } from 'widgets';
 import { Dialog } from 'widgets/popovers';
 import { RendererMessenger } from '../../../ipc/renderer';
@@ -32,15 +34,29 @@ function lastFolder(): string | undefined {
 
 /**
  * Saving a workspace as a picture: under a name of the user's own (the workspace's to begin with), as PNG
- * or JPEG, in a folder picked after. Never over another file: a taken name gets a number.
+ * or JPEG, in a folder picked after. Never over another file: a taken name gets a number. A workspace
+ * that names its files gets the next of its names in the folder, unless a name is typed.
  */
 export const SavePictureDialog = observer(
   ({ workspace, onClose }: { workspace: ClientWorkspace; onClose: () => void }) => {
     const { workspaceStore } = useStore();
-    const [name, setName] = useState(workspace.name);
+    const naming = workspace.fileNaming;
+    // Before a folder is known, the first name the naming gives
+    const [hint, setHint] = useState(() =>
+      naming !== undefined ? nextFileName(naming, [], folderDateOf(new Date())) : workspace.name,
+    );
+    const [typedName, setTypedName] = useState<string>();
+    const name = typedName ?? hint;
     const [format, setFormat] = useState<PictureFormat>('png');
     const fileName = fileNameOf(name);
     const nameInput = useRef<HTMLInputElement>(null);
+    // The next name in the folder pictures were saved in last, shown as the name to begin with
+    useEffect(() => {
+      const folder = lastFolder();
+      if (naming !== undefined && folder !== undefined) {
+        nextFileNameIn(naming, folder).then(setHint);
+      }
+    }, [naming]);
     // The name ready to be typed over: `autoFocus` is lost when the dialog opens as a modal after it
     useEffect(() => {
       const frame = requestAnimationFrame(() => nameInput.current?.select());
@@ -67,9 +83,14 @@ export const SavePictureDialog = observer(
       } catch {
         // Only where the dialog opens next time
       }
+      // The next name in the folder chosen, unless the user named the picture
+      const picked =
+        naming !== undefined && typedName === undefined
+          ? await nextFileNameIn(naming, filePaths[0])
+          : fileName;
       onClose();
       saveWorkspacePicture(workspace, images.sources, surface.viewport, {
-        name: fileName,
+        name: picked,
         format,
         folder: filePaths[0],
       });
@@ -103,7 +124,7 @@ export const SavePictureDialog = observer(
                 ref={nameInput}
                 spellCheck={false}
                 value={name}
-                onChange={(event) => setName(event.target.value)}
+                onChange={(event) => setTypedName(event.target.value)}
               />
               <span>.{PICTURE_EXTENSIONS[format]}</span>
             </div>

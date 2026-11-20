@@ -3,6 +3,7 @@ import { action, computed, makeObservable, observable, runInAction, when } from 
 import { moveItem, uniqueName } from 'common/collections';
 import { encodeFilePath } from 'common/fs';
 import { notEmpty, seededRandom, shuffled } from 'common/core';
+import { FileNaming } from 'common/file-naming';
 import { MusicTrack, VideoSize } from 'common/video';
 import {
   addGroup,
@@ -157,13 +158,26 @@ class WorkspaceStore {
     }
   }
 
-  /** A new workspace, after the others, with a batch of images for each thing it was made from */
+  /** The name a new workspace gets when none is typed: "Workspace", numbered past the names taken */
+  nameForNewWorkspace(): string {
+    return uniqueName(
+      'Workspace',
+      this.workspaceList.map((w) => w.name),
+    );
+  }
+
+  /**
+   * A new workspace, after the others, with a batch of images for each thing it was made from. Named
+   * `name` (made unique), and saving its files as `fileNaming` when the user chose how
+   */
   @action.bound async create(
     batches: readonly {
       label: string;
       images: readonly WorkspaceImage[];
       layout?: WorkspaceLayout;
     }[],
+    name = 'Workspace',
+    fileNaming?: FileNaming,
   ): Promise<ClientWorkspace> {
     // Laid out before it exists: what it starts with is not a change that undo would take back
     let items: WorkspaceItem[] = [];
@@ -179,7 +193,7 @@ class WorkspaceStore {
     const workspace = new ClientWorkspace(this, {
       id: generateId(),
       name: uniqueName(
-        'Workspace',
+        name,
         this.workspaceList.map((w) => w.name),
       ),
       index: this.workspaceList.length,
@@ -187,6 +201,7 @@ class WorkspaceStore {
       camera: START_CAMERA,
       isLocked: false,
       layerGroups: [],
+      fileNaming,
     });
     this.workspaceList.push(workspace);
     await this.db.save(workspace.toRow());
@@ -194,20 +209,24 @@ class WorkspaceStore {
   }
 
   /**
-   * A new workspace with the images the Library shows, opened. With many images it is asked about first
-   * (`largeWorkspaceRequest`), and then made and prepared in the background while the Library stays.
+   * A new workspace with the images the Library shows, named `name` and saving its files as `fileNaming`,
+   * opened. With many images it is asked about first (`largeWorkspaceRequest`), and then made and prepared
+   * in the background while the Library stays.
    */
-  @action.bound async createFromLibrary(): Promise<void> {
+  @action.bound async createFromLibrary(
+    name = 'Workspace',
+    fileNaming?: FileNaming,
+  ): Promise<void> {
     const { fileList } = this.rootStore.fileStore;
     if (fileList.length >= LARGE_WORKSPACE) {
       // Made and prepared in the background, while the Library stays in front
       this.largeWorkspaceRequest = {
         imageCount: fileList.length,
-        confirm: async () => this.prepareImages(await this.createOfLibrary()),
+        confirm: async () => this.prepareImages(await this.createOfLibrary(name, fileNaming)),
       };
       return;
     }
-    const workspace = await this.createOfLibrary();
+    const workspace = await this.createOfLibrary(name, fileNaming);
     this.rootStore.uiStore.openWorkspace(workspace);
   }
 
@@ -222,7 +241,7 @@ class WorkspaceStore {
   }
 
   /** The images the Library shows, laid out as the Library shows them: rows, columns or a grid */
-  private async createOfLibrary(): Promise<ClientWorkspace> {
+  private async createOfLibrary(name: string, fileNaming?: FileNaming): Promise<ClientWorkspace> {
     const { fileStore, uiStore } = this.rootStore;
     const images = fileStore.fileList.map((file) => ({
       fileId: file.id,
@@ -232,6 +251,8 @@ class WorkspaceStore {
     const layout = uiStore.galleryLayout;
     const workspace = await this.create(
       images.length > 0 ? [{ label: fileStore.viewName, images, layout }] : [],
+      name,
+      fileNaming,
     );
     // Selected, so that Arrange can change at once how they are laid out (the crop, the spacing)
     workspace.selectMany(workspace.fileIds, false);

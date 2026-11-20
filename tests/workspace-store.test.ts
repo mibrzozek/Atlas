@@ -91,6 +91,18 @@ describe('WorkspaceStore', () => {
     ]);
   });
 
+  it('names a new workspace as chosen, and keeps how its files are named after a restart', async () => {
+    const { store, reopen } = setup();
+    const naming = { mode: 'pattern' as const, prefix: 'Sample_', digits: 3, suffix: '' };
+    const workspace = await store.create([], 'Sample', naming);
+    const plain = await store.create([], 'Sample');
+    expect([workspace.name, plain.name]).toEqual(['Sample', 'Sample 2']);
+    expect(plain.fileNaming).toBeUndefined();
+
+    const read = await reopen();
+    expect(read.workspaceList.map((w) => w.fileNaming)).toEqual([naming, undefined]);
+  });
+
   it('stores every change to what is on it', async () => {
     const { store, reopen } = setup();
     const workspace = await store.create([{ label: 'Film', images: images('a', 'b', 'c') }]);

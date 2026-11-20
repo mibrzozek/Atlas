@@ -65,7 +65,7 @@ const WorkspaceRow = observer(({ workspace }: { workspace: ClientWorkspace }) =>
 
 /** The workspaces, in the order of their tabs */
 const WorkspacesPanel = observer((props: Partial<MultiSplitPaneProps>) => {
-  const { workspaceStore } = useStore();
+  const { uiStore, workspaceStore } = useStore();
   const workspaces = workspaceStore.workspaceList;
 
   return (
@@ -77,7 +77,7 @@ const WorkspacesPanel = observer((props: Partial<MultiSplitPaneProps>) => {
           <ToolbarButton
             icon={IconSet.PLUS}
             text="New workspace"
-            onClick={workspaceStore.createFromLibrary}
+            onClick={uiStore.openNewWorkspace}
             tooltip="New workspace with the images the Library shows"
           />
         </Toolbar>

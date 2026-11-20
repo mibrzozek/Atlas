@@ -724,6 +724,34 @@ describe('workspaceFromRow', () => {
     expect(workspaceFromRow(row, measure)).toEqual(row);
   });
 
+  it('keeps how its files are named, and leaves out a naming that is not one', () => {
+    const naming = {
+      mode: 'date',
+      name: 'Sample',
+      datePosition: 'before',
+      order: 'YMD',
+      dateSeparator: '-',
+      nameSeparator: '_',
+    };
+    const row = {
+      id: 'w3',
+      name: 'Sample',
+      index: 0,
+      items: [],
+      camera: { x: 0, y: 0, zoom: 1 },
+      isLocked: false,
+      layerGroups: [],
+      fileNaming: naming,
+    };
+    expect(workspaceFromRow(row, measure)).toEqual(row);
+    expect(
+      workspaceFromRow({ ...row, fileNaming: { mode: 'date' } }, measure)?.fileNaming,
+    ).toBeUndefined();
+    expect(
+      workspaceFromRow({ ...row, fileNaming: undefined }, measure)?.fileNaming,
+    ).toBeUndefined();
+  });
+
   it('turns the names of batches of earlier versions into texts above their images', () => {
     const read = workspaceFromRow(
       {

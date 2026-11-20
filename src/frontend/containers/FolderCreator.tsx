@@ -15,6 +15,7 @@ import {
   addToFolderDate,
   dateFolderNames,
   detectFolderSeries,
+  folderDateOf,
   formatFolderDate,
   folderSeriesNames,
   invalidFolderNameReason,
@@ -28,6 +29,14 @@ import { useStore } from '../contexts/StoreContext';
 import { ClientStringSearchCriteria } from '../entities/SearchCriteria';
 import RootStore from '../stores/RootStore';
 import { galleryCorner } from './ContentView/utils';
+import {
+  DATE_ORDERS,
+  Field,
+  NamingMode,
+  NamingModeSwitch,
+  NumberStyleSelect,
+  SEPARATORS,
+} from './NamingFields';
 
 const LAST_DIRECTORY_STORAGE_KEY = 'folder-creator-directory';
 
@@ -173,7 +182,6 @@ function initialDirectory({ uiStore, locationStore }: RootStore): string | undef
 const parseWholeNumber = (text: string): number | undefined =>
   /^\d{1,15}$/.test(text.trim()) ? parseInt(text.trim(), 10) : undefined;
 
-type Mode = 'pattern' | 'date';
 const MODE_STORAGE_KEY = 'folder-creator-mode';
 
 /** How folders are named by date. Remembered, as it is usually the same every time */
@@ -204,22 +212,6 @@ function storedDateSettings(): DateSettings {
   }
 }
 
-const SEPARATORS: [value: string, label: string][] = [
-  ['-', 'Dash  ( - )'],
-  ['_', 'Underscore  ( _ )'],
-  ['.', 'Period  ( . )'],
-  [' ', 'Space'],
-  ['', 'Nothing'],
-];
-
-const DATE_ORDERS: [value: FolderDateOrder, label: string][] = [
-  ['YMD', 'Y M D'],
-  ['yMD', 'YY M D'],
-  ['DMY', 'D M Y'],
-  ['MDY', 'M D Y'],
-  ['YM', 'Y M'],
-];
-
 // The value of an <input type="date"> is always YYYY-MM-DD
 const toDateInputValue = (date: FolderDate) => formatFolderDate({ ...date }, 'YMD', '-');
 
@@ -230,18 +222,7 @@ function parseDateInputValue(value: string): FolderDate | undefined {
     : undefined;
 }
 
-function today(): FolderDate {
-  const now = new Date();
-  return { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
-}
-
-/** A labelled input. All fields in a row line up, whatever the length of their labels or the text size */
-const Field = (props: { label: string; hint?: string; children: React.ReactNode }) => (
-  <label className="folder-creator-field" data-tooltip={props.hint}>
-    <span>{props.label}</span>
-    {props.children}
-  </label>
-);
+const today = (): FolderDate => folderDateOf(new Date());
 
 const FolderCreatorForm = observer(() => {
   const rootStore = useStore();
@@ -263,10 +244,10 @@ const FolderCreatorForm = observer(() => {
   const [digits, setDigits] = useState('1');
   const [count, setCount] = useState('1');
 
-  const [mode, setModeState] = useState<Mode>(() =>
+  const [mode, setModeState] = useState<NamingMode>(() =>
     localStorage.getItem(MODE_STORAGE_KEY) === 'date' ? 'date' : 'pattern',
   );
-  const setMode = (newMode: Mode) => {
+  const setMode = (newMode: NamingMode) => {
     setModeState(newMode);
     localStorage.setItem(MODE_STORAGE_KEY, newMode);
   };
@@ -509,12 +490,6 @@ const FolderCreatorForm = observer(() => {
           series.size === 1 ? '' : 's'
         } here: the last one is ${series.last}.`;
 
-  // 1, 2, 3 up to 000001, and whatever longer style the folders here already use
-  const numberStyles = [1, 2, 3, 4, 5, 6];
-  if (digitCount !== undefined && digitCount > 6 && digitCount <= 15) {
-    numberStyles.push(digitCount);
-  }
-
   const countField = (
     <Field label="How many" hint="The number of folders to create">
       <input
@@ -603,29 +578,7 @@ const FolderCreatorForm = observer(() => {
         )
       )}
 
-      <div
-        className="folder-creator-mode"
-        role="radiogroup"
-        aria-label="Name the folders"
-        data-mode={mode}
-      >
-        <button
-          type="button"
-          role="radio"
-          aria-checked={mode === 'pattern'}
-          onClick={() => setMode('pattern')}
-        >
-          By pattern
-        </button>
-        <button
-          type="button"
-          role="radio"
-          aria-checked={mode === 'date'}
-          onClick={() => setMode('date')}
-        >
-          By date
-        </button>
-      </div>
+      <NamingModeSwitch label="Name the folders" mode={mode} onChange={setMode} />
 
       {mode === 'pattern' ? (
         <fieldset
@@ -653,13 +606,7 @@ const FolderCreatorForm = observer(() => {
             />
           </Field>
           <Field label="Number style" hint="Whether short numbers get zeros in front">
-            <select value={digits} onChange={(e) => setDigits(e.target.value)}>
-              {numberStyles.map((width) => (
-                <option key={width} value={String(width)}>
-                  {[1, 2, 3].map((n) => String(n).padStart(width, '0')).join(', ')}
-                </option>
-              ))}
-            </select>
+            <NumberStyleSelect value={digits} onChange={setDigits} />
           </Field>
           <Field label="Suffix" hint="Text behind the number">
             <input

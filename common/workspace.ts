@@ -6,6 +6,7 @@
  */
 
 import { Crop, cropFromRow, refitCrop } from './crop';
+import { FileNaming, fileNamingFromRow } from './file-naming';
 import { VideoProject, videoFromRow } from './video';
 
 export interface Point {
@@ -95,6 +96,8 @@ export interface WorkspaceRow {
   layerGroups: LayerGroup[];
   /** Its video, once one was started (`common/video.ts`) */
   video?: VideoProject;
+  /** How the pictures and videos saved from it are named. Without one, the name of the user's choice */
+  fileNaming?: FileNaming;
 }
 
 // The camera
@@ -1393,7 +1396,7 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
   if (typeof row !== 'object' || row === null) {
     return undefined;
   }
-  const { id, name, index, items, camera, isLocked, layerGroups, video } =
+  const { id, name, index, items, camera, isLocked, layerGroups, video, fileNaming } =
     row as Partial<WorkspaceRow>;
   const { groups } = row as { groups?: unknown };
   if (typeof id !== 'string') {
@@ -1517,6 +1520,7 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
         isLocked: isGroupLocked === true,
       })),
     video: videoFromRow(video),
+    fileNaming: fileNamingFromRow(fileNaming),
   };
 }
 

@@ -203,6 +203,8 @@ class UiStore {
   @observable isPreviewOpen: boolean = false;
   @observable isAdvancedSearchOpen: boolean = false;
   @observable isFolderCreatorOpen: boolean = false;
+  /** The dialog that names a new workspace and how its files are named (`NewWorkspaceDialog`) */
+  @observable isNewWorkspaceOpen: boolean = false;
   /** Whether the bar above the gallery is there: the search with the tags that are shown, sorting and view */
   @observable isSearchBarVisible: boolean = true;
   /** The page where tags and collections are edited */
@@ -554,6 +556,14 @@ class UiStore {
 
   @action.bound closeFolderCreator(): void {
     this.isFolderCreatorOpen = false;
+  }
+
+  @action.bound openNewWorkspace(): void {
+    this.isNewWorkspaceOpen = true;
+  }
+
+  @action.bound closeNewWorkspace(): void {
+    this.isNewWorkspaceOpen = false;
   }
 
   /** The workspace whose tab is open; none means the Library */

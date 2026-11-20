@@ -897,6 +897,17 @@ input.workspace-tab-name {
   }
 }
 
+// The naming of saved files in the new workspace dialog: its fields in rows that fit its width
+.new-workspace-dialog .folder-creator-fields {
+  &[data-mode='pattern'] {
+    grid-template-columns: 2fr 1.5fr 2fr;
+  }
+
+  &[data-mode='date'] {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .workspace-dialog-field {
   display: flex;
   flex-direction: column;

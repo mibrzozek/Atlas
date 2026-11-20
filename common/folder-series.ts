@@ -118,7 +118,8 @@ export function folderSeriesNames(
  */
 
 /** Which parts of the date are written, in which order. `yMD` has a two digit year */
-export type FolderDateOrder = 'YMD' | 'yMD' | 'DMY' | 'MDY' | 'YM';
+export const FOLDER_DATE_ORDERS = ['YMD', 'yMD', 'DMY', 'MDY', 'YM'] as const;
+export type FolderDateOrder = (typeof FOLDER_DATE_ORDERS)[number];
 export type FolderDateStep = 'day' | 'week' | 'month';
 
 /** A calendar day; month is 1 to 12 */
@@ -126,6 +127,11 @@ export interface FolderDate {
   year: number;
   month: number;
   day: number;
+}
+
+/** The calendar day a moment falls on, in local time */
+export function folderDateOf(date: Date): FolderDate {
+  return { year: date.getFullYear(), month: date.getMonth() + 1, day: date.getDate() };
 }
 
 export interface DateFolderOptions {

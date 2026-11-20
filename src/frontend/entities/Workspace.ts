@@ -61,6 +61,7 @@ import {
   withLength,
 } from 'common/video';
 import { autoEdit, EditStyle } from 'common/auto-edit';
+import { FileNaming } from 'common/file-naming';
 import { groupOf, Motion, MotionKind, wavesAt } from 'common/video-motion';
 import { generateId, ID } from '../../api/id';
 import WorkspaceStore from '../stores/WorkspaceStore';
@@ -100,6 +101,8 @@ export class ClientWorkspace {
   /** Its place among the workspaces */
   @observable index: number;
   @observable isLocked: boolean;
+  /** How the files saved from it are named, if the user chose; set when it is made */
+  readonly fileNaming: FileNaming | undefined;
   /** The images and texts, each a plain object that is replaced when it changes */
   readonly items = observable.array<WorkspaceItem>([], { deep: false });
   /** The ids of what is selected; not stored */
@@ -154,6 +157,7 @@ export class ClientWorkspace {
     this.layerGroups.replace(row.layerGroups);
     this.camera = row.camera;
     this.video = row.video;
+    this.fileNaming = row.fileNaming;
     makeObservable(this);
   }
 
@@ -619,6 +623,7 @@ export class ClientWorkspace {
       isLocked: this.isLocked,
       layerGroups: this.groupsInUse,
       video: this.video,
+      fileNaming: this.fileNaming,
     };
   }
 

@@ -1,8 +1,10 @@
 import { observer } from 'mobx-react-lite';
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 
 import { EDIT_STYLES, EditStyle } from 'common/auto-edit';
 import { fileNameOf } from 'common/export';
+import { nextFileName, nextFileNameIn } from 'common/file-naming';
+import { folderDateOf } from 'common/folder-series';
 import {
   ARRIVALS,
   EASINGS,
@@ -26,6 +28,15 @@ import { ClientWorkspace, MUSIC_ID } from '../../entities/Workspace';
 
 /** The folder videos were saved in last, where the folder dialog opens the next time */
 const LAST_FOLDER_KEY = 'Atlas_WorkspaceVideoFolder';
+
+function lastFolder(): string | undefined {
+  try {
+    return localStorage.getItem(LAST_FOLDER_KEY) ?? undefined;
+  } catch {
+    // Only where the dialog opens
+    return undefined;
+  }
+}
 
 /** A time as a clock shows it: 0:03.2 */
 export function formatTime(seconds: number): string {
@@ -665,7 +676,20 @@ const EndField = observer(({ workspace }: { workspace: ClientWorkspace }) => {
 export const ExportSettings = observer(({ workspace }: { workspace: ClientWorkspace }) => {
   const { workspaceStore } = useStore();
   const video = workspace.video!;
-  const [name, setName] = useState(workspace.name);
+  const naming = workspace.fileNaming;
+  // Before a folder is known, the first name the naming gives
+  const [hint, setHint] = useState(() =>
+    naming !== undefined ? nextFileName(naming, [], folderDateOf(new Date())) : workspace.name,
+  );
+  const [typedName, setTypedName] = useState<string>();
+  const name = typedName ?? hint;
+  // The next name in the folder videos were saved in last, shown as the name to begin with
+  useEffect(() => {
+    const folder = lastFolder();
+    if (naming !== undefined && folder !== undefined) {
+      nextFileNameIn(naming, folder).then(setHint);
+    }
+  }, [naming]);
   // Small enough to be sent to a phone, unless asked for the full size
   const [size, setSize] = useState<VideoSize>('phone');
   const output = outputSize(video, size);
@@ -677,16 +701,10 @@ export const ExportSettings = observer(({ workspace }: { workspace: ClientWorksp
     if (!canSave) {
       return;
     }
-    let lastFolder: string | undefined;
-    try {
-      lastFolder = localStorage.getItem(LAST_FOLDER_KEY) ?? undefined;
-    } catch {
-      // Only where the dialog opens
-    }
     const { filePaths } = await RendererMessenger.showOpenDialog({
       title: `Choose a folder for "${fileName}.mp4"`,
       buttonLabel: 'Save here',
-      defaultPath: lastFolder,
+      defaultPath: lastFolder(),
       properties: ['openDirectory', 'createDirectory'],
     });
     if (filePaths.length === 0) {
@@ -697,7 +715,12 @@ export const ExportSettings = observer(({ workspace }: { workspace: ClientWorksp
     } catch {
       // Only where the dialog opens next time
     }
-    workspaceStore.saveVideo(workspace, { name: fileName, folder: filePaths[0], size });
+    // The next name in the folder chosen, unless the user named the video
+    const videoName =
+      naming !== undefined && typedName === undefined
+        ? await nextFileNameIn(naming, filePaths[0])
+        : fileName;
+    workspaceStore.saveVideo(workspace, { name: videoName, folder: filePaths[0], size });
   };
 
   return (
@@ -709,7 +732,7 @@ export const ExportSettings = observer(({ workspace }: { workspace: ClientWorksp
             <input
               spellCheck={false}
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => setTypedName(event.target.value)}
             />
             <span>.mp4</span>
           </div>
