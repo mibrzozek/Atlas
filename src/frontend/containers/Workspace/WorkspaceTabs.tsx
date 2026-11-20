@@ -74,8 +74,8 @@ const DeleteWorkspaceAlert = observer(() => {
     <Alert
       open
       title={`Delete the workspace "${workspace.name}"?`}
-      icon={IconSet.WARNING}
-      type="warning"
+      // In the theme's own colours: no photo is lost, so it asks calmly instead of warning
+      icon={IconSet.DELETE}
       primaryButtonText="Delete"
       defaultButton={DialogButton.CloseButton}
       onClick={(button) => {
