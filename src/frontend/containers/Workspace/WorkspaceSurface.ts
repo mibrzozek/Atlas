@@ -800,7 +800,7 @@ export class WorkspaceSurface {
   private gestureFor(event: PointerEvent): Gesture | undefined {
     const workspace = this.workspace;
     const target = event.target as Element;
-    const id = target.closest<HTMLElement>('.workspace-object')?.dataset.id;
+    const id = target.closest<HTMLElement>('.workspace-object')?.dataset.id ?? this.tileAt(event);
     const isAdditive = event.shiftKey || event.ctrlKey || event.metaKey;
 
     if (event.button === 1 || this.isSpaceDown) {
@@ -862,6 +862,31 @@ export class WorkspaceSurface {
     }
     // Brought to the front by the click when it is let go, or by the move: one change to undo, not two
     return this.moveGesture(id);
+  }
+
+  /**
+   * The front-most image under the pointer that is drawn on the canvas, having no element of its own (far
+   * out): a press on it is a press on that image, not on empty space
+   */
+  private tileAt(event: PointerEvent): string | undefined {
+    const at = toWorld(this.camera, this.pointerAt({ x: event.clientX, y: event.clientY }));
+    const under = this.index.query({ x: at.x - 0.5, y: at.y - 0.5, width: 1, height: 1 });
+    const items = this.itemsBackToFront;
+    for (let i = items.length - 1; i >= 0; i--) {
+      const item = items[i];
+      if (
+        item.kind === 'image' &&
+        under.has(item.id) &&
+        !this.visible.has(item.id) &&
+        at.x >= item.x &&
+        at.x <= item.x + item.width &&
+        at.y >= item.y &&
+        at.y <= item.y + item.height
+      ) {
+        return item.id;
+      }
+    }
+    return undefined;
   }
 
   /** Sizing what is selected together, by the handle of the frame around it */
