@@ -7,7 +7,7 @@
  *   everything stays where it is on the workspace;
  * - motion: behaviours of chosen objects over a stretch of time (pop in, jiggle, float...), see
  *   `video-motion.ts`;
- * - music: one song, whose beats the edit snaps to (`beats.ts`).
+ * - music: one song, whose beats the edit snaps to (`beats.ts`), and sound effects put at times of it.
  * What a frame of the video shows at a time is `stateAt`: the preview and the saved video both draw from
  * it, so they cannot differ.
  */
@@ -116,6 +116,24 @@ export interface MusicTrack {
   swells?: number[];
 }
 
+/** A sound effect under the video (a file in audio/sfx/): it starts at `at` and plays `duration` seconds */
+export interface SoundEffect {
+  id: string;
+  /** The audio file, outside the library: it is only read */
+  path: string;
+  name: string;
+  /** When it starts in the video, in seconds */
+  at: number;
+  /** 0 to MAX_SOUND_VOLUME */
+  volume: number;
+  /** How long the file is, in seconds */
+  duration: number;
+}
+
+/** How loud a sound effect is when it is added: louder than a song, which is added at MUSIC_VOLUME */
+export const SOUND_VOLUME = 0.8;
+export const MAX_SOUND_VOLUME = 1.5;
+
 export interface VideoProject extends Size {
   fps: FrameRate;
   /** What is behind everything, where nothing is: any CSS colour */
@@ -130,6 +148,8 @@ export interface VideoProject extends Size {
   layouts: LayoutBlock[];
   motions: Motion[];
   music?: MusicTrack;
+  /** Sound effects under the video, in the order they were added (`soundsByTime` puts them in time) */
+  sounds?: SoundEffect[];
   /**
    * Where the video ends, in seconds: the end marker, once it is put somewhere by hand. Until then it
    * follows the end of the camera (`naturalEnd`)
@@ -690,6 +710,35 @@ function inVideo(video: VideoProject, times: readonly number[]): number[] {
   return times.filter((time) => time >= music.trim).map((time) => time - music.trim + music.start);
 }
 
+// The sound effects
+
+/** The sound effects in the order they start in the video: the numbers `timeline` gives them */
+export function soundsByTime(video: VideoProject): SoundEffect[] {
+  return (video.sounds ?? []).slice().sort((a, b) => a.at - b.at);
+}
+
+/** Whether there is anything to hear under a video: a song, or sound effects */
+export function hasAudio(video: VideoProject): boolean {
+  return video.music !== undefined || (video.sounds ?? []).length > 0;
+}
+
+/**
+ * Where a sound effect plays when the video plays from `time` and ends at `length`: `wait` seconds from
+ * then (none when it is sounding already), from `offset` into the sound, for `span` seconds (cut where the
+ * video ends). Undefined when it is over by then
+ */
+export function soundPlayback(
+  sound: SoundEffect,
+  time: number,
+  length: number,
+): { wait: number; offset: number; span: number } | undefined {
+  const span = Math.min(length, sound.at + sound.duration) - Math.max(sound.at, time);
+  if (span <= 0) {
+    return undefined;
+  }
+  return { wait: Math.max(0, sound.at - time), offset: Math.max(0, time - sound.at), span };
+}
+
 /**
  * A time snapped to the nearest of `marks` (beats, the edges of other blocks, the playhead) when it is
  * within `threshold` seconds of one; else as it is
@@ -838,6 +887,7 @@ export function videoFromRow(value: unknown): VideoProject | undefined {
     layouts: validLayouts,
     motions: validMotions,
     music: musicFromRow(music),
+    sounds: soundsFromRow(row.sounds),
     end: isNumber(row.end) && row.end > 0 ? row.end : undefined,
   };
 }
@@ -857,5 +907,35 @@ function musicFromRow(value: unknown): MusicTrack | undefined {
     bpm: isNumber(music.bpm) ? music.bpm : 0,
     beats: Array.isArray(music.beats) ? music.beats.filter(isNumber) : [],
     swells: Array.isArray(music.swells) ? music.swells.filter(isNumber) : undefined,
+  };
+}
+
+/** The sound effects stored: those that are not one are left out; undefined when none are stored */
+function soundsFromRow(value: unknown): SoundEffect[] | undefined {
+  return Array.isArray(value)
+    ? value.map(soundFromRow).filter((sound): sound is SoundEffect => sound !== undefined)
+    : undefined;
+}
+
+function soundFromRow(value: unknown): SoundEffect | undefined {
+  const sound = (value ?? {}) as Partial<SoundEffect>;
+  if (
+    typeof sound.id !== 'string' ||
+    typeof sound.path !== 'string' ||
+    !isNumber(sound.at) ||
+    !isNumber(sound.duration) ||
+    sound.duration <= 0
+  ) {
+    return undefined;
+  }
+  return {
+    id: sound.id,
+    path: sound.path,
+    name: typeof sound.name === 'string' ? sound.name : sound.path,
+    at: Math.max(0, sound.at),
+    volume: isNumber(sound.volume)
+      ? Math.min(MAX_SOUND_VOLUME, Math.max(0, sound.volume))
+      : SOUND_VOLUME,
+    duration: sound.duration,
   };
 }

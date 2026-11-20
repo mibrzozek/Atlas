@@ -7,8 +7,8 @@
  * A local server (this computer only, a random port and token, both written to `.director/` in the
  * repository) that takes a command's name and JSON arguments and hands them to the page, which does only
  * the commands on its list, with the stores. It runs no other code. The only files it touches are the names in
- * `audio/` (a song is a plain name, matched against what is really there) and new files in `demo/`; no
- * answer carries a path.
+ * `audio/` (a song is a plain name, matched against what is really there), the sound effects in
+ * `audio/sfx/` (the same), and new files in `demo/`; no answer carries a path.
  */
 import crypto from 'crypto';
 import { app, BrowserWindow, ipcMain } from 'electron';
@@ -50,6 +50,7 @@ export function startDirector(windowOf: () => BrowserWindow | null): void {
   }
   const folder = path.join(repo, '.director');
   const audio = path.join(repo, 'audio');
+  const sfx = path.join(audio, 'sfx');
   const demo = path.join(repo, 'demo');
   // The hidden copy (scripts/dev/hidden.js) has a profile of its own: its connection is another file
   const kind = app.getPath('userData').includes('.dev-hidden-profile') ? 'hidden' : 'user';
@@ -149,13 +150,31 @@ export function startDirector(windowOf: () => BrowserWindow | null): void {
     }, DIRECTOR_HOLD);
   };
 
-  /** The songs in audio/: its files with a music extension, never a folder, a link or anything else */
-  const songs = async (): Promise<string[]> => {
-    const entries = await fse.readdir(audio, { withFileTypes: true }).catch(() => []);
-    return entries
+  /** The audio files among `entries`: with a music extension, never a folder, a link or anything else */
+  const audioNames = (entries: { name: string; isFile(): boolean }[]): string[] =>
+    entries
       .filter((entry) => entry.isFile())
       .map((entry) => entry.name)
       .filter((name) => MUSIC_EXTENSIONS.includes(path.extname(name).slice(1).toLowerCase()));
+
+  /** The songs in audio/ */
+  const songs = async (): Promise<string[]> =>
+    audioNames(await fse.readdir(audio, { withFileTypes: true }).catch(() => []));
+
+  /** The sound effects in audio/sfx/: its audio files one folder down, as `category/file.mp3` */
+  const effects = async (): Promise<string[]> => {
+    const categories = await fse.readdir(sfx, { withFileTypes: true }).catch(() => []);
+    const names = await Promise.all(
+      categories
+        .filter((category) => category.isDirectory())
+        .map(async (category) => {
+          const files = await fse
+            .readdir(path.join(sfx, category.name), { withFileTypes: true })
+            .catch(() => []);
+          return audioNames(files).map((file) => `${category.name}/${file}`);
+        }),
+    );
+    return names.flat().sort();
   };
 
   const run = async (method: string, args: unknown[]): Promise<DirectorAnswer> => {
@@ -164,6 +183,9 @@ export function startDirector(windowOf: () => BrowserWindow | null): void {
     }
     if (method === 'songs') {
       return { ok: true, result: await songs() };
+    }
+    if (method === 'effects') {
+      return { ok: true, result: await effects() };
     }
     if (!COMMAND_NAME.test(method)) {
       return { ok: false, error: `No such command: ${method}` };
@@ -182,6 +204,14 @@ export function startDirector(windowOf: () => BrowserWindow | null): void {
         return { ok: false, error: 'Not a song in audio/: ' + String(name) };
       }
       return inPage('music', [workspace, path.join(audio, name)]);
+    }
+    if (method === 'sound') {
+      // A name exactly as `effects` lists it: a path, or one leaving audio/sfx/, is not in the list
+      const [workspace, name, ...rest] = args;
+      if (typeof name !== 'string' || !(await effects()).includes(name)) {
+        return { ok: false, error: 'Not a sound effect in audio/sfx/: ' + String(name) };
+      }
+      return inPage('sound', [workspace, path.join(sfx, name), ...rest]);
     }
     if (method === 'save') {
       const [workspace, size] = args;

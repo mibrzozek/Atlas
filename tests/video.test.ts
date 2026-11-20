@@ -19,6 +19,9 @@ import {
   resizeVideo,
   shotBefore,
   snapTime,
+  SoundEffect,
+  soundPlayback,
+  soundsByTime,
   startsOf,
   stateAt,
   VIDEO_FORMATS,
@@ -412,6 +415,32 @@ describe('the music', () => {
   });
 });
 
+describe('the sound effects', () => {
+  const sound = (at: number, duration: number): SoundEffect => ({
+    id: `s${at}`,
+    path: 'sfx/a.mp3',
+    name: 'a',
+    at,
+    volume: 1,
+    duration,
+  });
+
+  it('are numbered in the order they start, the order they were added kept', () => {
+    const video = { ...newVideo(view), sounds: [sound(5, 1), sound(2, 1)] };
+    expect(soundsByTime(video).map((s) => s.at)).toEqual([2, 5]);
+    expect(video.sounds!.map((s) => s.at)).toEqual([5, 2]);
+    expect(soundsByTime(newVideo(view))).toEqual([]);
+  });
+
+  it('play from their start, or from where the video is in them, cut where the video ends', () => {
+    expect(soundPlayback(sound(2, 3), 0, 10)).toEqual({ wait: 2, offset: 0, span: 3 });
+    expect(soundPlayback(sound(2, 3), 3, 10)).toEqual({ wait: 0, offset: 1, span: 2 });
+    expect(soundPlayback(sound(2, 3), 0, 4)).toEqual({ wait: 2, offset: 0, span: 2 });
+    expect(soundPlayback(sound(2, 3), 5, 10)).toBeUndefined();
+    expect(soundPlayback(sound(12, 3), 0, 10)).toBeUndefined();
+  });
+});
+
 describe('storage', () => {
   it('reads a video back as it was stored, and refuses what is not one', () => {
     const video: VideoProject = {
@@ -436,6 +465,41 @@ describe('storage', () => {
     expect(videoFromRow({ width: 'x' })).toBeUndefined();
     const damaged = videoFromRow({ ...video, fps: 25, motions: [{ id: 'x', kind: 'nope' }] })!;
     expect([damaged.fps, damaged.motions.length]).toEqual([30, 0]);
+  });
+
+  it('reads the sound effects back, leaving out those that are damaged', () => {
+    const sound = {
+      id: 'bang',
+      path: 'sfx/bang.mp3',
+      name: 'bang',
+      at: 4,
+      volume: 1.2,
+      duration: 2,
+    };
+    const video: VideoProject = { ...newVideo(view), sounds: [sound] };
+    expect(videoFromRow(JSON.parse(JSON.stringify(video)))).toEqual(video);
+    const read = videoFromRow({
+      ...video,
+      sounds: [
+        { ...sound, id: 'loud', volume: 9 },
+        { ...sound, id: 'quiet', volume: -1, at: -2 },
+        { ...sound, id: 'nowhere', path: 42 },
+        { ...sound, id: 'endless', duration: Infinity },
+        { ...sound, id: 'late', at: NaN },
+        { ...sound, id: 'silent', duration: 0 },
+        { path: 'sfx/no-id.mp3', at: 1, duration: 1 },
+        'nothing',
+      ],
+    })!;
+    expect(read.sounds).toEqual([
+      { ...sound, id: 'loud', volume: 1.5 },
+      { ...sound, id: 'quiet', volume: 0, at: 0 },
+    ]);
+    expect(videoFromRow({ ...video, sounds: 'many' })!.sounds).toBeUndefined();
+    expect(videoFromRow({ ...video, sounds: undefined })!.sounds).toBeUndefined();
+    expect(
+      videoFromRow({ ...video, sounds: [{ ...sound, volume: undefined }] })!.sounds![0].volume,
+    ).toBe(0.8);
   });
 
   it('turns the shots of the first version into camera stops and layouts', () => {

@@ -11,6 +11,7 @@ import {
   LayoutBlock,
   MUSIC_EXTENSIONS,
   snapTime,
+  soundsByTime,
   startsOf,
   STAYS,
   TIMELINE_SECONDS,
@@ -25,7 +26,7 @@ import { RendererMessenger } from '../../../ipc/renderer';
 import { AppToaster } from '../../components/Toaster';
 import { ClientWorkspace, MUSIC_ID, VideoLane } from '../../entities/Workspace';
 import { useStore } from '../../contexts/StoreContext';
-import { decodeMusic, peaksOf } from './videoMusic';
+import { decodeMusic, peaksOf } from './videoAudio';
 import { VideoPlayer } from './VideoPlayer';
 import { formatTime } from './VideoSettings';
 
@@ -84,7 +85,7 @@ interface TimelineProps {
  * - Camera and layout: blocks one after another from the start. A click selects one (the workspace shows
  *   it, to be changed); its right edge sets how long it lasts; dragged, it goes to another place.
  * - Motions: blocks anywhere in time, in rows where they overlap; dragged, or by their edges.
- * - Music: the song, dragged to where it begins.
+ * - Music: the song, dragged to where it begins; its sound effects marked on the lane, read only.
  */
 const Timeline = observer(({ workspace, player, isSnapping, isPlayback }: TimelineProps) => {
   const video = workspace.video!;
@@ -531,6 +532,19 @@ const Timeline = observer(({ workspace, player, isSnapping, isPlayback }: Timeli
                 </span>
               </div>
             )}
+            {/* Sound effects: read only, a mark from where each starts, numbered as `timeline` lists them */}
+            {soundsByTime(video).map((sound, i) => (
+              <span
+                key={sound.id}
+                className="workspace-video-sound"
+                style={{
+                  left: sound.at * pixels,
+                  width: Math.max(2, sound.duration * pixels),
+                }}
+              >
+                {i + 1} {sound.name}
+              </span>
+            ))}
           </div>
 
           {dropAt !== undefined && (

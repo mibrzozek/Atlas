@@ -3,7 +3,7 @@ import { action, computed, makeObservable, observable, runInAction, when } from 
 import { moveItem, uniqueName } from 'common/collections';
 import { encodeFilePath } from 'common/fs';
 import { notEmpty, seededRandom, shuffled } from 'common/core';
-import { MusicTrack, VideoSize } from 'common/video';
+import { MusicTrack, SoundEffect, VideoSize } from 'common/video';
 import {
   addGroup,
   MeasureText,
@@ -22,7 +22,7 @@ import { generateId, ID } from '../../api/id';
 import { WorkspaceDatabase } from '../../backend/workspace-db';
 import type { TileCache } from '../containers/Workspace/TileImages';
 import { WorkspaceImages } from '../containers/Workspace/WorkspaceImages';
-import { musicFrom } from '../containers/Workspace/videoMusic';
+import { musicFrom, soundFrom } from '../containers/Workspace/videoAudio';
 import { saveVideoWithProgress } from '../containers/Workspace/workspaceVideo';
 import { measureText as measureInPage } from '../containers/Workspace/measureText';
 import { AppToaster } from '../components/Toaster';
@@ -307,6 +307,18 @@ class WorkspaceStore {
     const music = await musicFrom(file);
     workspace.setMusic(music);
     return music;
+  }
+
+  /** A sound effect (a file read where it is) put under the video at `at` seconds */
+  async addSound(
+    workspace: ClientWorkspace,
+    file: string,
+    at: number,
+    volume?: number,
+  ): Promise<SoundEffect> {
+    const sound = await soundFrom(file, at, volume);
+    workspace.addSound(sound);
+    return sound;
   }
 
   /**

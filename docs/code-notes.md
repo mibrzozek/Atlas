@@ -371,12 +371,15 @@ Probe pitfalls that cost time:
   the camera arrives, `Arrival`, and what it does there, `Stay`), the layout (optional arrangements in a
   row; empty means the workspace as it is), motions (behaviours of chosen objects over a stretch of time,
   `common/video-motion.ts`: entrances hide an object before, exits after) and music (one song, its beats
-  found by `common/beats.ts`, tested on made-up songs only). `stateAt` says what a frame shows at any
-  time; the preview (`VideoPreview`, with the music: `playMusic`) and the saved MP4 (`workspaceVideo.ts`:
+  found by `common/beats.ts`, tested on made-up songs only), with sound effects put at times of it (files
+  of `audio/sfx/`, `SoundEffect`; where each plays from a time: `soundPlayback`, tested). `stateAt` says what
+  a frame shows at any time; the preview (`VideoPreview`, with the audio: `playAudio`) and the saved MP4 (`workspaceVideo.ts`:
   WebCodecs H.264 baseline `avc1.42002a` and AAC, mp4-muxer) both draw it with `drawFrame`, through
   `WorkspacePainter` (`paintWorkspace.ts`, shared with Save as picture). Nothing is recorded off the
   screen: every frame is drawn at its exact time, from images decoded once (`VideoImages`). Songs are
-  read, never written (`videoMusic.ts`). `color-mix()` is newer than this Chromium: do not use it.
+  read, never written (`videoAudio.ts`: `mixAudio` mixes the song and every effect for the MP4, `playAudio`
+  plays them with the preview; effects are decoded once per file, the song one at a time). `color-mix()` is
+  newer than this Chromium: do not use it.
   **Shots**: every camera stop is a shot, its frame a rectangle on the workspace (`VideoShots`, placed
   in pixels of the screen by the surface in every frame, `placeShots`, so its lines stay thin): dotted
   with a "Shot N" label (the dots are drawn as gradients: a dotted border cannot be spaced), the shot
@@ -498,8 +501,8 @@ A review of all the video and Director work, by reading the code (not measured).
   moving files between folders by drag and drop (`handleMove` in `LocationsPanel/useFileDnD.ts`), which could
   also replace and permanently delete another file. The folder creator is `containers/FolderCreator.tsx` (the +
   in the top bar); its only write is `createFolders` in `common/folder-create.ts`.
-- The Director, where it lives: the server in `src/director/main.ts` (it answers `songs` and checks `music`
-  against `audio/` itself, makes `demo/`), the commands in `src/frontend/director/index.ts`, the messages in
+- The Director, where it lives: the server in `src/director/main.ts` (it answers `songs` and `effects`, checks
+  `music` against `audio/` and `sound` against `audio/sfx/` itself, makes `demo/`), the commands in `src/frontend/director/index.ts`, the messages in
   `src/director/channels.ts`. Stop the hidden copy with `hidden.js stop`.
 - The Director's sheets of pictures (`index.ts`): `picture` and `cuts` draw the video's frames through
   `paintFrames`; `photos` the workspace at a moment; `contact` each photo alone and whole, decoded as the video

@@ -1,12 +1,13 @@
 /**
  * A picture of a video's music and what is timed to it, for the Director (development only): Claude cannot
  * hear the result, so the timing is made something to look at. From the top: the song's loudness, its
- * beats (grey ticks), its swells (blue lines, with their time), and every motion as a bar (a wave's crest
- * marked where it crosses the middle), the seconds, and the end of the video (red).
+ * beats (grey ticks), its swells (blue lines, with their time), the sound effects (orange lines, with their
+ * number and name, as `timeline` numbers them), and every motion as a bar (a wave's crest marked where it
+ * crosses the middle), the seconds, and the end of the video (red).
  */
 import { crestOf } from 'common/video-motion';
-import { videoBeats, videoLength, videoSwells, VideoProject } from 'common/video';
-import { decodeMusic, peaksOf } from '../containers/Workspace/videoMusic';
+import { soundsByTime, videoBeats, videoLength, videoSwells, VideoProject } from 'common/video';
+import { decodeMusic, peaksOf } from '../containers/Workspace/videoAudio';
 
 const WIDTH = 1600;
 const LOUDNESS_HEIGHT = 140;
@@ -55,6 +56,11 @@ export async function soundPicture(video: VideoProject, from = 0, to?: number): 
     context.fillStyle = '#5aa9ff';
     context.fillText(`${swell.toFixed(1)}`, x(swell) + 4, 20);
   }
+  soundsByTime(video).forEach((sound, i) => {
+    line(sound.at, '#ffb347', 0, LOUDNESS_HEIGHT, 2);
+    context.fillStyle = '#ffb347';
+    context.fillText(`${i + 1} ${sound.name}`, x(sound.at) + 4, LOUDNESS_HEIGHT - 6);
+  });
 
   video.motions.forEach((motion, i) => {
     const top = LOUDNESS_HEIGHT + i * MOTION_HEIGHT + 2;

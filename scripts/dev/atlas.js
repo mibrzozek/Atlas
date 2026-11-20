@@ -10,7 +10,7 @@
 //   restart                                   Atlas closes and starts again by itself (a change to
 //                                             src/main.ts or src/director/ is then in it); once ready
 //   reload                                    the window loaded again (any other change is then in it)
-//   whoAmI, tags, collections, workspaces, songs, ready
+//   whoAmI, tags, collections, workspaces, songs, effects, ready
 //   create <name> {"tag": "<tag>"} | {"collection": "<collection>"}   add "sample": 40, "seed": 1 for
 //                                             40 of them picked at random (a large tag or collection)
 //   arrange <workspace id> columns|rows|grid [count] [gap] [{"photos": [2, 5, 9], "below": true}]
@@ -26,6 +26,8 @@
 //   video <workspace id> [9:16|4:5|1:1|16:9]
 //   layout <workspace id>                     the arrangement now, as the next layout
 //   music <workspace id> <file name in audio/>
+//   sound <workspace id> <"category/file.mp3", as effects lists it> <at seconds> [{"volume": 0.8}]
+//                                             a sound effect from audio/sfx/ starting then; its number
 //   end <workspace id> [seconds]             where the video ends; none: the end of its camera
 //   waves <workspace id> [strength]          a wave through the photos on every swell of its song
 //   edit <workspace id> cuts|flow|mixed <seed>
@@ -36,7 +38,7 @@
 //                                             frame; 32 moments a sheet, from: the shot to start at
 //   contact <workspace id> [{"width": 360, "from": 1}] --out <file.jpg>   each photo alone, whole, numbered as
 //                                             timeline numbers it; 32 a sheet, from: the photo to start at
-//   soundPicture <workspace id> [from] [to] --out <file.png>   its song, beats, swells and motions in time
+//   soundPicture <workspace id> [from] [to] --out <file.png>   its song, beats, swells, sound effects and motions in time
 //   state <workspace id>
 //
 // Editing a video (numbers from 1, as `timeline` lists them; each command one change to undo):
@@ -55,9 +57,10 @@
 //   addMotion <workspace id> <kind> <[photos]|all> <start> [{"length", "strength", "speed", "stagger"}]
 //   setMotion <workspace id> <motion> {"kind", "photos", "start", "length", "strength", "speed", "stagger"}
 //   setLayout <workspace id> <layout> {"length", "transition", "easing"}
-//   remove <workspace id> shot|layout|motion <numbers...>    motions also by kind: remove <id> motion pulse
+//   remove <workspace id> shot|layout|motion|sound <numbers...>    motions also by kind: remove <id> motion pulse
 //   move <workspace id> shot|layout <number> <to>
 //   setMusic <workspace id> {"start", "trim", "volume"}   trim: where in the song the video starts
+//   setSound <workspace id> <sound> {"at", "volume"}      a sound effect's start and volume; its new number
 //   setVideo <workspace id> {"fps": 30|60, "background": "#101010"}
 //   undo <workspace id>, redo <workspace id>
 //

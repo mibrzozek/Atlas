@@ -3,7 +3,7 @@
  * `process.env.NODE_ENV === 'development'`; the production build leaves it out). The main process
  * (`src/director/main.ts`) hands it any plain name: the commands below are the only ones there are
  * (adding one needs a reload of the window, the `reload` command), each done with the stores and
- * entities, as the buttons do. Nothing here reads or writes a folder: a song's place in
+ * entities, as the buttons do. Nothing here reads or writes a folder: a song's or a sound effect's place in
  * `audio/` and the `demo/` folder come from the main process, and the photos are only read.
  */
 import { ipcRenderer } from 'electron';
@@ -17,6 +17,9 @@ import {
   FRAME_RATES,
   frameAround,
   InRow,
+  MAX_SOUND_VOLUME,
+  SOUND_VOLUME,
+  soundsByTime,
   startsOf,
   stateAt,
   VIDEO_FORMATS,
@@ -175,6 +178,9 @@ export function installDirector(rootStore: RootStore): void {
   /** The middle of a shot, in seconds of the video: what it shows is looked for then */
   const middleOfShot = (video: VideoProject, n: number) =>
     startsOf(video.camera)[n] + video.camera[n].length / 2;
+  /** The number a sound effect has in `timeline`: by when it starts */
+  const numberOfSound = (video: VideoProject, id: string) =>
+    soundsByTime(video).findIndex((sound) => sound.id === id) + 1;
   /** A shot changed (`ShotChanges`): its length first, as the moment it shows depends on it */
   const changeShot = (workspace: ClientWorkspace, id: string, changes: ShotChanges) => {
     const settings = shotSettings(changes);
@@ -431,6 +437,22 @@ export function installDirector(rootStore: RootStore): void {
       const music = await workspaceStore.addMusic(workspaceOf(id), file);
       workspaceOf(id).clearBlockSelection();
       return { song: music.name, bpm: Math.round(music.bpm) };
+    },
+
+    /**
+     * A sound effect (a name `effects` lists) starting at `at` seconds of the video, at `volume` (0 to 1.5):
+     * one change to undo. Its number, as `timeline` gives it
+     */
+    sound: async (id: string, file: string, at: number, changes: { volume?: number } = {}) => {
+      const workspace = workspaceOf(id);
+      videoOf(workspace);
+      const sound = await workspaceStore.addSound(
+        workspace,
+        file,
+        numberOf(at, 'at', 0, 3600),
+        numberOf(changes.volume ?? SOUND_VOLUME, 'volume', 0, MAX_SOUND_VOLUME),
+      );
+      return numberOfSound(videoOf(workspace), sound.id);
     },
 
     /** Where the video ends, in seconds; nothing: at the end of its camera again */
@@ -734,6 +756,13 @@ export function installDirector(rootStore: RootStore): void {
                 volume: tenths(video.music.volume),
                 bpm: Math.round(video.music.bpm),
               },
+        sounds: soundsByTime(video).map((sound, i) => ({
+          n: i + 1,
+          name: sound.name,
+          at: tenths(sound.at),
+          length: tenths(sound.duration),
+          volume: Math.round(sound.volume * 100) / 100,
+        })),
       };
     },
 
@@ -845,14 +874,23 @@ export function installDirector(rootStore: RootStore): void {
     },
 
     /**
-     * Shots, layouts or motions removed: by their numbers, or (motions) every one of a kind, such as
-     * "pulse". One change to undo
+     * Shots, layouts, motions or sound effects removed: by their numbers, or (motions) every one of a kind,
+     * such as "pulse". One change to undo
      */
-    remove: (id: string, lane: keyof typeof LANES, ...which: (number | string)[]) => {
+    remove: (id: string, lane: keyof typeof LANES | 'sound', ...which: (number | string)[]) => {
       const workspace = workspaceOf(id);
       const video = videoOf(workspace);
+      if (lane === 'sound') {
+        const sounds = soundsByTime(video);
+        const ids = [...new Set(which.map((w) => numbered(sounds, w, 'sound').id))];
+        if (ids.length === 0) {
+          throw new Error('Nothing to remove');
+        }
+        ids.forEach((soundId, i) => workspace.removeSound(soundId, i > 0));
+        return { removed: ids.length };
+      }
       if (!Object.prototype.hasOwnProperty.call(LANES, lane)) {
-        throw new Error('Remove a shot, layout or motion');
+        throw new Error('Remove a shot, layout, motion or sound');
       }
       const blocks: readonly { id: string; kind?: string }[] =
         lane === 'shot' ? video.camera : lane === 'layout' ? video.layouts : video.motions;
@@ -892,6 +930,26 @@ export function installDirector(rootStore: RootStore): void {
     redo: (id: string) => {
       workspaceOf(id).redo();
       return 'redone';
+    },
+
+    /**
+     * A sound effect's start (`at`, seconds of the video) and volume (0 to 1.5), by its number as `timeline`
+     * gives it: one change to undo. Its number after the change (they are in time order)
+     */
+    setSound: (id: string, n: number, changes: { at?: number; volume?: number } = {}) => {
+      const workspace = workspaceOf(id);
+      const video = videoOf(workspace);
+      const sound = numbered(soundsByTime(video), n, 'sound');
+      const { at, volume } = changes ?? {};
+      const checked = {
+        ...(at !== undefined ? { at: numberOf(at, 'at', 0, 3600) } : {}),
+        ...(volume !== undefined
+          ? { volume: numberOf(volume, 'volume', 0, MAX_SOUND_VOLUME) }
+          : {}),
+      };
+      workspace.rememberVideo();
+      workspace.changeSound(sound.id, checked);
+      return numberOfSound(videoOf(workspace), sound.id);
     },
 
     /** Where its song begins in the video, how much of the song's start is skipped, how loud it is */

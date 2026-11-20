@@ -613,6 +613,22 @@
   pointer-events: none;
 }
 
+// A sound effect on the music lane: read only, a bar from where it starts for as long as it plays
+.workspace-video-sound {
+  position: absolute;
+  bottom: 0.125rem;
+  height: 0.75rem;
+  box-sizing: border-box;
+  padding: 0 0.25rem;
+  overflow: hidden;
+  border-left: 0.125rem solid var(--accent-color);
+  color: var(--text-color-strong);
+  font-size: 0.5625rem;
+  line-height: 0.75rem;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
 // The part of a block that is a move into it: striped
 .workspace-video-move {
   flex: none;

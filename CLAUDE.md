@@ -181,7 +181,7 @@ From least to most intrusive (details in `docs/code-notes.md`, "Verifying in the
 - **Do not rename `DB_NAME = 'Allusion'` or the `Allusion_*` storage keys**; the database schema stays at version 8
   (9 would stop backups restoring into Allusion; ask first). Workspaces have their own database, `Atlas_Workspaces`.
 - **Whole-row writes overwrite each other**: bulk updates must also update the loaded `ClientFile`s and never run
-  alongside another bulk update. **Readers of stored rows** (`videoFromRow`, `musicFromRow`, `workspaceFromRow`)
+  alongside another bulk update. **Readers of stored rows** (`videoFromRow`, `musicFromRow`, `soundFromRow`, `workspaceFromRow`)
   must learn every new field in the same change, with a round-trip test: a new field was silently dropped once.
 - `width`/`height` are the displayed dimensions (swapped for sideways Exif). `ImageDecoder` with a desired size
   already rotates: do not rotate again. Close `ImageBitmap`s and video frames, or memory balloons.

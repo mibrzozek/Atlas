@@ -3,12 +3,12 @@ import { observer } from 'mobx-react-lite';
 import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 
-import { videoBeats, videoLength } from 'common/video';
+import { hasAudio, videoBeats, videoLength } from 'common/video';
 import { IconSet } from 'widgets';
 import { ClientWorkspace } from '../../entities/Workspace';
 import { WorkspaceImageSource } from '../../stores/WorkspaceStore';
 import { WorkspacePainter } from './paintWorkspace';
-import { decodeMusic, playMusic } from './videoMusic';
+import { decodeAudio, playAudio } from './videoAudio';
 import { VideoPlayer } from './VideoPlayer';
 import Timeline, { LoopCheckbox, PlayTime } from './VideoTimeline';
 import { drawFrame, drawingOrder, neededWidths, VideoImages } from './workspaceVideo';
@@ -79,10 +79,8 @@ const VideoPreview = observer(
       }
       let isCurrent = true;
       runInAction(() => isPreparing.set(true));
-      // The song decoded now too, not when playing begins
-      if (workspace.video.music !== undefined) {
-        decodeMusic(workspace.video.music.path).catch(() => undefined);
-      }
+      // The song and the sounds decoded now too, not when playing begins
+      decodeAudio(workspace.video);
       VideoImages.prepare(
         workspace.video,
         workspace.items.slice(),
@@ -149,21 +147,21 @@ const VideoPreview = observer(
         last = now;
         frame = player.isPlaying ? requestAnimationFrame(step) : undefined;
       };
-      // The music along, from where it plays: stopped when it stops (or waits for images), from the
-      // start again with a loop, and again from where it is when the song or where it begins changes
-      let stopMusic: (() => void) | undefined;
+      // The audio along, from where it plays: stopped when it stops (or waits for images), from the
+      // start again with a loop, and again from where it is when the video changes
+      let stopAudio: (() => void) | undefined;
       const stopPlaying = reaction(
-        () => [player.isPlaying, player.loops, workspace.video?.music, isPreparing.get()] as const,
-        ([isPlaying, , music, isWaiting]) => {
+        () => [player.isPlaying, player.loops, workspace.video, isPreparing.get()] as const,
+        ([isPlaying, , shown, isWaiting]) => {
           isWaitingForImages = isWaiting;
           if (isPlaying && frame === undefined) {
             last = undefined;
             frame = requestAnimationFrame(step);
           }
-          stopMusic?.();
-          stopMusic =
-            isPlaying && !isWaiting && music !== undefined
-              ? playMusic(music, player.time)
+          stopAudio?.();
+          stopAudio =
+            isPlaying && !isWaiting && shown !== undefined && hasAudio(shown)
+              ? playAudio(shown, player.time)
               : undefined;
         },
         { fireImmediately: true },
@@ -171,7 +169,7 @@ const VideoPreview = observer(
       return () => {
         stopDrawing();
         stopPlaying();
-        stopMusic?.();
+        stopAudio?.();
         if (frame !== undefined) {
           cancelAnimationFrame(frame);
         }

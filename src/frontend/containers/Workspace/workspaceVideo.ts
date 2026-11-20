@@ -8,8 +8,8 @@ import { cropOf } from 'common/crop';
 import {
   closestFrameWidth,
   frameCount,
+  hasAudio,
   MUSIC_BITRATE,
-  MusicTrack,
   outputSize,
   Pose,
   stateAt,
@@ -23,7 +23,7 @@ import { AppToaster } from '../../components/Toaster';
 import { sharpImages } from '../../image/SharpImages';
 import type { VideoSaveResult, WorkspaceImageSource } from '../../stores/WorkspaceStore';
 import { WorkspacePainter } from './paintWorkspace';
-import { mixMusic, MUSIC_SAMPLE_RATE } from './videoMusic';
+import { mixAudio, MUSIC_SAMPLE_RATE } from './videoAudio';
 
 /**
  * The images of a video, each decoded once, at the size the video shows it largest (never larger than its
@@ -272,14 +272,12 @@ export async function saveVideo(
     const canvas = new OffscreenCanvas(output.width, output.height);
     const paint = new WorkspacePainter(canvas.getContext('2d')!, themeOf);
     const target = new ArrayBufferTarget();
-    const { music } = video;
     const muxer = new Muxer({
       target,
       video: { codec: 'avc', width: output.width, height: output.height, frameRate: video.fps },
-      audio:
-        music !== undefined
-          ? { codec: 'aac', numberOfChannels: 2, sampleRate: MUSIC_SAMPLE_RATE }
-          : undefined,
+      audio: hasAudio(video)
+        ? { codec: 'aac', numberOfChannels: 2, sampleRate: MUSIC_SAMPLE_RATE }
+        : undefined,
       fastStart: 'in-memory',
     });
     // The encoder's own error: once it has one it is closed, and every call after throws another that
@@ -333,9 +331,9 @@ export async function saveVideo(
     if (saving.isCancelled()) {
       return undefined;
     }
-    if (music !== undefined) {
-      saving.onProgress(0.92, 'Mixing the music');
-      await encodeMusic(music, count / video.fps, (chunk, meta) =>
+    if (hasAudio(video)) {
+      saving.onProgress(0.92, 'Mixing the audio');
+      await encodeAudio(video, count / video.fps, (chunk, meta) =>
         muxer.addAudioChunk(chunk, meta),
       );
     }
@@ -348,13 +346,13 @@ export async function saveVideo(
   }
 }
 
-/** The music mixed to the video's length and encoded as AAC, its pieces handed to `output` */
-async function encodeMusic(
-  music: MusicTrack,
+/** The audio mixed to the video's length and encoded as AAC, its pieces handed to `output` */
+async function encodeAudio(
+  video: VideoProject,
   length: number,
   output: EncodedAudioChunkOutputCallback,
 ): Promise<void> {
-  const mixed = await mixMusic(music, length);
+  const mixed = await mixAudio(video, length);
   // As for the picture: the encoder's own error, not the ones of the calls after it
   let failure: Error | undefined;
   const encoder = new AudioEncoder({ output, error: (e) => (failure ??= e) });

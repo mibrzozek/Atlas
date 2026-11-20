@@ -44,6 +44,7 @@ import {
   followLayout,
   frameAround,
   LayoutBlock,
+  MAX_SOUND_VOLUME,
   MIN_BLOCK_LENGTH,
   moveInRow,
   MusicTrack,
@@ -52,6 +53,7 @@ import {
   Pose,
   posesOf,
   resizeVideo,
+  SoundEffect,
   startsOf,
   videoBeats,
   videoLength,
@@ -1036,6 +1038,46 @@ export class ClientWorkspace {
       music.trim = Math.max(0, Math.min(music.trim, music.duration - 1));
       music.volume = Math.min(1, Math.max(0, music.volume));
       this.changeVideo({ ...video, music });
+    }
+  }
+
+  /** A sound effect put under the video: one change to undo */
+  @action.bound addSound(sound: SoundEffect): void {
+    const { video } = this;
+    if (video !== undefined) {
+      this.changeVideo({ ...video, sounds: [...(video.sounds ?? []), sound] }, true);
+    }
+  }
+
+  /**
+   * A sound effect moved to another time, or made louder or softer. No change to undo of its own: the
+   * Director's settings take a `rememberVideo` before, as the music's do
+   */
+  @action.bound changeSound(
+    id: string,
+    changes: Partial<Pick<SoundEffect, 'at' | 'volume'>>,
+  ): void {
+    const { video } = this;
+    if (video?.sounds !== undefined) {
+      const sounds = video.sounds.map((sound) =>
+        sound.id === id
+          ? {
+              ...sound,
+              at: Math.max(0, changes.at ?? sound.at),
+              volume: Math.min(MAX_SOUND_VOLUME, Math.max(0, changes.volume ?? sound.volume)),
+            }
+          : sound,
+      );
+      this.changeVideo({ ...video, sounds });
+    }
+  }
+
+  /** A sound effect taken away. With `isContinuing`, a further step of the change before: removed together */
+  @action.bound removeSound(id: string, isContinuing = false): void {
+    const { video } = this;
+    if (video?.sounds !== undefined) {
+      const sounds = video.sounds.filter((sound) => sound.id !== id);
+      this.changeVideo({ ...video, sounds }, !isContinuing);
     }
   }
 
