@@ -320,6 +320,8 @@ export function installDirector(rootStore: RootStore): void {
         even: true,
         crop: style === 'grid' ? '1:1' : undefined,
         below: only.below === true,
+        // Photos named one by one are laid out in the order named: a sequence, not reading order
+        order: only.photos !== undefined ? ids : undefined,
       });
       workspace.clearSelection();
       const arranged = imagesOf(workspace).filter((item) => ids.includes(item.id));

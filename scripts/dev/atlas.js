@@ -14,7 +14,7 @@
 //   create <name> {"tag": "<tag>"} | {"collection": "<collection>"}   add "sample": 40, "seed": 1 for
 //                                             40 of them picked at random (a large tag or collection)
 //   arrange <workspace id> columns|rows|grid [count] [gap] [{"photos": [2, 5, 9], "below": true}]
-//                                             only those photos; below: under everything else
+//                                             only those photos, in that order; below: under everything else
 //   path <workspace id> <seed> [gap] [{"turns": "loop"}]   its photos along a path to pan over: short rows
 //                                             of the wide ones and columns of the tall ones in turn, turning
 //                                             at random, or with "loop" right, down, left, up round and round
