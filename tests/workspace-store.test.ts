@@ -142,6 +142,30 @@ describe('WorkspaceStore', () => {
     expect(texts(workspace)).toEqual(['Film', 'Again']);
   });
 
+  it('extends its photos into a wall of copies after them, one change to undo, stored', async () => {
+    const { store, reopen } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b', 'c') }]);
+    runInAction(() => {
+      workspace.selectMany(['a', 'b', 'c'], false);
+      workspace.arrangeSelection('columns', 2, { gap: 8, fill: true, even: true });
+      workspace.clearSelection();
+    });
+    const before = workspace.items.slice();
+    const copies = runInAction(() =>
+      workspace.extend({ columns: 2, above: 200, below: 200, seed: 3 }),
+    );
+    expect(copies).toBeGreaterThan(0);
+    // Each file once in the list of files; the copies after everything that was there
+    expect(workspace.fileIds).toEqual(['a', 'b', 'c']);
+    expect(workspace.items.slice(0, before.length)).toEqual(before);
+    expect(new Set(workspace.items.map((item) => item.id)).size).toBe(before.length + copies);
+    await settle();
+    const read = (await reopen()).workspaceList[0];
+    expect(read.items).toHaveLength(before.length + copies);
+    runInAction(() => workspace.undo());
+    expect(workspace.items.slice()).toEqual(before);
+  });
+
   it('brings a covered image to the front', async () => {
     const { store } = setup();
     const workspace = await store.create([{ label: 'Film', images: images('back', 'front') }]);

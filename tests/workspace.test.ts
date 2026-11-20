@@ -809,6 +809,24 @@ describe('workspaceFromRow', () => {
     expect(read.camera.zoom).toBe(MAX_ZOOM);
     expect(read.isLocked).toBe(false);
   });
+
+  it('reads copies of a photo under ids of their own, and a photo under its id once', () => {
+    const copy = { ...item('a', 300, 0, 1), id: 'copy' };
+    const read = workspaceFromRow(
+      {
+        id: 'w4',
+        name: 'Wall',
+        items: [item('a', 0, 0, 0), copy, item('a', 0, 0, 2), item('b', 600, 0, 3)],
+        camera: { x: 0, y: 0, zoom: 1 },
+      },
+      measure,
+    )!;
+    expect(read.items.map((i) => [i.id, i.kind === 'image' && i.fileId])).toEqual([
+      ['a', 'a'],
+      ['copy', 'a'],
+      ['b', 'b'],
+    ]);
+  });
 });
 
 describe('even spacing', () => {

@@ -29,6 +29,7 @@ import {
   videoSwells,
 } from 'common/video';
 import { photoPath } from 'common/photo-path';
+import { originalsOf } from 'common/wall';
 import { crestOf } from 'common/video-motion';
 import {
   boundsOf,
@@ -376,6 +377,37 @@ export function installDirector(rootStore: RootStore): void {
       };
     },
 
+    /**
+     * The photos extended into a wall: copies of them in `columns` columns to each side of the block, and
+     * `above` and `below` it, in pixels of the workspace; never next to a copy of their own photo. Added after
+     * the photos, so their numbers come next and the others stay as they are. One change to undo. Its counts
+     * and the bounds of the workspace then
+     */
+    extend: (
+      id: string,
+      options: { columns?: number; above?: number; below?: number; seed?: number } = {},
+    ) => {
+      const workspace = workspaceOf(id);
+      if (workspace.isLocked) {
+        throw new Error('It is locked');
+      }
+      const copies = workspace.extend({
+        columns: numberOf(options.columns ?? 6, 'columns', 1, 40),
+        above: numberOf(options.above ?? 4000, 'above', 0, 100000),
+        below: numberOf(options.below ?? 4000, 'below', 0, 100000),
+        seed: Number(options.seed ?? 1),
+      });
+      if (copies === 0) {
+        throw new Error('No copy fits beside the photos');
+      }
+      const bounds = boundsOf(workspace.items.slice())!;
+      return {
+        copies,
+        files: workspace.fileIds.length,
+        bounds: [bounds.x, bounds.y, bounds.width, bounds.height].map(Math.round),
+      };
+    },
+
     /** The same arrangement, its photos in another order */
     shuffle: (id: string, seed: number) => {
       const workspace = workspaceOf(id);
@@ -554,7 +586,8 @@ export function installDirector(rootStore: RootStore): void {
     /**
      * Each photo alone and whole, fitted into a square cell (letterboxed on black), numbered as `timeline`
      * numbers them: to judge focus, subject and light before choosing shots. As a JPEG (as data); 32 to a
-     * sheet, `from` a photo number starts a page. The video and the workspace are not changed
+     * sheet, `from` a photo number starts a page. Each file once, under its first photo's number: the copies
+     * of a wall are left out. The video and the workspace are not changed
      */
     contact: async (id: string, options: { width?: number; from?: number } = {}) => {
       const workspace = workspaceOf(id);
@@ -564,13 +597,20 @@ export function installDirector(rootStore: RootStore): void {
       }
       const first = numberOf(options.from ?? 1, 'from', 1, photos.length);
       const cell = widthOf(options.width, SHEET_WIDTH);
-      const page = photos.slice(first - 1, first - 1 + MAX_CONTACT_PHOTOS);
+      // Each file once, under the number its first item has: the copies of a wall are left out
+      const page = originalsOf(photos)
+        .map((item) => ({ item, n: photos.indexOf(item) + 1 }))
+        .filter(({ n }) => n >= first)
+        .slice(0, MAX_CONTACT_PHOTOS);
+      if (page.length === 0) {
+        throw new Error('No photo from that number on');
+      }
       const { images } = await ready(workspace);
       const sheet = document.createElement('canvas');
       sheet.width = cell * Math.min(8, page.length);
       sheet.height = cell * Math.ceil(page.length / 8);
       const context = sheet.getContext('2d')!;
-      for (const [i, item] of page.entries()) {
+      for (const [i, { item, n }] of page.entries()) {
         const x = (i % 8) * cell;
         const y = Math.floor(i / 8) * cell;
         context.fillStyle = '#000000';
@@ -602,7 +642,7 @@ export function installDirector(rootStore: RootStore): void {
           }
         }
         context.font = 'bold 18px sans-serif';
-        tag(context, String(first + i), x + 6, y + 6);
+        tag(context, String(n), x + 6, y + 6);
       }
       return sheet.toDataURL('image/jpeg', 0.8);
     },
@@ -674,9 +714,11 @@ export function installDirector(rootStore: RootStore): void {
       const shotStarts = startsOf(video.camera);
       const layoutStarts = startsOf(video.layouts);
       const images = imagesOf(workspace);
+      // A copy has the shape of its photo: each file's first item stands for it
+      const photosOf = new Set(originalsOf(images));
       const shaped = (isWide: boolean) =>
         images.flatMap((item, i) =>
-          item.kind === 'image' && item.imageAspect > 1 === isWide ? [i + 1] : [],
+          photosOf.has(item) && item.imageAspect > 1 === isWide ? [i + 1] : [],
         );
       const beat =
         video.music !== undefined && video.music.bpm > 0 ? 60 / video.music.bpm : undefined;

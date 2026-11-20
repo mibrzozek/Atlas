@@ -350,7 +350,19 @@ Probe pitfalls that cost time:
   drag and are matched by path. On the surface the batch lands where it was dropped; on a tab or a row of
   the Workspaces panel next to what is there, and held there 0.7 s that workspace opens
   (`useWorkspaceDrop.ts`, shared by both, which also reorders them). Ctrl+C / Ctrl+V copy objects within
-  and between workspaces (`pasteItems`); an image is on a workspace once, so there is no duplicate key.
+  and between workspaces (`pasteItems`); a photo put on a workspace from the Library is there once, so the
+  batches leave out what is there. A photo's item id is its file's; a copy of it (see the wall below) has
+  an id of its own, so one file can be on a workspace more than once, and the stored reader keeps each id once
+  (`workspaceFromRow`). `fileIds` lists each file once: that is what the surface, the tiles and the sources
+  are keyed by, so a copy is drawn from its file's tile. **The wall** (`extend` in the Director,
+  `ClientWorkspace.extend`, `common/wall.ts`, tested): copies of the photos in masonry columns of the photos'
+  own column width and gap (`columnShapeOf`; photos not in columns are refused) to the left and right of the
+  block, and continuing its columns above (above a text too) and below, to `above`/`below` pixels. Each stack
+  takes the photos in the order of the seed, moving past anything in the way and past a photo that would sit
+  next to a copy of its own (directly above or below in its column, or in the next column within a gap). The
+  copies are added after everything, one change to undo, and nothing that was there moves. The video decodes
+  each file once, at the widest size its copies need (`VideoImages` is keyed by file); `contact` shows each
+  file once under its first photo's number, and `timeline`'s `wide`/`tall` lists the first item of each file.
   A text without a colour of its own is drawn dark on a light sheet and light on a dark one (`textInk`,
   also in a saved picture). The workspace keys are in `hotkeyMap` (Settings, Shortcuts), with Ctrl+0 for 100%
   and Ctrl+Shift+Z for redo; the page takes Ctrl+0 before the menu's window zoom.
@@ -505,7 +517,7 @@ A review of all the video and Director work, by reading the code (not measured).
   `music` against `audio/` and `sound` against `audio/sfx/` itself, makes `demo/`), the commands in `src/frontend/director/index.ts`, the messages in
   `src/director/channels.ts`. Stop the hidden copy with `hidden.js stop`.
 - The Director's sheets of pictures (`index.ts`): `picture` and `cuts` draw the video's frames through
-  `paintFrames`; `photos` the workspace at a moment; `contact` each photo alone and whole, decoded as the video
+  `paintFrames`; `photos` the workspace at a moment; `contact` each file alone and whole (a wall's copies left out), decoded as the video
   saves it (`decodeAt`), fitted and letterboxed. `cutMoments` (`edits.ts`, tested) says which times `cuts`
   shows: the last moment of a shot, and the arrival of the next (`arrivalTimeOf`, capped inside the shot).
 - The `warnings` of `timeline` are `timelineWarnings` (`edits.ts`, tested): plain data per shot, collected in

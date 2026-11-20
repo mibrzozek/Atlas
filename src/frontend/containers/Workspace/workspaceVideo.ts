@@ -26,8 +26,8 @@ import { WorkspacePainter } from './paintWorkspace';
 import { mixAudio, MUSIC_SAMPLE_RATE } from './videoAudio';
 
 /**
- * The images of a video, each decoded once, at the size the video shows it largest (never larger than its
- * file): drawing a frame then never waits for a decode. For the preview from what the page shows (the
+ * The images of a video, each file decoded once, at the size the video shows its largest copy (never larger
+ * than its file): drawing a frame then never waits for a decode. For the preview from what the page shows (the
  * thumbnail, which is quick); for a saved video from the file itself.
  */
 export class VideoImages {
@@ -45,27 +45,31 @@ export class VideoImages {
     isCancelled?: () => boolean,
   ): Promise<VideoImages> {
     const needed = neededWidths(video, items, width);
-    const images = items.filter(
-      (item): item is WorkspaceItem & { kind: 'image' } =>
-        item.kind === 'image' && needed.has(item.id) && sources.has(item.fileId),
-    );
+    // A file is decoded once, as wide as its widest item needs it (copies of a photo share its decoding)
+    const widest = new Map<string, number>();
+    for (const item of items) {
+      if (item.kind === 'image' && needed.has(item.id) && sources.has(item.fileId)) {
+        widest.set(item.fileId, Math.max(widest.get(item.fileId) ?? 0, needed.get(item.id)!));
+      }
+    }
     const bitmaps = new Map<string, ImageBitmap>();
     let done = 0;
     // A few at a time: decoding is done off the main thread, but each holds a whole photo meanwhile
-    const queue = images.slice();
+    const queue = [...widest];
     const work = async () => {
       for (
-        let item = queue.shift();
-        item !== undefined && isCancelled?.() !== true;
-        item = queue.shift()
+        let next = queue.shift();
+        next !== undefined && isCancelled?.() !== true;
+        next = queue.shift()
       ) {
-        const source = sources.get(item.fileId)!;
+        const [fileId, across] = next;
+        const source = sources.get(fileId)!;
         try {
-          bitmaps.set(item.id, await decodeAt(source, needed.get(item.id)!, isFull));
+          bitmaps.set(fileId, await decodeAt(source, across, isFull));
         } catch (e) {
           console.error('Could not decode an image for the video', source.file.absolutePath, e);
         }
-        onProgress?.(++done, images.length);
+        onProgress?.(++done, widest.size);
       }
     };
     await Promise.all([work(), work(), work(), work()]);
@@ -76,8 +80,9 @@ export class VideoImages {
     return prepared;
   }
 
-  get(id: string): ImageBitmap | undefined {
-    return this.bitmaps.get(id);
+  /** The decoded photo of a file: every copy of it is drawn from this one */
+  get(fileId: string): ImageBitmap | undefined {
+    return this.bitmaps.get(fileId);
   }
 
   /**
@@ -216,7 +221,7 @@ export function drawFrame(
         textInk(item, items, (color) => paint.colorOf(color, '')),
       );
     } else {
-      const bitmap = images.get(item.id);
+      const bitmap = images.get(item.fileId);
       if (bitmap !== undefined && object.crop !== undefined) {
         paint.image(bitmap, object.crop, at);
       }

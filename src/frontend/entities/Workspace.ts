@@ -65,6 +65,7 @@ import {
 import { autoEdit, EditStyle } from 'common/auto-edit';
 import { FileNaming } from 'common/file-naming';
 import { groupOf, Motion, MotionKind, wavesAt } from 'common/video-motion';
+import { wallItems, WallOptions } from 'common/wall';
 import { generateId, ID } from '../../api/id';
 import WorkspaceStore from '../stores/WorkspaceStore';
 
@@ -166,16 +167,16 @@ export class ClientWorkspace {
     makeObservable(this);
   }
 
-  /** The ids of the images of the library on it */
+  /** The ids of the files of the images on it: each once, however many copies of a photo there are */
   get fileIds(): string[] {
-    const ids: string[] = [];
+    const ids = new Set<string>();
     // Copied once: read item by item, an observable list is checked for every item (slow in development)
     for (const item of this.items.slice()) {
       if (item.kind === 'image') {
-        ids.push(item.fileId);
+        ids.add(item.fileId);
       }
     }
-    return ids;
+    return [...ids];
   }
 
   /**
@@ -327,6 +328,23 @@ export class ClientWorkspace {
     );
     this.selection.replace(newImages.map((image) => image.fileId));
     return newImages.length;
+  }
+
+  /**
+   * The photos extended into a wall (`common/wall.ts`): copies of them in columns beside the block and above
+   * and below it, added after everything there is (so the numbers of the photos stay as they were). One change
+   * to undo. Returns how many copies were added
+   */
+  @action.bound extend(options: WallOptions): number {
+    if (this.isLocked) {
+      return 0;
+    }
+    const items = this.items.slice();
+    const copies = wallItems(items, options, generateId, frontZ(items));
+    if (copies.length > 0) {
+      this.change([...items, ...copies]);
+    }
+    return copies.length;
   }
 
   /**

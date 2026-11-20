@@ -22,6 +22,10 @@
 //                                             frames to pan between and the photos each leg runs over (to
 //                                             hide first, with a fade-out)
 //   shuffle <workspace id> <seed>
+//   extend <workspace id> [{"columns": 6, "above": 4000, "below": 4000, "seed": 1}]   the photos repeated as a
+//                                             wall: copies in columns beside the block and above and below it
+//                                             (pixels), never next to a copy of their own photo; added after the
+//                                             photos, so their numbers stay; answers the counts and the bounds
 //   title <workspace id> <text> [line] [{"title": "#f2c14e", "sheet": "#0c0c0e"}]
 //   video <workspace id> [9:16|4:5|1:1|16:9]
 //   layout <workspace id>                     the arrangement now, as the next layout
@@ -36,8 +40,9 @@
 //   cuts <workspace id> [{"width": 360, "from": 1}] --out <file.jpg>      the first frame, then per cut the last
 //                                             moment of a shot and the arrival of the next, then the last
 //                                             frame; 32 moments a sheet, from: the shot to start at
-//   contact <workspace id> [{"width": 360, "from": 1}] --out <file.jpg>   each photo alone, whole, numbered as
-//                                             timeline numbers it; 32 a sheet, from: the photo to start at
+//   contact <workspace id> [{"width": 360, "from": 1}] --out <file.jpg>   each file alone, whole, numbered as
+//                                             timeline numbers its first photo (a wall's copies left out);
+//                                             32 a sheet, from: the photo to start at
 //   soundPicture <workspace id> [from] [to] --out <file.png>   its song, beats, swells, sound effects and motions in time
 //   state <workspace id>
 //

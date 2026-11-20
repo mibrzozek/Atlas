@@ -50,7 +50,10 @@ export interface LayerGroup {
   isLocked: boolean;
 }
 
-/** An image of the library. Its id is the id of the file: an image is on a workspace once */
+/**
+ * An image of the library. A photo's id is the id of its file; a copy of it (`common/wall.ts`) has an id of
+ * its own, so one file can be on a workspace more than once
+ */
 export interface WorkspaceImageItem extends WorkspaceObject {
   kind: 'image';
   fileId: string;
@@ -1449,18 +1452,17 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
         width,
         height,
       });
-    } else if (
-      kind !== 'text' &&
-      kind !== 'background' &&
-      typeof fileId === 'string' &&
-      // An image is on a workspace once
-      !validItems.some((other) => other.id === fileId)
-    ) {
+    } else if (kind !== 'text' && kind !== 'background' && typeof fileId === 'string') {
+      // A photo's id is its file's; a copy of it (`wallItems`) has an id of its own. Read once per id
+      const id = typeof item.id === 'string' ? item.id : fileId;
+      if (validItems.some((other) => other.id === id)) {
+        continue;
+      }
       // Stored before images remembered the shape of their photo: the shape of their frame
       const aspect = isNumber(imageAspect) && imageAspect > 0 ? imageAspect : width / height;
       validItems.push({
         kind: 'image',
-        id: fileId,
+        id,
         fileId,
         imageAspect: aspect,
         crop: cropFromRow(item.crop),
