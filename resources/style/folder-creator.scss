@@ -84,9 +84,11 @@
   min-width: 0;
   margin: 0;
 
+  // A label is read before its field: the text colour and nearly full size, not the muted grey of a hint
   > span {
-    color: var(--text-color-muted);
-    font-size: 0.85em;
+    color: var(--text-color);
+    font-size: 0.9em;
+    font-weight: 500;
     line-height: 1.2;
     // A label never wraps: that would push its control down
     white-space: nowrap;

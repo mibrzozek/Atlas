@@ -11,6 +11,7 @@ import {
 } from 'common/folder-series';
 import { Button, IconSet } from 'widgets';
 import { Dialog } from 'widgets/popovers';
+import { galleryCorner } from '../ContentView/utils';
 import { useStore } from '../../contexts/StoreContext';
 import {
   DATE_ORDERS,
@@ -247,6 +248,9 @@ const NewWorkspaceDialog = observer(() => {
       title="New workspace"
       icon={IconSet.WORKSPACE}
       onCancel={uiStore.closeNewWorkspace}
+      // Where the folder creator opens too
+      isMovable
+      placeAt={galleryCorner}
     >
       {/* Mounted only while open, so that it starts from the name it would be given every time */}
       {uiStore.isNewWorkspaceOpen && <NewWorkspaceForm />}

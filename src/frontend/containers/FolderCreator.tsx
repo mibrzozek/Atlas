@@ -763,7 +763,7 @@ const FolderCreator = observer(() => {
     <Dialog
       open={uiStore.isFolderCreatorOpen}
       title="Create Folders"
-      icon={IconSet.ADD_BOLD}
+      icon={IconSet.FOLDER_CLOSE_ADD}
       onCancel={uiStore.closeFolderCreator}
       isMovable
       placeAt={galleryCorner}

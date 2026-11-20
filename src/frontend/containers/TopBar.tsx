@@ -32,9 +32,9 @@ const TopBar = observer(() => {
           pressed={uiStore.isHomeGallery}
         />
         <ToolbarButton
-          icon={IconSet.ADD_BOLD}
+          icon={IconSet.FOLDER_CLOSE_ADD}
           text="Create folders"
-          tooltip="Create folders"
+          tooltip="Create new folders"
           onClick={uiStore.openFolderCreator}
           pressed={uiStore.isFolderCreatorOpen}
         />
