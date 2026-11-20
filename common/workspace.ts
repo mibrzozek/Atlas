@@ -542,7 +542,10 @@ export function arrangeItems(
   const total = widths.reduce((sum, width) => sum + width + gap, 0);
   const widest = widths.reduce((max, width) => Math.max(max, width), 0);
   const columnWidth = median(chosen.map((item) => item.width));
-  const cell = median(chosen.map((item) => Math.max(item.width, item.height)));
+  // A cut cell is taller than it is wide: its height counts as the width it goes with, or every
+  // arrangement of what is already in such cells (a shuffle) would make them larger
+  const cellAspect = kind === 'grid' && options.crop !== undefined ? CROP_ASPECTS[options.crop] : 1;
+  const cell = median(chosen.map((item) => Math.max(item.width, item.height * cellAspect)));
   const layoutOf = (n: number): WorkspaceLayout =>
     kind === 'rows'
       ? { kind, gap, rowHeight, width: Math.max(total / n - gap, widest) }

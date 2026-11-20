@@ -401,6 +401,19 @@ describe('layouts, like the views of the Library', () => {
     expect(byX).toEqual(['3', '1', '0', '2']);
   });
 
+  it('keeps the size of a grid cut 4:5 when it is laid out again, as a shuffle does', () => {
+    const items = Array.from({ length: 20 }, (_, i) => item(`${i}`, i * 300, 0, i, 100));
+    const ids = new Set(items.map((i) => i.id));
+    const options = { gap: 8, crop: '4:5' as const };
+    let arranged = arrangeItems(items, ids, 'grid', 4, options);
+    const first = arranged.map((i) => [i.width, i.height]);
+    for (let n = 0; n < 3; n++) {
+      const order = [...ids].reverse();
+      arranged = arrangeItems(arranged, ids, 'grid', 4, { ...options, order });
+    }
+    expect(arranged.map((i) => [i.width, i.height]).sort()).toEqual(first.sort());
+  });
+
   it('lays them out under the rest when asked to, from its left edge', () => {
     const items = [
       item('a', 500, 500, 0, 100),
