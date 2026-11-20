@@ -97,6 +97,9 @@ with the stores and entities, as the buttons do. It never reads the user's folde
   page's `commands` (own properties only) are the list.
 - Look before saving: `picture` (frames of the video), `soundPicture` (the song's loudness, beats, swells and every
   motion), `state`.
+- Making, remaking or judging a video: follow the `atlas-director` skill (`.claude/skills/atlas-director/`):
+  cast every photo, write a treatment against the song, place shots by hand, review real frames. The
+  auto-edit is only a scaffold. The owner's feedback goes into its `references/taste.md`.
 - Change a video by command, not by changing code: `timeline` and `photos` number everything, `setShot`, `addShot`,
   `setMotion`, `remove`... change one thing each, one undo step each (list in `scripts/dev/atlas.js`). Ask
   whether a change is for this video or for every edit (`common/auto-edit.ts`) before changing the rule.
