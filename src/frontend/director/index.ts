@@ -10,6 +10,7 @@ import { ipcRenderer } from 'electron';
 import { runInAction } from 'mobx';
 
 import { EditStyle } from 'common/auto-edit';
+import { subjectOnFrame } from 'common/crop';
 import {
   arrivalTimeOf,
   EASINGS,
@@ -29,6 +30,7 @@ import { crestOf } from 'common/video-motion';
 import {
   boundsOf,
   LayoutKind,
+  Point,
   Rect,
   rowsAndColumnsOf,
   Size,
@@ -56,6 +58,7 @@ import {
   cutMoments,
   isFraming,
   isMiddleIn,
+  isPointIn,
   isTextCutOff,
   MotionChanges,
   motionChanges,
@@ -150,12 +153,23 @@ export function installDirector(rootStore: RootStore): void {
   const placesAt = (workspace: ClientWorkspace, time: number): Places => {
     const items = workspace.items.slice();
     const { objects } = stateAt(videoOf(workspace), items, time);
+    const subjects = new Map<string, Point>();
+    for (const item of items) {
+      const object = objects.get(item.id);
+      if (item.kind === 'image' && item.subject !== undefined && object?.crop !== undefined) {
+        const subject = subjectOnFrame(item.subject, object, object.crop);
+        if (subject !== undefined) {
+          subjects.set(item.id, subject);
+        }
+      }
+    }
     return {
       photos: items.filter((item) => item.kind === 'image').map((item) => item.id),
       texts: items.filter((item) => item.kind === 'text').map((item) => item.id),
       at: new Map(
         [...objects].map(([id, o]) => [id, { x: o.x, y: o.y, width: o.width, height: o.height }]),
       ),
+      subjects,
     };
   };
   /** The middle of a shot, in seconds of the video: what it shows is looked for then */
@@ -609,6 +623,19 @@ export function installDirector(rootStore: RootStore): void {
           const place = places.at.get(photo);
           if (place !== undefined) {
             const p = onSheet(place);
+            const subject = places.subjects?.get(photo);
+            if (subject !== undefined) {
+              context.beginPath();
+              context.arc(
+                (subject.x - frame.x) * scale,
+                (subject.y - frame.y) * scale,
+                12,
+                0,
+                2 * Math.PI,
+              );
+              context.strokeStyle = '#00e5ff';
+              context.stroke();
+            }
             const label = String(i + 1);
             const width = context.measureText(label).width + 10;
             tag(context, label, p.x + p.width / 2 - width / 2, p.y + p.height / 2 - 12);
@@ -639,6 +666,7 @@ export function installDirector(rootStore: RootStore): void {
           return place !== undefined && isMiddleIn(place, stop.frame);
         });
         const textsOf = (p: Places) => p.texts.flatMap((text) => p.at.get(text) ?? []);
+        const subjectOfShown = shown.length === 1 ? places.subjects?.get(shown[0]) : undefined;
         return {
           row: {
             n: i + 1,
@@ -661,6 +689,7 @@ export function installDirector(rootStore: RootStore): void {
             textsCutOff: [...textsOf(places), ...textsOf(arrived)].some((text) =>
               isTextCutOff(text, stop.frame),
             ),
+            subjectOutside: subjectOfShown !== undefined && !isPointIn(subjectOfShown, stop.frame),
           },
         };
       });
@@ -706,6 +735,24 @@ export function installDirector(rootStore: RootStore): void {
                 bpm: Math.round(video.music.bpm),
               },
       };
+    },
+
+    /**
+     * The subject of a photo, as fractions of the whole photo (x from the left, y from the top; 0 to 1): what a
+     * shot of it frames on. Without x and y, it is taken away. One change to undo
+     */
+    subject: (id: string, photo: number, x?: number, y?: number) => {
+      const workspace = workspaceOf(id);
+      if (workspace.isLocked) {
+        throw new Error('It is locked');
+      }
+      const item = numbered(imagesOf(workspace), photo, 'photo');
+      const subject =
+        x === undefined && y === undefined
+          ? undefined
+          : { x: numberOf(x, 'x', 0, 1), y: numberOf(y, 'y', 0, 1) };
+      workspace.setSubject(item.id, subject);
+      return subject ?? 'removed';
     },
 
     /** A shot changed (`ShotChanges` in `edits.ts`): one change to undo */

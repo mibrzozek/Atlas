@@ -14,8 +14,9 @@ import {
   startsOf,
   STAYS,
 } from 'common/video';
+import { clamp } from 'common/core';
 import { isMotionKind, Motion } from 'common/video-motion';
-import { boundsOf, Rect } from 'common/workspace';
+import { boundsOf, Point, Rect } from 'common/workspace';
 
 /** What a shot shows (one of photo, photos, title, all, frame), then moved or zoomed; and its settings */
 export interface ShotChanges {
@@ -56,6 +57,8 @@ export interface Places {
   photos: string[];
   texts: string[];
   at: ReadonlyMap<string, Rect>;
+  /** Where the subject of a photo is on the workspace at that moment, for the photos that have one in view */
+  subjects?: ReadonlyMap<string, Point>;
 }
 
 /** A number of a command, or why not: never NaN, never outside what makes sense */
@@ -137,13 +140,23 @@ export function shotFrame(frame: Rect, aspect: number, changes: ShotChanges, pla
     return frameAround(area, aspect, room ?? fallbackRoom);
   };
   let result = frame;
+  // A photo framed on its subject: the zoom then keeps the subject where it is in the frame
+  let pivot: { area: Rect; subject: Point } | undefined;
   if (changes.photo !== undefined) {
-    const place = places.at.get(numbered(places.photos, changes.photo, 'photo'));
+    const id = numbered(places.photos, changes.photo, 'photo');
+    const place = places.at.get(id);
     if (place === undefined) {
       throw new Error(`Photo ${changes.photo} is not in the video at that moment`);
     }
-    result =
-      room === undefined ? frameFilledBy(place, aspect, align) : frameAround(place, aspect, room);
+    const subject =
+      room === undefined && changes.align === undefined ? places.subjects?.get(id) : undefined;
+    if (subject !== undefined) {
+      pivot = { area: place, subject };
+      result = frameOnSubject(place, aspect, subject);
+    } else {
+      result =
+        room === undefined ? frameFilledBy(place, aspect, align) : frameAround(place, aspect, room);
+    }
   } else if (changes.photos !== undefined) {
     result = around(photoIds(places, changes.photos), 0.04, 'such photos');
   } else if (changes.title === true) {
@@ -166,12 +179,20 @@ export function shotFrame(frame: Rect, aspect: number, changes: ShotChanges, pla
     const zoom = numberOf(changes.zoom, 'zoom', 0.1, 20);
     const width = result.width / zoom;
     const height = result.height / zoom;
+    // Around the subject or the middle of the frame: what is there keeps its place in the frame
+    const centre = pivot?.subject ?? {
+      x: result.x + result.width / 2,
+      y: result.y + result.height / 2,
+    };
     result = {
-      x: result.x + (result.width - width) / 2,
-      y: result.y + (result.height - height) / 2,
+      x: centre.x - ((centre.x - result.x) / result.width) * width,
+      y: centre.y - ((centre.y - result.y) / result.height) * height,
       width,
       height,
     };
+    if (pivot !== undefined && zoom >= 1) {
+      result = keptIn(result, pivot.area);
+    }
   }
   if (changes.move !== undefined) {
     const [dx, dy] = Array.isArray(changes.move) ? changes.move : [];
@@ -211,9 +232,42 @@ export function photoNumbers(places: Places, ids: readonly string[]): number[] |
 
 /** Whether the middle of `rect` is inside `frame`: a photo a shot shows */
 export function isMiddleIn(rect: Rect, frame: Rect): boolean {
-  const x = rect.x + rect.width / 2;
-  const y = rect.y + rect.height / 2;
-  return x >= frame.x && x <= frame.x + frame.width && y >= frame.y && y <= frame.y + frame.height;
+  return isPointIn({ x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 }, frame);
+}
+
+/** Whether a point is inside a frame, its edges included */
+export function isPointIn(point: Point, frame: Rect): boolean {
+  return (
+    point.x >= frame.x &&
+    point.x <= frame.x + frame.width &&
+    point.y >= frame.y &&
+    point.y <= frame.y + frame.height
+  );
+}
+
+/**
+ * A frame filled by `area` (as `frameFilledBy`), moved so that its middle is as near `subject` as `area` allows:
+ * it stays on the photo
+ */
+export function frameOnSubject(area: Rect, aspect: number, subject: Point): Rect {
+  return keptIn(frameFilledBy(area, aspect), area, subject);
+}
+
+/** The frame moved, not resized, so that its middle (or `point`) is as near as `area` allows: a frame stays on it */
+function keptIn(frame: Rect, area: Rect, point?: Point): Rect {
+  const at = point ?? { x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 };
+  return {
+    ...frame,
+    x: centreWithin(at.x, area.x, area.width, frame.width) - frame.width / 2,
+    y: centreWithin(at.y, area.y, area.height, frame.height) - frame.height / 2,
+  };
+}
+
+/** The nearest middle to `point` where a frame of `size` stays over the side of `length` that starts at `start` */
+function centreWithin(point: number, start: number, length: number, size: number): number {
+  const a = start + size / 2;
+  const b = start + length - size / 2;
+  return clamp(point, Math.min(a, b), Math.max(a, b));
 }
 
 /** A moment a `cuts` sheet shows: its time, and what it is: `start`, `end` or the cut `3|4` */
@@ -282,6 +336,8 @@ export interface ShotFacts {
   showsText: boolean;
   /** Whether a text is cut off by the frame, at the middle of the shot or when the shot has arrived */
   textsCutOff: boolean;
+  /** Whether the subject of the one photo a shot shows lies outside its frame, at the middle of the shot */
+  subjectOutside: boolean;
 }
 
 /** A shot shorter than this many seconds is quick; more than `QUICK_RUN` of them in a row hold nothing */
@@ -312,6 +368,9 @@ export function timelineWarnings(shots: readonly ShotFacts[], beat?: number): st
       } else {
         warnings.push(`Shot ${n}: repeats photo ${photo} of shot ${first}`);
       }
+    }
+    if (shot.shows.length === 1 && shot.subjectOutside) {
+      warnings.push(`Shot ${n}: photo ${shot.shows[0]}'s subject is outside the frame`);
     }
     if (i === 0 && shot.shows.length === 0 && !shot.showsText) {
       warnings.push(`Shot ${n}: opens on nothing`);

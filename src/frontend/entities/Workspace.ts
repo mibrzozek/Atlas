@@ -442,6 +442,18 @@ export class ClientWorkspace {
     );
   }
 
+  /** Where the subject of a photo is (`WorkspaceImageItem.subject`), or none: one change to undo */
+  @action.bound setSubject(id: string, subject: Point | undefined): void {
+    if (this.isLocked) {
+      return;
+    }
+    this.change(
+      this.items.map((item) =>
+        item.id === id && item.kind === 'image' ? { ...item, subject } : item,
+      ),
+    );
+  }
+
   /**
    * A title over the photos and as wide as they are, a line under it, and one sheet behind everything in
    * `colors.sheet`: the texts and sheets that were there make way. One change to undo; whether it was made

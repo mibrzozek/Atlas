@@ -1,6 +1,7 @@
 import { CameraStop } from '../common/video';
 import {
   cutMoments,
+  frameOnSubject,
   isMiddleIn,
   isTextCutOff,
   motionChanges,
@@ -136,6 +137,7 @@ describe('the Director edits', () => {
       shows: [n],
       showsText: false,
       textsCutOff: false,
+      subjectOutside: false,
       ...facts,
     });
     expect(timelineWarnings([shot(1, { length: 0.4 })], 0.43)).toEqual([
@@ -161,6 +163,46 @@ describe('the Director edits', () => {
     expect(timelineWarnings(quick)).toEqual(['Shot 4: no shot holds from shot 4 to 9']);
     const four = [1, 2, 3, 4, 5].map((n) => shot(n, { length: n >= 2 && n <= 5 ? 1 : 3 }));
     expect(timelineWarnings(four)).toEqual([]);
+    expect(timelineWarnings([shot(1, { shows: [7], subjectOutside: true })])).toEqual([
+      expect.stringMatching(/^Shot 1: photo 7.s subject is outside the frame$/),
+    ]);
+    expect(timelineWarnings([shot(1, { shows: [7, 8], subjectOutside: true })])).toEqual([]);
+  });
+
+  it('frames a photo on its subject, as near the middle as the photo allows', () => {
+    // A tall frame filled by a square photo: it can move along the photo's width, not its height
+    const area = { x: 0, y: 0, width: 100, height: 100 };
+    const centred = frameOnSubject(area, tall, { x: 50, y: 50 });
+    expect(centred.x + centred.width / 2).toBeCloseTo(50);
+    expect(centred.y).toBeCloseTo(-1.5);
+    // Near its left or right edge the frame stays on the photo
+    expect(frameOnSubject(area, tall, { x: 5, y: 50 }).x).toBeCloseTo(0);
+    const right = frameOnSubject(area, tall, { x: 95, y: 50 });
+    expect(right.x + right.width).toBeCloseTo(100);
+    // Taller than the photo, it covers the photo and no more: as far up as it can go, its bottom on the photo's
+    expect(frameOnSubject(area, tall, { x: 50, y: 5 }).y).toBeCloseTo(-3);
+  });
+
+  it('frames a photo on its subject, zooms around it, and leaves the other framings alone', () => {
+    const subjects = new Map([['b', { x: 130, y: 50 }]]);
+    const withSubject = { ...places, subjects };
+    const framed = shotFrame(start, tall, { photo: 2 }, withSubject);
+    // The subject sits left of the photo's middle: the frame is as far left as the photo lets it be
+    expect(framed.x).toBeCloseTo(120);
+    // Zoomed around the subject: it keeps its place in the frame
+    const zoomed = shotFrame(start, tall, { photo: 2, zoom: 2 }, withSubject);
+    expect(zoomed.width).toBeCloseTo(framed.width / 2);
+    expect((130 - zoomed.x) / zoomed.width).toBeCloseTo((130 - framed.x) / framed.width);
+    // Not framed on the subject with room, or an alignment, or a photo without one
+    expect(shotFrame(start, tall, { photo: 2, room: 0.1 }, withSubject)).toEqual(
+      shotFrame(start, tall, { photo: 2, room: 0.1 }, places),
+    );
+    expect(shotFrame(start, tall, { photo: 2, align: 'start' }, withSubject)).toEqual(
+      shotFrame(start, tall, { photo: 2, align: 'start' }, places),
+    );
+    expect(shotFrame(start, tall, { photo: 1 }, withSubject)).toEqual(
+      shotFrame(start, tall, { photo: 1 }, places),
+    );
   });
 });
 

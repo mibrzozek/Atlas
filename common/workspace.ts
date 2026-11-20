@@ -5,7 +5,7 @@
  * unit is one pixel at 100%.
  */
 
-import { Crop, cropFromRow, refitCrop } from './crop';
+import { Crop, cropFromRow, refitCrop, subjectFromRow } from './crop';
 import { FileNaming, fileNamingFromRow } from './file-naming';
 import { VideoProject, videoFromRow } from './video';
 
@@ -58,6 +58,8 @@ export interface WorkspaceImageItem extends WorkspaceObject {
   imageAspect: number;
   /** The part of the photo it shows, chosen by hand (`common/crop.ts`); without one, the middle */
   crop?: Crop;
+  /** Where the subject of the photo is, as fractions of the whole photo: what shots frame on (`Director`) */
+  subject?: Point;
 }
 
 /** A text, such as the name of what a batch of images came from. Its size follows from its letters */
@@ -1462,6 +1464,7 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
         fileId,
         imageAspect: aspect,
         crop: cropFromRow(item.crop),
+        subject: subjectFromRow(item.subject),
         x,
         y,
         z,

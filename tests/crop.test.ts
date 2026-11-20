@@ -8,6 +8,7 @@ import {
   movePhoto,
   photoRectOf,
   refitCrop,
+  subjectOnFrame,
   zoomPhoto,
 } from '../common/crop';
 import { arrangeItems, WorkspaceImageItem, workspaceFromRow } from '../common/workspace';
@@ -164,5 +165,41 @@ describe('crops', () => {
       width: 0.5,
       height: 1,
     });
+  });
+
+  it('keep the subject of a photo through storage, when it is a point of the photo', () => {
+    const stored = JSON.parse(
+      JSON.stringify({ ...square(), subject: { x: 0.25, y: 0.75 } }),
+    ) as WorkspaceImageItem;
+    const read = (item: unknown) =>
+      workspaceFromRow(
+        {
+          id: 'w',
+          name: 'W',
+          index: 0,
+          camera: { x: 0, y: 0, zoom: 1 },
+          isLocked: false,
+          items: [item],
+        },
+        () => 10,
+      )!.items[0] as WorkspaceImageItem;
+    expect(read(stored).subject).toEqual({ x: 0.25, y: 0.75 });
+    expect(read({ ...stored, subject: { x: 1.5, y: 0.5 } }).subject).toBeUndefined();
+    expect(read({ ...stored, subject: { x: 0.5 } }).subject).toBeUndefined();
+    expect(read({ ...stored, subject: 'middle' }).subject).toBeUndefined();
+    expect(read(square()).subject).toBeUndefined();
+  });
+
+  it('finds where a subject is on the workspace, through the crop; not when the crop leaves it out', () => {
+    // The whole photo is 0..1; the crop shows its right half, the frame 100 wide from x 300
+    const frame = { x: 300, y: 0, width: 100, height: 200 };
+    const right = { x: 0.5, y: 0, width: 0.5, height: 1 };
+    expect(subjectOnFrame({ x: 0.75, y: 0.5 }, frame, right)).toEqual({ x: 350, y: 100 });
+    expect(subjectOnFrame({ x: 0.5, y: 0 }, frame, right)).toEqual({ x: 300, y: 0 });
+    expect(subjectOnFrame({ x: 0.25, y: 0.5 }, frame, right)).toBeUndefined();
+    // A crop of the middle: the top left of the photo is cut off
+    const middle = { x: 0.25, y: 0.25, width: 0.5, height: 0.5 };
+    expect(subjectOnFrame({ x: 0.5, y: 0.5 }, frame, middle)).toEqual({ x: 350, y: 100 });
+    expect(subjectOnFrame({ x: 0.1, y: 0.5 }, frame, middle)).toBeUndefined();
   });
 });

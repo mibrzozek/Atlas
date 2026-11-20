@@ -307,6 +307,10 @@ Probe pitfalls that cost time:
   and frame on the workspace), drawn by `CropOverlay` in a layer of its own over the others, which are
   blurred (`data-cropping`). The surface sees presses before React does: the crop tools are recognised in
   `gestureFor`, a React `stopPropagation` would come too late.
+  A photo's `subject` (fractions of the whole photo, `subjectFromRow`, read back only when both are in 0 to 1)
+  is where the Director frames shots on it: `subjectOnFrame` maps it through the crop to the workspace (none
+  when the crop leaves it out), `frameOnSubject` and the zoom around it are in `director/edits.ts`. It is set
+  by the Director's `subject` command only (one change to undo, `ClientWorkspace.setSubject`).
   The crop's tools are in a layer of their own in pixels of the screen, placed under the frame by the
   surface in every frame (`placeCropTools`): scaled by React's settled zoom they changed size while the
   camera glided. Handles and lines take their size from `--zoom`, set in every frame; the lines are

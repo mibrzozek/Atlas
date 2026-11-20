@@ -226,6 +226,30 @@ export function frameInShape(frame: Rect, photo: Rect, aspect: number | undefine
   };
 }
 
+/** A subject read back from storage: a point of the photo, both fractions from 0 to 1, or undefined */
+export function subjectFromRow(value: unknown): Point | undefined {
+  if (typeof value !== 'object' || value === null) {
+    return undefined;
+  }
+  const { x, y } = value as Partial<Point>;
+  const isFraction = (n: unknown): n is number =>
+    typeof n === 'number' && Number.isFinite(n) && n >= 0 && n <= 1;
+  return isFraction(x) && isFraction(y) ? { x, y } : undefined;
+}
+
+/**
+ * Where a subject of the photo (a point, as fractions of the whole photo) is on the workspace, for an image
+ * shown as `frame` with `crop`. Undefined when the crop does not show it.
+ */
+export function subjectOnFrame(subject: Point, frame: Rect, crop: Crop): Point | undefined {
+  const x = (subject.x - crop.x) / crop.width;
+  const y = (subject.y - crop.y) / crop.height;
+  if (x < 0 || x > 1 || y < 0 || y > 1) {
+    return undefined;
+  }
+  return { x: frame.x + x * frame.width, y: frame.y + y * frame.height };
+}
+
 /** A crop read back from storage, or undefined when it is not one */
 export function cropFromRow(value: unknown): Crop | undefined {
   if (typeof value !== 'object' || value === null) {

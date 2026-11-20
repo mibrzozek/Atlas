@@ -41,7 +41,10 @@
 //
 // Editing a video (numbers from 1, as `timeline` lists them; each command one change to undo):
 //   timeline <workspace id>                   every shot, layout and motion, numbered, and what it does
-//   photos <workspace id> [time] --out <file.jpg>   everything, each photo's number on it, the shot outlined
+//   photos <workspace id> [time] --out <file.jpg>   everything, each photo's number on it, the shot outlined,
+//                                             a ring at each photo's subject
+//   subject <workspace id> <photo> [x y]      where a photo's subject is (0 to 1 across and down, of the whole
+//                                             photo); no x and y: taken away. Framing a photo then aims at it
 //   setShot <workspace id> <shot> {...}       {"photo": 12} fills it with photo 12 ("room": 0.1 shows all
 //                                             of it), or {"photos": [3, 4]}, {"title": true}, {"all": true},
 //                                             {"frame": [x, y, w, h]}; then "zoom": 1.5, "move": [0.1, 0];
