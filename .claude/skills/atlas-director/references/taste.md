@@ -78,6 +78,15 @@ of the screen, and so on for vertical."
     (`align` start then end, arrival scroll); a vertical one fills the width and tilts; the showcase
     (whole photo) and the push to a subject are two more. Never the same move twice in a row.
 
+## Notes on the "Showcase" reel (2026-11-19)
+
+"The sound effects need to be turned down to like 30-40 percent. The fish bike thing is not a good
+thing to zoom into like that, pick a better shot."
+
+20. **Sound effects sit under the song:** volume 0.3 to 0.4, never louder.
+21. **A dramatic push needs a subject that earns it:** a face, eyes, a gesture; ideally looking at us.
+    An object or a costume prop (the fish-mouth bike float) is shown, not dived into.
+
 ## To ask the owner
 
 - The worst moments in the lowrider and Halloween reels (`demo/`), in their words.
