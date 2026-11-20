@@ -800,7 +800,12 @@ export class WorkspaceSurface {
   private gestureFor(event: PointerEvent): Gesture | undefined {
     const workspace = this.workspace;
     const target = event.target as Element;
-    const id = target.closest<HTMLElement>('.workspace-object')?.dataset.id ?? this.tileAt(event);
+    // The tiles are drawn over the backgrounds, so a press on a background's element may be on a tile
+    const pressed = target.closest<HTMLElement>('.workspace-object')?.dataset.id;
+    const id =
+      pressed === undefined || this.items.get(pressed)?.kind === 'background'
+        ? this.tileAt(event) ?? pressed
+        : pressed;
     const isAdditive = event.shiftKey || event.ctrlKey || event.metaKey;
 
     if (event.button === 1 || this.isSpaceDown) {
