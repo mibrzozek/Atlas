@@ -30,7 +30,12 @@
 //   waves <workspace id> [strength]          a wave through the photos on every swell of its song
 //   edit <workspace id> cuts|flow|mixed <seed>
 //   save <workspace id> phone|full            into demo/, a new file
-//   picture <workspace id> [times...] --out <file.jpg>
+//   picture <workspace id> [times...] [{"width": 540}] --out <file.jpg>   frames side by side, each this wide
+//   cuts <workspace id> [{"width": 360, "from": 1}] --out <file.jpg>      the first frame, then per cut the last
+//                                             moment of a shot and the arrival of the next, then the last
+//                                             frame; 32 moments a sheet, from: the shot to start at
+//   contact <workspace id> [{"width": 360, "from": 1}] --out <file.jpg>   each photo alone, whole, numbered as
+//                                             timeline numbers it; 32 a sheet, from: the photo to start at
 //   soundPicture <workspace id> [from] [to] --out <file.png>   its song, beats, swells and motions in time
 //   state <workspace id>
 //
@@ -80,8 +85,13 @@ const args = rest.map((arg) => {
     return arg;
   }
 });
-// `picture` takes its times as one list
-const callArgs = method === 'picture' ? [args[0], args.slice(1)] : args;
+// `picture` takes its times as one list, and then an optional {"width": ...}
+const pictureArgs = (list) => {
+  const last = list[list.length - 1];
+  const hasOptions = typeof last === 'object' && last !== null && !Array.isArray(last);
+  return hasOptions ? [list[0], list.slice(1, -1), last] : [list[0], list.slice(1)];
+};
+const callArgs = method === 'picture' ? pictureArgs(args) : args;
 
 const connectionFile = path.join(repo, '.director', `${to}.json`);
 const connection = () =>
@@ -181,7 +191,7 @@ const commands = {
     console.error(`No Atlas (${to}) answers: node scripts/dev/atlas.js start`);
     process.exit(1);
   }
-  // A picture (`picture`, `soundPicture`) comes as data: into the file given
+  // A picture (`picture`, `photos`, `cuts`, `contact`, `soundPicture`) comes as data: into the file given
   if (answer.ok && typeof answer.result === 'string' && answer.result.startsWith('data:image/')) {
     if (out === undefined) {
       console.error(`${method} needs --out <file>`);

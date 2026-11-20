@@ -31,6 +31,7 @@ import {
   Rect,
   rowsAndColumnsOf,
   Size,
+  WorkspaceImageItem,
   suggestedCount,
 } from 'common/workspace';
 import {
@@ -41,11 +42,17 @@ import {
   READY_CHANNEL,
 } from '../../director/channels';
 import { WorkspacePainter } from '../containers/Workspace/paintWorkspace';
-import { drawFrame, drawingOrder, VideoImages } from '../containers/Workspace/workspaceVideo';
+import {
+  decodeAt,
+  drawFrame,
+  drawingOrder,
+  VideoImages,
+} from '../containers/Workspace/workspaceVideo';
 import { ClientWorkspace } from '../entities/Workspace';
 import RootStore from '../stores/RootStore';
 import { batchOfCollection, batchOfTag } from '../stores/WorkspaceStore';
 import {
+  cutMoments,
   isFraming,
   isMiddleIn,
   MotionChanges,
@@ -67,12 +74,35 @@ const READY_TIMEOUT = 2 * 60_000;
 const PICTURE_WIDTH = 180;
 /** The most moments in one `picture`: four rows of eight */
 const MAX_PICTURE_TIMES = 32;
+/** The default width of a moment of `cuts` or a photo of `contact`, in pixels */
+const SHEET_WIDTH = 360;
+/** The most photos on one `contact` sheet: four rows of eight, as `picture` */
+const MAX_CONTACT_PHOTOS = 32;
 /** The widest spacing `arrange` takes, in pixels of the workspace */
 const MAX_GAP = 400;
 /** The width of `photos`, the numbered picture of everything, in pixels */
 const PHOTOS_WIDTH = 960;
 /** Lanes as the edits name them */
 const LANES = { shot: 'camera', layout: 'layout', motion: 'motion' } as const;
+
+/** A width of a picture in pixels, 120 to 1080, or the default */
+const widthOf = (width: number | undefined, fallback: number) =>
+  width === undefined ? fallback : numberOf(width, 'width', 120, 1080);
+/** A frame of the video `width` pixels wide, as tall as the video */
+const cellOf = (video: VideoProject, width: number): Size => ({
+  width,
+  height: Math.round((width * video.height) / video.width),
+});
+/** A label on a sheet: white on a dark tag, its top left corner at (left, top); the caller sets the font */
+function tag(context: CanvasRenderingContext2D, text: string, left: number, top: number): void {
+  const width = context.measureText(text).width + 10;
+  context.fillStyle = 'rgba(0, 0, 0, 0.75)';
+  context.fillRect(left, top, width, 24);
+  context.fillStyle = '#ffffff';
+  context.textAlign = 'left';
+  context.textBaseline = 'top';
+  context.fillText(text, left + 5, top + 4);
+}
 
 export function installDirector(rootStore: RootStore): void {
   const { uiStore, tagStore, collectionStore, workspaceStore } = rootStore;
@@ -85,7 +115,7 @@ export function installDirector(rootStore: RootStore): void {
     return workspace;
   };
   const imagesOf = (workspace: ClientWorkspace) =>
-    workspace.items.slice().filter((item) => item.kind === 'image');
+    workspace.items.slice().filter((item): item is WorkspaceImageItem => item.kind === 'image');
   /** The workspace on screen (saving and pictures need it) and all its images ready */
   const ready = async (workspace: ClientWorkspace) => {
     if (uiStore.activeWorkspace !== workspace) {
@@ -431,26 +461,111 @@ export function installDirector(rootStore: RootStore): void {
       throw new Error('error' in result ? result.error : 'It was stopped');
     },
 
-    /** Moments of its video side by side, small: a JPEG as data, to look at */
-    picture: async (id: string, times: number[]) => {
+    /** Moments of its video side by side, small (`width`: 120 to 1080): a JPEG as data, to look at */
+    picture: async (id: string, times: number[], options: { width?: number } = {}) => {
       const workspace = workspaceOf(id);
       const { video } = workspace;
       if (video === undefined || !Array.isArray(times) || times.length === 0) {
         throw new Error('It needs a video and the times to show');
       }
       if (times.length > MAX_PICTURE_TIMES) {
-        throw new Error(`At most ${MAX_PICTURE_TIMES} times`);
+        throw new Error(`At most ${MAX_PICTURE_TIMES} times: four rows of eight`);
       }
-      const cell = {
-        width: PICTURE_WIDTH,
-        height: Math.round((PICTURE_WIDTH * video.height) / video.width),
-      };
+      return paintFrames(
+        workspace,
+        video,
+        cellOf(video, widthOf(options.width, PICTURE_WIDTH)),
+        times.map((time) => numberOf(time, 'A time', 0, 3600)),
+      );
+    },
+
+    /**
+     * The cuts of its video side by side, as a JPEG (as data): the first frame, then for each cut the last
+     * moment of the shot before and the arrival of the next, each labelled `n|n+1` with its time, then the
+     * last frame. 32 moments at most: `from` (a shot number) starts a page
+     */
+    cuts: async (id: string, options: { width?: number; from?: number } = {}) => {
+      const workspace = workspaceOf(id);
+      const video = videoOf(workspace);
+      if (video.camera.length === 0) {
+        throw new Error('It has no shots');
+      }
+      const from = numberOf(options.from ?? 1, 'from', 1, video.camera.length);
+      const cell = cellOf(video, widthOf(options.width, SHEET_WIDTH));
+      const moments = cutMoments(video.camera, video.fps, videoLength(video), from);
       return paintFrames(
         workspace,
         video,
         cell,
-        times.map((time) => numberOf(time, 'A time', 0, 3600)),
+        moments.map((moment) => moment.time),
+        (context) => {
+          context.font = 'bold 16px sans-serif';
+          moments.forEach((moment, i) =>
+            tag(
+              context,
+              `${moment.label}  ${moment.time.toFixed(2)} s`,
+              (i % 8) * cell.width + 6,
+              Math.floor(i / 8) * cell.height + 6,
+            ),
+          );
+        },
       );
+    },
+
+    /**
+     * Each photo alone and whole, fitted into a square cell (letterboxed on black), numbered as `timeline`
+     * numbers them: to judge focus, subject and light before choosing shots. As a JPEG (as data); 32 to a
+     * sheet, `from` a photo number starts a page. The video and the workspace are not changed
+     */
+    contact: async (id: string, options: { width?: number; from?: number } = {}) => {
+      const workspace = workspaceOf(id);
+      const photos = imagesOf(workspace);
+      if (photos.length === 0) {
+        throw new Error('It has no photos');
+      }
+      const first = numberOf(options.from ?? 1, 'from', 1, photos.length);
+      const cell = widthOf(options.width, SHEET_WIDTH);
+      const page = photos.slice(first - 1, first - 1 + MAX_CONTACT_PHOTOS);
+      const { images } = await ready(workspace);
+      const sheet = document.createElement('canvas');
+      sheet.width = cell * Math.min(8, page.length);
+      sheet.height = cell * Math.ceil(page.length / 8);
+      const context = sheet.getContext('2d')!;
+      for (const [i, item] of page.entries()) {
+        const x = (i % 8) * cell;
+        const y = Math.floor(i / 8) * cell;
+        context.fillStyle = '#000000';
+        context.fillRect(x, y, cell, cell);
+        const source = images.sources.get(item.fileId);
+        if (source !== undefined) {
+          try {
+            const bitmap = await decodeAt(source, cell, true);
+            try {
+              const scale = Math.min(cell / bitmap.width, cell / bitmap.height);
+              const width = bitmap.width * scale;
+              const height = bitmap.height * scale;
+              context.drawImage(
+                bitmap,
+                x + (cell - width) / 2,
+                y + (cell - height) / 2,
+                width,
+                height,
+              );
+            } finally {
+              bitmap.close();
+            }
+          } catch (e) {
+            console.error(
+              'Could not decode a photo for the contact sheet',
+              source.file.absolutePath,
+              e,
+            );
+          }
+        }
+        context.font = 'bold 18px sans-serif';
+        tag(context, String(first + i), x + 6, y + 6);
+      }
+      return sheet.toDataURL('image/jpeg', 0.8);
     },
 
     /**
@@ -487,18 +602,13 @@ export function installDirector(rootStore: RootStore): void {
         const s = onSheet(shot);
         context.strokeRect(s.x, s.y, s.width, s.height);
         context.font = 'bold 18px sans-serif';
-        context.textAlign = 'center';
-        context.textBaseline = 'middle';
         places.photos.forEach((photo, i) => {
           const place = places.at.get(photo);
           if (place !== undefined) {
             const p = onSheet(place);
             const label = String(i + 1);
             const width = context.measureText(label).width + 10;
-            context.fillStyle = 'rgba(0, 0, 0, 0.75)';
-            context.fillRect(p.x + p.width / 2 - width / 2, p.y + p.height / 2 - 12, width, 24);
-            context.fillStyle = '#ffffff';
-            context.fillText(label, p.x + p.width / 2, p.y + p.height / 2 + 1);
+            tag(context, label, p.x + p.width / 2 - width / 2, p.y + p.height / 2 - 12);
           }
         });
       });

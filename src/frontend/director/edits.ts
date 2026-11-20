@@ -3,7 +3,17 @@
  * changes of a shot or a motion mean, checked before anything is changed. Photos, shots, layouts and
  * motions are numbered from 1, in the order `timeline` lists them.
  */
-import { ARRIVALS, EASINGS, frameAround, frameFilledBy, frameInShape, STAYS } from 'common/video';
+import {
+  ARRIVALS,
+  arrivalTimeOf,
+  CameraStop,
+  EASINGS,
+  frameAround,
+  frameFilledBy,
+  frameInShape,
+  startsOf,
+  STAYS,
+} from 'common/video';
 import { isMotionKind, Motion } from 'common/video-motion';
 import { boundsOf, Rect } from 'common/workspace';
 
@@ -204,6 +214,62 @@ export function isMiddleIn(rect: Rect, frame: Rect): boolean {
   const x = rect.x + rect.width / 2;
   const y = rect.y + rect.height / 2;
   return x >= frame.x && x <= frame.x + frame.width && y >= frame.y && y <= frame.y + frame.height;
+}
+
+/** A moment a `cuts` sheet shows: its time, and what it is: `start`, `end` or the cut `3|4` */
+export interface CutMoment {
+  time: number;
+  label: string;
+}
+
+/** Fifteen cuts take 30 moments: with the first and the last frame, 32 on a sheet */
+const CUTS_PER_SHEET = 15;
+
+/**
+ * The moments a `cuts` sheet shows, from shot `from` (numbered from 1) on: the first frame (from shot 1), then
+ * for each cut the last moment of the shot before and the moment the shot after has arrived, then the last
+ * frame of the video once the cuts reach the end
+ */
+export function cutMoments(
+  camera: readonly CameraStop[],
+  fps: number,
+  length: number,
+  from: number,
+): CutMoment[] {
+  const frame = 1 / fps;
+  const starts = startsOf(camera);
+  const lastOf = (i: number) => starts[i] + Math.max(0, camera[i].length - frame);
+  const arrivalOf = (i: number) =>
+    starts[i] + Math.max(0, Math.min(arrivalTimeOf(camera[i]), camera[i].length - frame));
+  // Shot numbers: the cut after shot n is between camera[n - 1] and camera[n]
+  const lastCut = Math.min(camera.length - 1, from + CUTS_PER_SHEET - 1);
+  const moments: CutMoment[] = [];
+  if (from === 1) {
+    moments.push({ time: 0, label: 'start' });
+  }
+  for (let n = from; n <= lastCut; n++) {
+    const label = `${n}|${n + 1}`;
+    moments.push({ time: lastOf(n - 1), label }, { time: arrivalOf(n), label });
+  }
+  if (lastCut >= camera.length - 1) {
+    moments.push({ time: Math.max(0, length - frame), label: 'end' });
+  }
+  return moments;
+}
+
+/** Whether a text is cut off by a shot's frame: it reaches into the frame, and is not all in it */
+export function isTextCutOff(text: Rect, frame: Rect): boolean {
+  const overlaps =
+    text.x < frame.x + frame.width &&
+    text.x + text.width > frame.x &&
+    text.y < frame.y + frame.height &&
+    text.y + text.height > frame.y;
+  const inside =
+    text.x >= frame.x &&
+    text.x + text.width <= frame.x + frame.width &&
+    text.y >= frame.y &&
+    text.y + text.height <= frame.y + frame.height;
+  return overlaps && !inside;
 }
 
 const isRect = (rect: Rect | undefined): rect is Rect => rect !== undefined;

@@ -1,5 +1,8 @@
+import { CameraStop } from '../common/video';
 import {
+  cutMoments,
   isMiddleIn,
+  isTextCutOff,
   motionChanges,
   numbered,
   numberOf,
@@ -86,4 +89,59 @@ describe('the Director edits', () => {
     expect(motionChanges({ photos: 'all' }, places)).toEqual({ targets: ['a', 'b', 'c'] });
     expect(shotSettings({ stay: 'drift' })).toEqual({ stay: 'drift' });
   });
+
+  it('shows the last moment of a shot and the arrival of the next at each cut', () => {
+    // Shots of 2 s, 3 s and 1 s at 10 frames a second: shot 2 glides in over 1.2 s, shot 3 over 2 s (capped)
+    const camera = [stop('a', 2, 'glide'), stop('b', 3, 'glide'), stop('c', 1, 'glide', 2)];
+    const moments = cutMoments(camera, 10, 6, 1);
+    expect(moments.map((m) => m.label)).toEqual(['start', '1|2', '1|2', '2|3', '2|3', 'end']);
+    expect(moments[0].time).toBe(0);
+    expect(moments[1].time).toBeCloseTo(1.9);
+    expect(moments[2].time).toBeCloseTo(3.2);
+    expect(moments[3].time).toBeCloseTo(4.9);
+    expect(moments[4].time).toBeCloseTo(5.9);
+    expect(moments[5].time).toBeCloseTo(5.9);
+  });
+
+  it('pages through the cuts, a cut at a time from the shot given, at most 32 moments', () => {
+    const camera = [...Array(40).keys()].map((i) => stop(`s${i}`, 1, 'cut'));
+    expect(cutMoments(camera, 10, 40, 1).length).toBe(31);
+    const page = cutMoments(camera, 10, 40, 16);
+    expect(page.map((m) => m.label).slice(0, 2)).toEqual(['16|17', '16|17']);
+    expect(page.length).toBe(30);
+    const last = cutMoments(camera, 10, 40, 26);
+    expect(last.map((m) => m.label).slice(-1)).toEqual(['end']);
+    expect(last.length).toBe(29);
+    expect(cutMoments([stop('only', 2, 'cut')], 10, 2, 1).map((m) => m.label)).toEqual([
+      'start',
+      'end',
+    ]);
+    expect([1, 16, 26].every((from) => cutMoments(camera, 10, 40, from).length <= 32)).toBe(true);
+  });
+
+  it('finds the text cut off by a frame: reaching into it, and not all in it', () => {
+    const frame = { x: 0, y: 0, width: 100, height: 100 };
+    expect(isTextCutOff({ x: 10, y: 10, width: 20, height: 20 }, frame)).toBe(false);
+    expect(isTextCutOff({ x: 90, y: 10, width: 20, height: 20 }, frame)).toBe(true);
+    expect(isTextCutOff({ x: 100, y: 10, width: 20, height: 20 }, frame)).toBe(false);
+    expect(isTextCutOff({ x: 200, y: 10, width: 20, height: 20 }, frame)).toBe(false);
+  });
 });
+
+/** A shot of `length` seconds that glides in over `arrivalTime` seconds */
+function stop(
+  id: string,
+  length: number,
+  arrival: CameraStop['arrival'],
+  arrivalTime = 1.2,
+): CameraStop {
+  return {
+    id,
+    length,
+    frame: { x: 0, y: 0, width: 90, height: 160 },
+    arrival,
+    arrivalTime,
+    stay: 'still',
+    easing: 'smooth',
+  };
+}

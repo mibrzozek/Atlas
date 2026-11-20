@@ -129,7 +129,7 @@ export function neededWidths(
  * decoded and scaled in the image workers (`sharpImages`): done here, in the window, a 20 MP photo held
  * it up for a moment each, which made playing choppy while the preview prepared
  */
-async function decodeAt(
+export async function decodeAt(
   source: WorkspaceImageSource,
   across: number,
   isFull: boolean,

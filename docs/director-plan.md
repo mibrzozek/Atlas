@@ -70,7 +70,9 @@ never code, and calls the stores and entities the buttons call:
 | `waves <id> [strength]` | A wave rolling through the photos on every swell of its song (`wavesToTheMusic`) |
 | `edit <id> cuts\|flow\|mixed <seed>` | Shots, layouts and motions on the beats; another seed is another edit |
 | `save <id> phone\|full` | The video into `demo/` as a new file |
-| `picture <id> <times…>` | Small frames of the video side by side, a JPEG for Claude to look at |
+| `picture <id> <times…> [{"width": 540}]` | Small frames of the video side by side (`width`: 120 to 1080, 180 by default), a JPEG for Claude to look at |
+| `cuts <id> [{"width": 360, "from": 1}]` | Each cut side by side: the last moment of a shot and the arrival of the next, labelled `n\|n+1` with its time; the first and last frames too; 32 a sheet, `from` a shot to page on |
+| `contact <id> [{"width": 360, "from": 1}]` | Each photo alone and whole, numbered as `timeline` numbers it, to judge focus, subject and light; 32 a sheet, `from` a photo to page on |
 | `soundPicture <id> [from] [to]` | The song's loudness, beats and swells, and the motions in time: a PNG to look at |
 | `state <id>` | Photos, frame, end, layouts, shots, motions by kind, wave crests, song, swells |
 | `reload` | The window loaded again (a change to the page is then in it); answers once it is ready |
