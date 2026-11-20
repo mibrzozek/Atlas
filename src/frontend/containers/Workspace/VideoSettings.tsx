@@ -22,21 +22,16 @@ import {
 import { MOTION_KINDS, MotionKind } from 'common/video-motion';
 import { readingOrder } from 'common/workspace';
 import { Button, IconSet } from 'widgets';
-import { RendererMessenger } from '../../../ipc/renderer';
 import { useStore } from '../../contexts/StoreContext';
 import { ClientWorkspace, MUSIC_ID } from '../../entities/Workspace';
-
-/** The folder videos were saved in last, where the folder dialog opens the next time */
-const LAST_FOLDER_KEY = 'Atlas_WorkspaceVideoFolder';
-
-function lastFolder(): string | undefined {
-  try {
-    return localStorage.getItem(LAST_FOLDER_KEY) ?? undefined;
-  } catch {
-    // Only where the dialog opens
-    return undefined;
-  }
-}
+import {
+  chooseSaveFolder,
+  existingFolder,
+  rememberFolder,
+  SavesTo,
+  storedFolder,
+  VIDEO_FOLDER_KEY,
+} from './SaveFolder';
 
 /** A time as a clock shows it: 0:03.2 */
 export function formatTime(seconds: number): string {
@@ -683,13 +678,22 @@ export const ExportSettings = observer(({ workspace }: { workspace: ClientWorksp
   );
   const [typedName, setTypedName] = useState<string>();
   const name = typedName ?? hint;
-  // The next name in the folder videos were saved in last, shown as the name to begin with
+  // The folder the video goes to, once it is known: the workspace's own, if it is still there
+  const [folder, setFolder] = useState<string>();
   useEffect(() => {
-    const folder = lastFolder();
-    if (naming !== undefined && folder !== undefined) {
-      nextFileNameIn(naming, folder).then(setHint);
+    existingFolder(workspace.saveFolder).then((saved) => {
+      if (saved !== undefined) {
+        setFolder((current) => current ?? saved);
+      }
+    });
+  }, [workspace]);
+  // The next name in that folder (or the one videos were saved to last), shown as the name to begin with
+  useEffect(() => {
+    const target = folder ?? storedFolder(VIDEO_FOLDER_KEY);
+    if (naming !== undefined && target !== undefined) {
+      nextFileNameIn(naming, target).then(setHint);
     }
-  }, [naming]);
+  }, [naming, folder]);
   // Small enough to be sent to a phone, unless asked for the full size
   const [size, setSize] = useState<VideoSize>('phone');
   const output = outputSize(video, size);
@@ -701,26 +705,23 @@ export const ExportSettings = observer(({ workspace }: { workspace: ClientWorksp
     if (!canSave) {
       return;
     }
-    const { filePaths } = await RendererMessenger.showOpenDialog({
-      title: `Choose a folder for "${fileName}.mp4"`,
-      buttonLabel: 'Save here',
-      defaultPath: lastFolder(),
-      properties: ['openDirectory', 'createDirectory'],
-    });
-    if (filePaths.length === 0) {
+    // Into the folder it saves to, else one picked now
+    const target =
+      folder ??
+      (await chooseSaveFolder(
+        `Choose a folder for "${fileName}.mp4"`,
+        storedFolder(VIDEO_FOLDER_KEY),
+      ));
+    if (target === undefined) {
       return;
     }
-    try {
-      localStorage.setItem(LAST_FOLDER_KEY, filePaths[0]);
-    } catch {
-      // Only where the dialog opens next time
-    }
-    // The next name in the folder chosen, unless the user named the video
+    rememberFolder(VIDEO_FOLDER_KEY, target);
+    // The next name in the folder, unless the user named the video
     const videoName =
       naming !== undefined && typedName === undefined
-        ? await nextFileNameIn(naming, filePaths[0])
+        ? await nextFileNameIn(naming, target)
         : fileName;
-    workspaceStore.saveVideo(workspace, { name: videoName, folder: filePaths[0], size });
+    workspaceStore.saveVideo(workspace, { name: videoName, folder: target, size });
   };
 
   return (
@@ -748,6 +749,13 @@ export const ExportSettings = observer(({ workspace }: { workspace: ClientWorksp
           />
         </div>
       </div>
+      {folder !== undefined && (
+        <SavesTo
+          folder={folder}
+          title={`Choose a folder for "${fileName}.mp4"`}
+          onChange={setFolder}
+        />
+      )}
       <div className="workspace-video-row">
         <label>
           <span>Size</span>

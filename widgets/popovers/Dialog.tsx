@@ -12,10 +12,11 @@ export interface DialogProps {
   /** Whether the dialog can be dragged around by its header */
   isMovable?: boolean;
   /**
-   * Where it opens: its top left corner, in pixels of the page (it is kept inside the window). Without it,
-   * or when it gives nothing, it opens in its usual place in the middle
+   * Where it opens: its top left corner, in pixels of the page (it is kept inside the window). It is given
+   * its size, for a place that depends on it. Without it, or when it gives nothing, it opens in its usual
+   * place in the middle
    */
-  placeAt?: () => { left: number; top: number } | undefined;
+  placeAt?: (size: { width: number; height: number }) => { left: number; top: number } | undefined;
   onCancel: () => void;
   onClose?: () => void;
 }
@@ -64,14 +65,14 @@ export const Dialog = (props: DialogProps) => {
     offset.current = { x: 0, y: 0 };
     element.style.translate = '';
     element.showModal();
-    const at = placeAt?.();
+    // Measured once it is shown: all of it must stay in the window, and where it goes may depend on its size
+    const { width, height } = element.getBoundingClientRect();
+    const at = placeAt?.({ width, height });
     if (at === undefined) {
       element.style.margin = element.style.left = element.style.top = '';
       element.style.right = element.style.bottom = '';
       return;
     }
-    // Measured once it is shown, so that all of it stays in the window
-    const { width, height } = element.getBoundingClientRect();
     const keepIn = (value: number, room: number) =>
       Math.max(WINDOW_EDGE, Math.min(value, room - WINDOW_EDGE));
     element.style.margin = '0';

@@ -203,6 +203,10 @@ class UiStore {
   @observable isPreviewOpen: boolean = false;
   @observable isAdvancedSearchOpen: boolean = false;
   @observable isFolderCreatorOpen: boolean = false;
+  /** Where the folder creator starts, when the dialog that opened it has a folder in mind (`openFolderCreator`) */
+  @observable folderCreatorStart: string | undefined = undefined;
+  /** The folder the folder creator made last: a new workspace saves to it, once the folder creator is closed */
+  @observable lastCreatedFolder: string | undefined = undefined;
   /** The dialog that names a new workspace and how its files are named (`NewWorkspaceDialog`) */
   @observable isNewWorkspaceOpen: boolean = false;
   /** Whether the bar above the gallery is there: the search with the tags that are shown, sorting and view */
@@ -550,8 +554,11 @@ class UiStore {
     this.isAboutOpen = false;
   }
 
-  @action.bound openFolderCreator(): void {
+  /** Opens the folder creator, starting in `startDirectory` when given (else where it starts usually) */
+  @action.bound openFolderCreator(startDirectory?: string): void {
     this.isFolderCreatorOpen = true;
+    this.folderCreatorStart = startDirectory;
+    this.lastCreatedFolder = undefined;
   }
 
   @action.bound closeFolderCreator(): void {

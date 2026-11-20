@@ -94,13 +94,23 @@ describe('WorkspaceStore', () => {
   it('names a new workspace as chosen, and keeps how its files are named after a restart', async () => {
     const { store, reopen } = setup();
     const naming = { mode: 'pattern' as const, prefix: 'Sample_', digits: 3, suffix: '' };
-    const workspace = await store.create([], 'Sample', naming);
+    const workspace = await store.create([], 'Sample', { fileNaming: naming });
     const plain = await store.create([], 'Sample');
     expect([workspace.name, plain.name]).toEqual(['Sample', 'Sample 2']);
     expect(plain.fileNaming).toBeUndefined();
 
     const read = await reopen();
     expect(read.workspaceList.map((w) => w.fileNaming)).toEqual([naming, undefined]);
+  });
+
+  it('keeps the folder a workspace saves to after a restart', async () => {
+    const { store, reopen } = setup();
+    const saved = await store.create([], 'Saved', { saveFolder: '/Saves/Sample' });
+    await store.create([], 'Asked');
+    expect(saved.saveFolder).toBe('/Saves/Sample');
+
+    const read = await reopen();
+    expect(read.workspaceList.map((w) => w.saveFolder)).toEqual(['/Saves/Sample', undefined]);
   });
 
   it('stores every change to what is on it', async () => {

@@ -103,6 +103,8 @@ export class ClientWorkspace {
   @observable isLocked: boolean;
   /** How the files saved from it are named, if the user chose; set when it is made */
   readonly fileNaming: FileNaming | undefined;
+  /** The folder its pictures and videos are saved to, if one was chosen when it was made */
+  @observable saveFolder: string | undefined;
   /** The images and texts, each a plain object that is replaced when it changes */
   readonly items = observable.array<WorkspaceItem>([], { deep: false });
   /** The ids of what is selected; not stored */
@@ -158,6 +160,7 @@ export class ClientWorkspace {
     this.camera = row.camera;
     this.video = row.video;
     this.fileNaming = row.fileNaming;
+    this.saveFolder = row.saveFolder;
     makeObservable(this);
   }
 
@@ -624,6 +627,7 @@ export class ClientWorkspace {
       layerGroups: this.groupsInUse,
       video: this.video,
       fileNaming: this.fileNaming,
+      saveFolder: this.saveFolder,
     };
   }
 

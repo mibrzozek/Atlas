@@ -6,6 +6,7 @@ import { observer } from 'mobx-react-lite';
 import SysPath from 'path';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { besideLeft } from 'common/core';
 import {
   FolderDate,
   FolderDateOrder,
@@ -159,8 +160,17 @@ function folderItem(node: FolderNode, read: ReadonlyMap<string, FolderNode[]>): 
   };
 }
 
-/** The folder being looked at in the gallery, else the one used last time, else the first location */
-function initialDirectory({ uiStore, locationStore }: RootStore): string | undefined {
+/**
+ * The folder it was opened in, else the folder being looked at in the gallery, else the one used last time,
+ * else the first location
+ */
+function initialDirectory(
+  { uiStore, locationStore }: RootStore,
+  startDirectory?: string,
+): string | undefined {
+  if (startDirectory !== undefined) {
+    return startDirectory;
+  }
   return runInAction(() => {
     const locationCrit = uiStore.searchCriteriaList.find(
       (crit): crit is ClientStringSearchCriteria =>
@@ -224,14 +234,16 @@ function parseDateInputValue(value: string): FolderDate | undefined {
 
 const today = (): FolderDate => folderDateOf(new Date());
 
-const FolderCreatorForm = observer(() => {
+const FolderCreatorForm = observer(({ startDirectory }: { startDirectory?: string }) => {
   const rootStore = useStore();
   const { uiStore, locationStore } = rootStore;
 
   const [listing, setListing] = useState<Listing>();
   // The folder the tree starts from (a source, or one browsed to), and the one selected in it: where
   // the new folders go, and whose folders the suggested pattern continues
-  const [root, setRoot] = useState<string | undefined>(() => initialDirectory(rootStore));
+  const [root, setRoot] = useState<string | undefined>(() =>
+    initialDirectory(rootStore, startDirectory),
+  );
   const [directory, setDirectory] = useState<string | undefined>(root);
   const [readError, setReadError] = useState<string>();
   // The folders of every folder opened in the tree so far, and which are open
@@ -463,6 +475,8 @@ const FolderCreatorForm = observer(() => {
     await load(dir);
     countInput.current?.focus();
     if (created.length > 0) {
+      // The last one made is where a new workspace saves to, once this is closed (NewWorkspaceDialog)
+      uiStore.lastCreatedFolder = SysPath.join(dir, created[created.length - 1]);
       // The new folders in the tree: under the folder, opened, and its caret if it had none
       readFolders(dir);
       setExpanded((before) => new Set(before).add(dir));
@@ -751,6 +765,22 @@ const FolderCreatorForm = observer(() => {
   );
 });
 
+/** The gap between the New workspace dialog and the folder creator opened beside it, in pixels */
+const BESIDE_GAP = 8;
+
+/**
+ * Beside the New workspace dialog while it is open, so that both can be seen (on the side with more room);
+ * else in the corner of the gallery
+ */
+function placeFolderCreator(size: { width: number; height: number }) {
+  const newWorkspace = document.querySelector('.new-workspace-dialog')?.closest('dialog');
+  if (!newWorkspace) {
+    return galleryCorner();
+  }
+  const rect = newWorkspace.getBoundingClientRect();
+  return { left: besideLeft(rect, size.width, window.innerWidth, BESIDE_GAP), top: rect.top };
+}
+
 /**
  * Creates a batch of folders, named by number ([prefix] + incrementing number + [suffix]) or by date
  * ([name] + [date] or the other way around, one folder per day, week or month).
@@ -766,10 +796,12 @@ const FolderCreator = observer(() => {
       icon={IconSet.FOLDER_CLOSE_ADD}
       onCancel={uiStore.closeFolderCreator}
       isMovable
-      placeAt={galleryCorner}
+      placeAt={placeFolderCreator}
     >
       {/* Mounted only while open, so it starts from the folder being looked at every time */}
-      {uiStore.isFolderCreatorOpen && <FolderCreatorForm />}
+      {uiStore.isFolderCreatorOpen && (
+        <FolderCreatorForm startDirectory={uiStore.folderCreatorStart} />
+      )}
     </Dialog>
   );
 });

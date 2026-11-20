@@ -752,6 +752,25 @@ describe('workspaceFromRow', () => {
     ).toBeUndefined();
   });
 
+  it('keeps the folder it saves to, and leaves out one that is not a name', () => {
+    const row = {
+      id: 'w4',
+      name: 'Saved',
+      index: 0,
+      items: [],
+      camera: { x: 0, y: 0, zoom: 1 },
+      isLocked: false,
+      layerGroups: [],
+      saveFolder: '/Saves/Sample',
+    };
+    expect(workspaceFromRow(row, measure)).toEqual(row);
+    expect(workspaceFromRow({ ...row, saveFolder: '' }, measure)?.saveFolder).toBeUndefined();
+    expect(workspaceFromRow({ ...row, saveFolder: 7 }, measure)?.saveFolder).toBeUndefined();
+    expect(
+      workspaceFromRow({ ...row, saveFolder: undefined }, measure)?.saveFolder,
+    ).toBeUndefined();
+  });
+
   it('turns the names of batches of earlier versions into texts above their images', () => {
     const read = workspaceFromRow(
       {

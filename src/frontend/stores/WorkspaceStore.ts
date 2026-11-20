@@ -3,7 +3,6 @@ import { action, computed, makeObservable, observable, runInAction, when } from 
 import { moveItem, uniqueName } from 'common/collections';
 import { encodeFilePath } from 'common/fs';
 import { notEmpty, seededRandom, shuffled } from 'common/core';
-import { FileNaming } from 'common/file-naming';
 import { MusicTrack, VideoSize } from 'common/video';
 import {
   addGroup,
@@ -103,6 +102,9 @@ export interface WorkspaceSurfaceControls {
   startCrop(id?: string): void;
 }
 
+/** What a new workspace is given besides its name and images: how its files are named, where they are saved */
+type NewWorkspaceOptions = Pick<WorkspaceRow, 'fileNaming' | 'saveFolder'>;
+
 /** The workspaces, in the order of their tabs. Stored in a database of their own (`workspace-db.ts`) */
 class WorkspaceStore {
   private readonly backend: DataStorage;
@@ -168,7 +170,7 @@ class WorkspaceStore {
 
   /**
    * A new workspace, after the others, with a batch of images for each thing it was made from. Named
-   * `name` (made unique), and saving its files as `fileNaming` when the user chose how
+   * `name` (made unique), with its files named as `fileNaming` and saved to `saveFolder` when chosen
    */
   @action.bound async create(
     batches: readonly {
@@ -177,7 +179,7 @@ class WorkspaceStore {
       layout?: WorkspaceLayout;
     }[],
     name = 'Workspace',
-    fileNaming?: FileNaming,
+    { fileNaming, saveFolder }: NewWorkspaceOptions = {},
   ): Promise<ClientWorkspace> {
     // Laid out before it exists: what it starts with is not a change that undo would take back
     let items: WorkspaceItem[] = [];
@@ -202,6 +204,7 @@ class WorkspaceStore {
       isLocked: false,
       layerGroups: [],
       fileNaming,
+      saveFolder,
     });
     this.workspaceList.push(workspace);
     await this.db.save(workspace.toRow());
@@ -209,24 +212,24 @@ class WorkspaceStore {
   }
 
   /**
-   * A new workspace with the images the Library shows, named `name` and saving its files as `fileNaming`,
-   * opened. With many images it is asked about first (`largeWorkspaceRequest`), and then made and prepared
-   * in the background while the Library stays.
+   * A new workspace with the images the Library shows, named `name` and given its `options`, opened. With
+   * many images it is asked about first (`largeWorkspaceRequest`), and then made and prepared in the
+   * background while the Library stays.
    */
   @action.bound async createFromLibrary(
     name = 'Workspace',
-    fileNaming?: FileNaming,
+    options: NewWorkspaceOptions = {},
   ): Promise<void> {
     const { fileList } = this.rootStore.fileStore;
     if (fileList.length >= LARGE_WORKSPACE) {
       // Made and prepared in the background, while the Library stays in front
       this.largeWorkspaceRequest = {
         imageCount: fileList.length,
-        confirm: async () => this.prepareImages(await this.createOfLibrary(name, fileNaming)),
+        confirm: async () => this.prepareImages(await this.createOfLibrary(name, options)),
       };
       return;
     }
-    const workspace = await this.createOfLibrary(name, fileNaming);
+    const workspace = await this.createOfLibrary(name, options);
     this.rootStore.uiStore.openWorkspace(workspace);
   }
 
@@ -241,7 +244,10 @@ class WorkspaceStore {
   }
 
   /** The images the Library shows, laid out as the Library shows them: rows, columns or a grid */
-  private async createOfLibrary(name: string, fileNaming?: FileNaming): Promise<ClientWorkspace> {
+  private async createOfLibrary(
+    name: string,
+    options: NewWorkspaceOptions,
+  ): Promise<ClientWorkspace> {
     const { fileStore, uiStore } = this.rootStore;
     const images = fileStore.fileList.map((file) => ({
       fileId: file.id,
@@ -252,7 +258,7 @@ class WorkspaceStore {
     const workspace = await this.create(
       images.length > 0 ? [{ label: fileStore.viewName, images, layout }] : [],
       name,
-      fileNaming,
+      options,
     );
     // Selected, so that Arrange can change at once how they are laid out (the crop, the spacing)
     workspace.selectMany(workspace.fileIds, false);

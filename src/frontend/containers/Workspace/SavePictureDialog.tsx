@@ -6,9 +6,16 @@ import { nextFileName, nextFileNameIn } from 'common/file-naming';
 import { folderDateOf } from 'common/folder-series';
 import { Button, IconSet } from 'widgets';
 import { Dialog } from 'widgets/popovers';
-import { RendererMessenger } from '../../../ipc/renderer';
 import { useStore } from '../../contexts/StoreContext';
 import { ClientWorkspace } from '../../entities/Workspace';
+import {
+  chooseSaveFolder,
+  existingFolder,
+  PICTURE_FOLDER_KEY,
+  rememberFolder,
+  SavesTo,
+  storedFolder,
+} from './SaveFolder';
 import {
   PICTURE_EXTENSIONS,
   pictureAreaName,
@@ -21,21 +28,11 @@ const FORMATS: { format: PictureFormat; name: string; detail: string }[] = [
   { format: 'jpeg', name: 'JPEG', detail: 'Much smaller, for sharing' },
 ];
 
-/** The folder pictures were saved in last, where the folder dialog opens the next time */
-const LAST_FOLDER_KEY = 'Atlas_WorkspacePictureFolder';
-
-function lastFolder(): string | undefined {
-  try {
-    return localStorage.getItem(LAST_FOLDER_KEY) ?? undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 /**
  * Saving a workspace as a picture: under a name of the user's own (the workspace's to begin with), as PNG
- * or JPEG, in a folder picked after. Never over another file: a taken name gets a number. A workspace
- * that names its files gets the next of its names in the folder, unless a name is typed.
+ * or JPEG, in the folder the workspace saves to, or else one picked after. Never over another file: a taken
+ * name gets a number. A workspace that names its files gets the next of its names in the folder, unless a
+ * name is typed.
  */
 export const SavePictureDialog = observer(
   ({ workspace, onClose }: { workspace: ClientWorkspace; onClose: () => void }) => {
@@ -50,13 +47,22 @@ export const SavePictureDialog = observer(
     const [format, setFormat] = useState<PictureFormat>('png');
     const fileName = fileNameOf(name);
     const nameInput = useRef<HTMLInputElement>(null);
-    // The next name in the folder pictures were saved in last, shown as the name to begin with
+    // The folder the picture goes to, once it is known: the workspace's own, if it is still there
+    const [folder, setFolder] = useState<string>();
     useEffect(() => {
-      const folder = lastFolder();
-      if (naming !== undefined && folder !== undefined) {
-        nextFileNameIn(naming, folder).then(setHint);
+      existingFolder(workspace.saveFolder).then((saved) => {
+        if (saved !== undefined) {
+          setFolder((current) => current ?? saved);
+        }
+      });
+    }, [workspace]);
+    // The next name in that folder (or the one pictures were saved to last), shown as the name to begin with
+    useEffect(() => {
+      const target = folder ?? storedFolder(PICTURE_FOLDER_KEY);
+      if (naming !== undefined && target !== undefined) {
+        nextFileNameIn(naming, target).then(setHint);
       }
-    }, [naming]);
+    }, [naming, folder]);
     // The name ready to be typed over: `autoFocus` is lost when the dialog opens as a modal after it
     useEffect(() => {
       const frame = requestAnimationFrame(() => nameInput.current?.select());
@@ -69,30 +75,27 @@ export const SavePictureDialog = observer(
       if (fileName === '' || images === undefined || surface === undefined) {
         return;
       }
-      const { filePaths } = await RendererMessenger.showOpenDialog({
-        title: `Choose a folder for "${fileName}.${PICTURE_EXTENSIONS[format]}"`,
-        buttonLabel: 'Save here',
-        defaultPath: lastFolder(),
-        properties: ['openDirectory', 'createDirectory'],
-      });
-      if (filePaths.length === 0) {
+      // Into the folder it saves to, else one picked now
+      const target =
+        folder ??
+        (await chooseSaveFolder(
+          `Choose a folder for "${fileName}.${PICTURE_EXTENSIONS[format]}"`,
+          storedFolder(PICTURE_FOLDER_KEY),
+        ));
+      if (target === undefined) {
         return;
       }
-      try {
-        localStorage.setItem(LAST_FOLDER_KEY, filePaths[0]);
-      } catch {
-        // Only where the dialog opens next time
-      }
-      // The next name in the folder chosen, unless the user named the picture
+      rememberFolder(PICTURE_FOLDER_KEY, target);
+      // The next name in the folder, unless the user named the picture
       const picked =
         naming !== undefined && typedName === undefined
-          ? await nextFileNameIn(naming, filePaths[0])
+          ? await nextFileNameIn(naming, target)
           : fileName;
       onClose();
       saveWorkspacePicture(workspace, images.sources, surface.viewport, {
         name: picked,
         format,
-        folder: filePaths[0],
+        folder: target,
       });
     };
 
@@ -129,6 +132,14 @@ export const SavePictureDialog = observer(
               <span>.{PICTURE_EXTENSIONS[format]}</span>
             </div>
           </label>
+
+          {folder !== undefined && (
+            <SavesTo
+              folder={folder}
+              title={`Choose a folder for "${fileName}.${PICTURE_EXTENSIONS[format]}"`}
+              onChange={setFolder}
+            />
+          )}
 
           <div className="workspace-dialog-field" role="radiogroup" aria-label="Format">
             <span>Format</span>

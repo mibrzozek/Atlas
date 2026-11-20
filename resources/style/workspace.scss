@@ -898,6 +898,59 @@ input.workspace-tab-name {
 }
 
 // The naming of saved files in the new workspace dialog: its fields in rows that fit its width
+// The folder a new workspace saves to: its path in a field, the buttons to the end of the row
+.new-workspace-save-to {
+  display: flex;
+  align-items: stretch;
+  gap: 0.5em;
+
+  .workspace-dialog-input {
+    flex: 1;
+    min-width: 0;
+
+    span {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    &[data-empty='true'] span {
+      color: var(--text-color-muted);
+    }
+  }
+
+  button {
+    white-space: nowrap;
+  }
+}
+
+// The folder a save goes to, as the save dialogs show it (SaveFolder.tsx)
+.workspace-dialog-saves-to {
+  display: flex;
+  align-items: center;
+  gap: 0.5em;
+
+  span {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-color-muted);
+  }
+
+  b {
+    color: var(--text-color);
+    font-weight: 500;
+  }
+
+  button {
+    white-space: nowrap;
+  }
+}
+
 .new-workspace-dialog .folder-creator-fields {
   &[data-mode='pattern'] {
     grid-template-columns: 2fr 1.5fr 2fr;

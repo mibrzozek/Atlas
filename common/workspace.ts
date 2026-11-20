@@ -98,6 +98,8 @@ export interface WorkspaceRow {
   video?: VideoProject;
   /** How the pictures and videos saved from it are named. Without one, the name of the user's choice */
   fileNaming?: FileNaming;
+  /** The folder its pictures and videos are saved to, if one was chosen; else they ask for one when saved */
+  saveFolder?: string;
 }
 
 // The camera
@@ -1396,7 +1398,7 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
   if (typeof row !== 'object' || row === null) {
     return undefined;
   }
-  const { id, name, index, items, camera, isLocked, layerGroups, video, fileNaming } =
+  const { id, name, index, items, camera, isLocked, layerGroups, video, fileNaming, saveFolder } =
     row as Partial<WorkspaceRow>;
   const { groups } = row as { groups?: unknown };
   if (typeof id !== 'string') {
@@ -1521,6 +1523,7 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
       })),
     video: videoFromRow(video),
     fileNaming: fileNamingFromRow(fileNaming),
+    saveFolder: typeof saveFolder === 'string' && saveFolder !== '' ? saveFolder : undefined,
   };
 }
 

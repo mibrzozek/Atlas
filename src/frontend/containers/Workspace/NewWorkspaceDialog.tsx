@@ -1,3 +1,4 @@
+import { reaction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import React, { useEffect, useRef, useState } from 'react';
 
@@ -21,6 +22,7 @@ import {
   NumberStyleSelect,
   SEPARATORS,
 } from '../NamingFields';
+import { chooseSaveFolder, lastSaveFolder } from './SaveFolder';
 
 const MODE_STORAGE_KEY = 'workspace-naming-mode';
 const DATE_STYLE_STORAGE_KEY = 'workspace-naming-date-style';
@@ -47,13 +49,15 @@ function storedDateStyle(): DateStyle {
 }
 
 /**
- * The name of a new workspace, and how the pictures and videos saved from it are named. The prefix and
- * the date's name follow the name until they are typed over. Only the mode and the date style are
- * remembered: the name is the workspace's own.
+ * The name of a new workspace, the folder its pictures and videos are saved to, and how they are named. The
+ * prefix and the date's name follow the name until they are typed over. Only the mode and the date style are
+ * remembered: the name and the folder are the workspace's own.
  */
 const NewWorkspaceForm = observer(() => {
   const { uiStore, workspaceStore } = useStore();
   const [name, setName] = useState(() => workspaceStore.nameForNewWorkspace());
+  // Where the files are saved to; not chosen, they are asked for when saved
+  const [saveFolder, setSaveFolder] = useState<string | undefined>(lastSaveFolder);
   const [mode, setModeState] = useState<NamingMode>(storedMode);
   const [prefix, setPrefix] = useState<string>();
   const [digits, setDigits] = useState('3');
@@ -66,6 +70,30 @@ const NewWorkspaceForm = observer(() => {
     const frame = requestAnimationFrame(() => nameInput.current?.select());
     return () => cancelAnimationFrame(frame);
   }, []);
+
+  // The folder the folder creator made last is saved to, once it is closed (it is open on top of this one)
+  useEffect(
+    () =>
+      reaction(
+        () => uiStore.isFolderCreatorOpen,
+        (isOpen) => {
+          if (!isOpen && uiStore.lastCreatedFolder !== undefined) {
+            setSaveFolder(uiStore.lastCreatedFolder);
+          }
+        },
+      ),
+    [uiStore],
+  );
+
+  const browse = async () => {
+    const picked = await chooseSaveFolder(
+      'Choose where the files of the workspace are saved',
+      saveFolder,
+    );
+    if (picked !== undefined) {
+      setSaveFolder(picked);
+    }
+  };
 
   const setMode = (newMode: NamingMode) => {
     setModeState(newMode);
@@ -90,7 +118,7 @@ const NewWorkspaceForm = observer(() => {
     if (!canCreate) {
       return;
     }
-    workspaceStore.createFromLibrary(name.trim(), naming);
+    workspaceStore.createFromLibrary(name.trim(), { fileNaming: naming, saveFolder });
     uiStore.closeNewWorkspace();
   };
 
@@ -125,6 +153,29 @@ const NewWorkspaceForm = observer(() => {
           onChange={(event) => setName(event.target.value)}
         />
       </label>
+
+      <div className="workspace-dialog-field">
+        <span>Save to</span>
+        <div className="new-workspace-save-to">
+          <div className="workspace-dialog-input" data-empty={saveFolder === undefined}>
+            <span data-tooltip={saveFolder}>{saveFolder ?? 'Asked when saving'}</span>
+          </div>
+          <Button
+            styling="outlined"
+            icon={IconSet.FOLDER_OPEN}
+            text="Browse…"
+            tooltip="Choose the folder the files are saved to"
+            onClick={browse}
+          />
+          <Button
+            styling="outlined"
+            icon={IconSet.FOLDER_CLOSE_ADD}
+            text="Create folder…"
+            tooltip="Create folders, starting in the folder the files are saved to"
+            onClick={() => uiStore.openFolderCreator(saveFolder)}
+          />
+        </div>
+      </div>
 
       <div className="workspace-dialog-field">
         <span>Name saved files</span>

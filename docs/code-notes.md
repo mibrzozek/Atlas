@@ -287,6 +287,14 @@ Probe pitfalls that cost time:
   tested) goes on from the highest number of the same prefix and suffix in the folder chosen, and
   `nextFileNameIn` reads only the names there. The save dialogs show that next name as a hint; a name
   typed there is kept as it is. The shared pieces (`NamingFields.tsx`) are the folder creator's, too.
+  Where the files go: a workspace may have a `saveFolder` (its row; only a non-empty string is kept). The
+  Save to row of the dialog takes one by Browse…, or by Create folder…, which opens the folder creator beside
+  it, starting there; the last folder it made is the save folder once it closes (`uiStore.lastCreatedFolder`,
+  picked up by a reaction on `isFolderCreatorOpen`). `Dialog`'s `placeAt` is given the dialog's size, so the
+  folder creator goes on the side with room (`besideLeft` in `common/core.ts`, tested). The save dialogs
+  (`SaveFolder.tsx`: `SavesTo`, `chooseSaveFolder`, the remembered folders) save into the workspace's folder
+  while it is there, with "Saves to" and a Change… for that one save; otherwise they ask, as before. A new
+  workspace without one starts with the folder pictures or videos were saved to last.
   Several selected get a frame (`SelectionFrame`) whose handle sizes them together (`scaleItems`, the
   'scale' gesture, around the frame's top left, snapping its outer edges); Alt + wheel does the same
   around the middle (`scaleByWheel`). Both are sessions like Arrange's (`scaleSelection` with a `from`

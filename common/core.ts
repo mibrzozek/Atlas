@@ -8,6 +8,25 @@ export function clamp(value: number, min: number, max: number): number {
   }
 }
 
+/**
+ * The left edge of a box `width` wide, placed beside an anchor that lies from `anchor.left` to `anchor.right`:
+ * to its right, or to its left where less of it would lie over the anchor. Kept inside a window `windowWidth`
+ * wide, as a dialog is, before that is counted.
+ */
+export function besideLeft(
+  anchor: { left: number; right: number },
+  width: number,
+  windowWidth: number,
+  gap: number,
+): number {
+  const inWindow = (left: number) => clamp(left, 0, Math.max(0, windowWidth - width));
+  const overlap = (left: number) =>
+    Math.max(0, Math.min(left + width, anchor.right) - Math.max(left, anchor.left));
+  const right = inWindow(anchor.right + gap);
+  const left = inWindow(anchor.left - gap - width);
+  return overlap(left) < overlap(right) ? left : right;
+}
+
 /** Returns the items in a random order, without changing the given list */
 export function shuffled<T>(items: readonly T[], random: () => number = Math.random): T[] {
   const result = items.slice();
