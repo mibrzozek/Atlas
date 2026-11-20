@@ -49,6 +49,35 @@ What they share, as rules:
 12. **End by returning or by resolving.** Loop to the first frame, or go to black with one quiet line.
 13. **Text is small and human**, a line someone would say, not a big title card.
 
+## Notes on the "Masks" Halloween reel (2026-11-19)
+
+"Too zoomed in and can't see most of the photos. I'm trying to showcase the photos and then zoom in on
+specific subjects for dramatic effect. The pacing here was better but I want it to be more dynamic, with
+motion in appropriate moments that matches the song."
+
+14. **Showcase first, then drama.** A photo is first seen whole (`room`), and only then, on a musical
+    moment, does the camera push to its subject. A crop that hides most of the photo is not the default.
+15. **The owner's favourite form:** all photos spread evenly in one arrangement; the camera goes into one
+    photo, shows it whole, pushes to its subject for drama, pulls back out, travels across the layout
+    surgically (one clean eased move, landing exactly) to the next photo and goes back in.
+16. **Motion lands on the music:** pushes and pulls land on beats, the big moves on swells and the drop;
+    stillness in the quiet. Still, cut-only reels are too static for the owner.
+17. **Sound effects from `audio/sfx/`, tastefully:** a few, on the big moves (a whoosh under a travel, a
+    hit under the drop push), never under every shot.
+
+## Notes on the first "Showcase" wall (2026-11-19)
+
+"Make it look like the images extend in all directions forever; it's okay to repeat them as long as they
+are not right next to each other. And don't use the same zoom-in effect only: you can zoom in to the left
+side of a horizontal photo and then pan across it so the height of the photo takes up the entire height
+of the screen, and so on for vertical."
+
+18. **The wall never ends on screen.** Grow the layout with copies (`extend`) so no edge, title block or
+    empty black is ever seen; a copy is never next to its own photo.
+19. **Vary the move to the photo:** a horizontal photo fills the screen's height and pans across it
+    (`align` start then end, arrival scroll); a vertical one fills the width and tilts; the showcase
+    (whole photo) and the push to a subject are two more. Never the same move twice in a row.
+
 ## To ask the owner
 
 - The worst moments in the lowrider and Halloween reels (`demo/`), in their words.
