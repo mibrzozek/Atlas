@@ -274,6 +274,15 @@ const FolderCreatorForm = observer(({ startDirectory }: { startDirectory?: strin
   const [isCreating, setIsCreating] = useState(false);
   const [result, setResult] = useState<{ message: string; isError: boolean }>();
   const countInput = useRef<HTMLInputElement>(null);
+  // How many, ready to type once the folder is read (its fieldset is disabled until then): `autoFocus` is
+  // lost when the dialog opens as a modal after it, and over another dialog focus went to the close button
+  const hasListing = listing !== undefined;
+  useEffect(() => {
+    if (hasListing) {
+      const frame = requestAnimationFrame(() => countInput.current?.select());
+      return () => cancelAnimationFrame(frame);
+    }
+  }, [hasListing]);
 
   // Open a directory: read what is in there, and continue the numbering its folders already follow
   const loadCounter = useRef(0);
