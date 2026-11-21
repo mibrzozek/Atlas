@@ -16,7 +16,7 @@ import {
 } from 'common/video';
 import { clamp } from 'common/core';
 import { isMotionKind, Motion } from 'common/video-motion';
-import { boundsOf, Point, Rect } from 'common/workspace';
+import { boundsOf, overlaps, Point, Rect } from 'common/workspace';
 
 /** What a shot shows (one of photo, photos, title, all, frame), then moved or zoomed; and its settings */
 export interface ShotChanges {
@@ -313,17 +313,12 @@ export function cutMoments(
 
 /** Whether a text is cut off by a shot's frame: it reaches into the frame, and is not all in it */
 export function isTextCutOff(text: Rect, frame: Rect): boolean {
-  const overlaps =
-    text.x < frame.x + frame.width &&
-    text.x + text.width > frame.x &&
-    text.y < frame.y + frame.height &&
-    text.y + text.height > frame.y;
   const inside =
     text.x >= frame.x &&
     text.x + text.width <= frame.x + frame.width &&
     text.y >= frame.y &&
     text.y + text.height <= frame.y + frame.height;
-  return overlaps && !inside;
+  return overlaps(text, frame) && !inside;
 }
 
 /** What the warnings of `timelineWarnings` need to know of a shot */

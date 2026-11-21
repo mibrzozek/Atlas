@@ -1,13 +1,12 @@
 import {
   columnShapeOf,
-  originalsOf,
   wallItems,
   wallOfCopies,
   WallCopy,
   WallObstacle,
   WallPhoto,
 } from '../common/wall';
-import { overlaps, WorkspaceItem } from '../common/workspace';
+import { originalsOf, overlaps, WorkspaceItem } from '../common/workspace';
 
 const COLUMN = 100;
 const GAP = 8;
@@ -30,9 +29,9 @@ const block: WallObstacle[] = [
   photo('c', STEP, 0, 200),
 ];
 const photos: WallPhoto[] = [
-  { fileId: 'a', imageAspect: 1 },
-  { fileId: 'b', imageAspect: 1.5 },
-  { fileId: 'c', imageAspect: 0.75 },
+  { fileId: 'a', imageAspect: 1, frameAspect: 1 },
+  { fileId: 'b', imageAspect: 1.5, frameAspect: 1.5 },
+  { fileId: 'c', imageAspect: 0.75, frameAspect: 0.75 },
 ];
 const options = { columns: 2, above: 300, below: 300, seed: 7 };
 
@@ -114,7 +113,7 @@ describe('a wall of copies', () => {
   });
 
   it('keeps the same rule with a single photo', () => {
-    const copies = wall(block, [{ fileId: 'a', imageAspect: 1 }]);
+    const copies = wall(block, [{ fileId: 'a', imageAspect: 1, frameAspect: 1 }]);
     expectNoSameFileNeighbours([...block.filter((o) => o.fileId !== undefined), ...copies] as {
       fileId: string;
       x: number;
@@ -208,6 +207,25 @@ describe('the wall as items', () => {
     expect(copies.map((copy) => copy.z)).toEqual(copies.map((_, i) => 10 + i));
     expect(copies.every((copy) => copy.kind === 'image')).toBe(true);
     expect(copies.every((copy) => copy.imageAspect > 0)).toBe(true);
+  });
+
+  it('copies a cropped photo with its crop and subject, in the shape the crop cuts it to', () => {
+    // A 2:1 photo cut to its middle: a square frame, so its copies are square too
+    const crop = { x: 0.25, y: 0, width: 0.5, height: 1 };
+    const subject = { x: 0.4, y: 0.6 };
+    const cropped: WorkspaceItem[] = [
+      { ...item('a', 0, 0, COLUMN, 1), imageAspect: 2, crop, subject },
+    ];
+    let ids = 0;
+    const copies = wallItems(cropped, options, () => `copy-${ids++}`, 10);
+    expect(copies.length).toBeGreaterThan(0);
+    for (const copy of copies) {
+      expect(copy.crop).toEqual(crop);
+      expect(copy.subject).toEqual(subject);
+      expect(copy.imageAspect).toBe(2);
+      expect(copy.width).toBe(COLUMN);
+      expect(copy.height).toBe(COLUMN);
+    }
   });
 
   it('refuses a workspace without photos', () => {

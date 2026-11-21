@@ -23,7 +23,7 @@ import { AppToaster } from '../../components/Toaster';
 import { sharpImages } from '../../image/SharpImages';
 import type { VideoSaveResult, WorkspaceImageSource } from '../../stores/WorkspaceStore';
 import { WorkspacePainter } from './paintWorkspace';
-import { mixAudio, MUSIC_SAMPLE_RATE } from './videoAudio';
+import { mixAudio, MUSIC_SAMPLE_RATE, withReadableSounds } from './videoAudio';
 
 /**
  * The images of a video, each file decoded once, at the size the video shows its largest copy (never larger
@@ -425,15 +425,21 @@ export async function saveVideoWithProgress(
     );
   show(0, 'Preparing the images');
   try {
-    const saved = await saveVideo(video, items, sources, themeOf, options, {
+    // Before any frame is drawn: a sound effect that cannot be read is left out, not found at the end
+    const { video: playable, leftOut } = await withReadableSounds(video);
+    const saved = await saveVideo(playable, items, sources, themeOf, options, {
       onProgress: show,
       isCancelled: () => isCancelled,
     });
+    const skipped = leftOut.map((name) => `"${name}"`).join(', ');
+    const notice = leftOut.length > 1 ? 'sound effects' : 'sound effect';
+    const leftOutNote =
+      leftOut.length === 0 ? '' : `. Left out ${notice} ${skipped}: the file could not be read`;
     AppToaster.show(
       saved === undefined
         ? { message: 'The video was not saved.', timeout: 5000 }
         : {
-            message: `Saved as ${path.basename(saved)}`,
+            message: `Saved as ${path.basename(saved)}${leftOutNote}`,
             timeout: 10000,
             clickAction: { label: 'Show', onClick: () => shell.showItemInFolder(saved) },
           },

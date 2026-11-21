@@ -353,10 +353,11 @@ Probe pitfalls that cost time:
   and between workspaces (`pasteItems`); a photo put on a workspace from the Library is there once, so the
   batches leave out what is there. A photo's item id is its file's; a copy of it (see the wall below) has
   an id of its own, so one file can be on a workspace more than once, and the stored reader keeps each id once
-  (`workspaceFromRow`). `fileIds` lists each file once: that is what the surface, the tiles and the sources
+  (`workspaceFromRow`). `fileIds` lists each file once (`originalsOf` in `common/workspace.ts`, the one rule the `contact` sheet also uses): that is what the surface, the tiles and the sources
   are keyed by, so a copy is drawn from its file's tile. **The wall** (`extend` in the Director,
   `ClientWorkspace.extend`, `common/wall.ts`, tested): copies of the photos in masonry columns of the photos'
-  own column width and gap (`columnShapeOf`; photos not in columns are refused) to the left and right of the
+  own column width and gap (`columnShapeOf`; photos not in columns are refused; a copy keeps its photo's crop and subject, and is as tall as
+  the shape its crop cuts the photo to) to the left and right of the
   block, and continuing its columns above (above a text too) and below, to `above`/`below` pixels. Each stack
   takes the photos in the order of the seed, moving past anything in the way and past a photo that would sit
   next to a copy of its own (directly above or below in its column, or in the next column within a gap). The
@@ -390,7 +391,7 @@ Probe pitfalls that cost time:
   `WorkspacePainter` (`paintWorkspace.ts`, shared with Save as picture). Nothing is recorded off the
   screen: every frame is drawn at its exact time, from images decoded once (`VideoImages`). Songs are
   read, never written (`videoAudio.ts`: `mixAudio` mixes the song and every effect for the MP4, `playAudio`
-  plays them with the preview; effects are decoded once per file, the song one at a time). `color-mix()` is
+  plays them with the preview; effects are decoded once per file, the song one at a time). An effect whose file was moved or deleted is left out of a saved video before any frame is drawn (`withReadableSounds`), and the status footer names it; the preview skips it too. `color-mix()` is
   newer than this Chromium: do not use it.
   **Shots**: every camera stop is a shot, its frame a rectangle on the workspace (`VideoShots`, placed
   in pixels of the screen by the surface in every frame, `placeShots`, so its lines stay thin): dotted

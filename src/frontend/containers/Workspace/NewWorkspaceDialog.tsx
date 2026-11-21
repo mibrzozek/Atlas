@@ -33,16 +33,22 @@ const DEFAULT_DATE_STYLE: DateStyle = {
   nameSeparator: '_',
 };
 
+/** What is stored under `key`: nothing when storage is blocked, so the defaults are used */
+function storedValue(key: string): string | null {
+  try {
+    return localStorage.getItem(key);
+  } catch {
+    return null;
+  }
+}
+
 function storedMode(): NamingMode {
-  return localStorage.getItem(MODE_STORAGE_KEY) === 'date' ? 'date' : 'pattern';
+  return storedValue(MODE_STORAGE_KEY) === 'date' ? 'date' : 'pattern';
 }
 
 function storedDateStyle(): DateStyle {
   try {
-    return {
-      ...DEFAULT_DATE_STYLE,
-      ...JSON.parse(localStorage.getItem(DATE_STYLE_STORAGE_KEY) ?? '{}'),
-    };
+    return { ...DEFAULT_DATE_STYLE, ...JSON.parse(storedValue(DATE_STYLE_STORAGE_KEY) ?? '{}') };
   } catch {
     return DEFAULT_DATE_STYLE;
   }

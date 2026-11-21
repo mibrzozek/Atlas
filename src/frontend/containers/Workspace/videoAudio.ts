@@ -71,6 +71,32 @@ export function decodeAudio(video: VideoProject): void {
   }
 }
 
+/**
+ * The video with the sound effects that can be read: one whose file was moved or deleted since it was added is
+ * left out, and its name returned, so that a save is not failed at its end by it
+ */
+export async function withReadableSounds(
+  video: VideoProject,
+): Promise<{ video: VideoProject; leftOut: string[] }> {
+  const sounds = soundsByTime(video);
+  const readable = await Promise.all(
+    sounds.map((sound) =>
+      decodeEffect(sound.path).then(
+        () => true,
+        () => false,
+      ),
+    ),
+  );
+  const leftOut = sounds.filter((_, i) => !readable[i]);
+  if (leftOut.length === 0) {
+    return { video, leftOut: [] };
+  }
+  return {
+    video: { ...video, sounds: sounds.filter((_, i) => readable[i]) },
+    leftOut: leftOut.map((sound) => sound.name),
+  };
+}
+
 /** A song made ready to go under a video: decoded, and its beats and swells found */
 export async function musicFrom(file: string): Promise<MusicTrack> {
   const buffer = await decodeMusic(file);

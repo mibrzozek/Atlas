@@ -29,11 +29,11 @@ import {
   videoSwells,
 } from 'common/video';
 import { photoPath } from 'common/photo-path';
-import { originalsOf } from 'common/wall';
 import { crestOf } from 'common/video-motion';
 import {
   boundsOf,
   LayoutKind,
+  originalsOf,
   Point,
   Rect,
   rowsAndColumnsOf,
@@ -600,8 +600,9 @@ export function installDirector(rootStore: RootStore): void {
       const first = numberOf(options.from ?? 1, 'from', 1, photos.length);
       const cell = widthOf(options.width, SHEET_WIDTH);
       // Each file once, under the number its first item has: the copies of a wall are left out
+      const numbers = new Map(photos.map((item, i): [string, number] => [item.id, i + 1]));
       const page = originalsOf(photos)
-        .map((item) => ({ item, n: photos.indexOf(item) + 1 }))
+        .map((item) => ({ item, n: numbers.get(item.id)! }))
         .filter(({ n }) => n >= first)
         .slice(0, MAX_CONTACT_PHOTOS);
       if (page.length === 0) {

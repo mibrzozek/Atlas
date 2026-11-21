@@ -131,7 +131,7 @@ export interface SoundEffect {
 }
 
 /** How loud a sound effect is when it is added: louder than a song, which is added at MUSIC_VOLUME */
-export const SOUND_VOLUME = 0.8;
+export const SOUND_VOLUME = 0.35;
 export const MAX_SOUND_VOLUME = 1.5;
 
 export interface VideoProject extends Size {

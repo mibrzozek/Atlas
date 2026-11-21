@@ -1224,6 +1224,19 @@ export function overlaps(a: Rect, b: Rect): boolean {
   return a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
 }
 
+/** The first of each file, in order: a photo once, however many copies of it there are on a workspace */
+export function originalsOf<T extends { fileId: string }>(items: readonly T[]): T[] {
+  const seen = new Set<string>();
+  const originals: T[] = [];
+  for (const item of items) {
+    if (!seen.has(item.fileId)) {
+      seen.add(item.fileId);
+      originals.push(item);
+    }
+  }
+  return originals;
+}
+
 /** The smallest an image can be made, in world units */
 export const MIN_ITEM_WIDTH = 16;
 

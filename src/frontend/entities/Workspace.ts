@@ -20,6 +20,7 @@ import {
   PAPER_FORMATS,
   moveItems,
   moveLayers,
+  originalsOf,
   Point,
   Rect,
   resizeItem,
@@ -28,6 +29,7 @@ import {
   swapItems,
   WorkspaceBackgroundItem,
   WorkspaceImage,
+  WorkspaceImageItem,
   WorkspaceItem,
   WorkspaceLayout,
   WorkspaceRow,
@@ -169,14 +171,11 @@ export class ClientWorkspace {
 
   /** The ids of the files of the images on it: each once, however many copies of a photo there are */
   get fileIds(): string[] {
-    const ids = new Set<string>();
     // Copied once: read item by item, an observable list is checked for every item (slow in development)
-    for (const item of this.items.slice()) {
-      if (item.kind === 'image') {
-        ids.add(item.fileId);
-      }
-    }
-    return [...ids];
+    const images = this.items
+      .slice()
+      .filter((item): item is WorkspaceImageItem => item.kind === 'image');
+    return originalsOf(images).map((image) => image.fileId);
   }
 
   /**

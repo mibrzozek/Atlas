@@ -6,20 +6,27 @@
  * the next column that comes within a gap of it. Nothing that is there moves.
  */
 import { seededRandom, shuffled } from './core';
+import type { Crop } from './crop';
 import {
   boundsOf,
   LAYOUT_GAP,
+  originalsOf,
   overlaps,
+  Point,
   Rect,
   WorkspaceImageItem,
   WorkspaceItem,
 } from './workspace';
 
-/** A photo of the workspace, as a wall can repeat it */
+/** A photo of the workspace, as a wall can repeat it: a copy looks like it, cropped the same way */
 export interface WallPhoto {
   fileId: string;
   /** Width for height of the photo */
   imageAspect: number;
+  /** Width for height of the shape it is shown in, which its crop cuts it to: the copies take this shape */
+  frameAspect: number;
+  crop?: Crop;
+  subject?: Point;
 }
 
 /** Something on the workspace that a wall keeps off: a photo (with its file) or a text */
@@ -38,6 +45,8 @@ export interface WallOptions {
 export interface WallCopy extends Rect {
   fileId: string;
   imageAspect: number;
+  crop?: Crop;
+  subject?: Point;
 }
 
 /** A guard against a stack that never reaches its end: far more places than a wall has */
@@ -74,19 +83,6 @@ export function columnShapeOf(images: readonly Rect[]): { columnWidth: number; g
   return { columnWidth, gap: gap >= 0 ? gap : LAYOUT_GAP };
 }
 
-/** The first of each file, in order: the photos themselves, without the copies of them */
-export function originalsOf<T extends { fileId: string }>(items: readonly T[]): T[] {
-  const seen = new Set<string>();
-  const originals: T[] = [];
-  for (const item of items) {
-    if (!seen.has(item.fileId)) {
-      seen.add(item.fileId);
-      originals.push(item);
-    }
-  }
-  return originals;
-}
-
 /**
  * The copies of `photos` that make the wall around `obstacles`, in columns `columnWidth` wide with `gap`
  * between them. The block's columns continue above its top and below its bottom (above a text too), and
@@ -102,7 +98,7 @@ export function wallOfCopies(
 ): WallCopy[] {
   const images = obstacles.filter((obstacle) => obstacle.fileId !== undefined);
   const order = shuffled(
-    photos.filter((photo) => photo.imageAspect > 0),
+    photos.filter((photo) => photo.imageAspect > 0 && photo.frameAspect > 0),
     seededRandom(options.seed),
   );
   const block = boundsOf(obstacles);
@@ -176,7 +172,7 @@ export function wallOfCopies(
       for (let t = 0; t < order.length && found === undefined && blocker === undefined; t++) {
         const index = (next + t) % order.length;
         const photo = order[index];
-        const height = Math.max(1, Math.floor(columnWidth / photo.imageAspect));
+        const height = Math.max(1, Math.floor(columnWidth / photo.frameAspect));
         const rect = { x, y: direction === 1 ? y : y - height, width: columnWidth, height };
         if (direction === 1 ? rect.y + height > limit : rect.y < limit) {
           continue;
@@ -198,7 +194,8 @@ export function wallOfCopies(
         y += direction * Math.max(1, gap);
       } else {
         const { photo, rect } = found;
-        copies.push({ ...rect, fileId: photo.fileId, imageAspect: photo.imageAspect });
+        const { fileId, imageAspect, crop, subject } = photo;
+        copies.push({ ...rect, fileId, imageAspect, crop, subject });
         placed.push({ rect, fileId: photo.fileId, column });
         next = (found.index + 1) % order.length;
         y = direction === 1 ? rect.y + rect.height + gap : rect.y - gap;
@@ -237,16 +234,23 @@ export function wallItems(
 ): WorkspaceImageItem[] {
   const images = items.filter((item): item is WorkspaceImageItem => item.kind === 'image');
   const { columnWidth, gap } = columnShapeOf(images);
-  const photos = originalsOf(images).map((image) => ({
-    fileId: image.fileId,
-    imageAspect: image.imageAspect,
-  }));
+  const photos = originalsOf(images).map(
+    (image): WallPhoto => ({
+      fileId: image.fileId,
+      imageAspect: image.imageAspect,
+      frameAspect: image.width / image.height,
+      crop: image.crop,
+      subject: image.subject,
+    }),
+  );
   const obstacles = items.filter((item) => item.kind !== 'background');
   return wallOfCopies(obstacles, photos, columnWidth, gap, options).map((copy, i) => ({
     kind: 'image',
     id: newId(),
     fileId: copy.fileId,
     imageAspect: copy.imageAspect,
+    crop: copy.crop,
+    subject: copy.subject,
     x: copy.x,
     y: copy.y,
     width: copy.width,

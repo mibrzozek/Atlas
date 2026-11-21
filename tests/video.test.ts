@@ -499,7 +499,7 @@ describe('storage', () => {
     expect(videoFromRow({ ...video, sounds: undefined })!.sounds).toBeUndefined();
     expect(
       videoFromRow({ ...video, sounds: [{ ...sound, volume: undefined }] })!.sounds![0].volume,
-    ).toBe(0.8);
+    ).toBe(0.35);
   });
 
   it('turns the shots of the first version into camera stops and layouts', () => {
