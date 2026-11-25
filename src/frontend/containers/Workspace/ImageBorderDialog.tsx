@@ -1,15 +1,20 @@
 import { observer } from 'mobx-react-lite';
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 
-import { ImageBorderMode, PAPER_COLOR, WorkspaceImageItem } from 'common/workspace';
+import {
+  ImageBorder,
+  ImageBorderMode,
+  PAPER_COLOR,
+  WorkspaceImageItem,
+  WorkspaceItem,
+} from 'common/workspace';
 import { Button, IconSet } from 'widgets';
-import { Dialog } from 'widgets/popovers';
 import TagColorPicker from '../../components/TagColorPicker';
 import { ClientWorkspace } from '../../entities/Workspace';
 
-const BORDER_MODES: { mode: ImageBorderMode; name: string; detail: string }[] = [
-  { mode: 'equal', name: 'Equal border', detail: 'Same width on all sides' },
-  { mode: 'split', name: 'Split border', detail: 'Top & bottom and sides' },
+const BORDER_MODES: { mode: ImageBorderMode; name: string }[] = [
+  { mode: 'equal', name: 'Equal' },
+  { mode: 'split', name: 'Split' },
 ];
 
 const DEFAULT_BORDER_WIDTH = 16;
@@ -17,23 +22,28 @@ const SLIDER_MAX_WIDTH = 160;
 
 interface ImageBorderDialogProps {
   workspace: ClientWorkspace;
-  at?: { x: number; y: number };
   onClose: () => void;
 }
 
 /**
- * Adds, edits or removes a border on the selected photos of a workspace: equal on all four sides,
- * or split between top/bottom and left/right sides, in a chosen colour.
+ * Compact floating panel tucked into the top right of the workspace for adding, editing or removing
+ * borders on the selected photos in real time (one undoable session).
  */
-export const ImageBorderDialog = observer(({ workspace, at, onClose }: ImageBorderDialogProps) => {
-  const selectedImages = workspace.items
-    .slice()
-    .filter(
-      (item): item is WorkspaceImageItem =>
-        item.kind === 'image' && workspace.selection.has(item.id),
-    );
-  const existing = selectedImages.find((item) => item.border !== undefined)?.border;
-  const hasExisting = existing !== undefined;
+export const ImageBorderDialog = observer(({ workspace, onClose }: ImageBorderDialogProps) => {
+  // Snapshot of the workspace when the panel opened so live slider steps never drift and undo cleanly
+  const sessionFrom = useRef<WorkspaceItem[]>(workspace.items.slice());
+  const targetIds = useRef<Set<string>>(
+    new Set(
+      sessionFrom.current
+        .filter((item) => item.kind === 'image' && workspace.selection.has(item.id))
+        .map((item) => item.id),
+    ),
+  );
+  const initialImages = sessionFrom.current.filter(
+    (item): item is WorkspaceImageItem => item.kind === 'image' && targetIds.current.has(item.id),
+  );
+  const existing = initialImages.find((item) => item.border !== undefined)?.border;
+  const didEdit = useRef(false);
 
   const [mode, setMode] = useState<ImageBorderMode>(existing?.mode ?? 'equal');
   const [topBottom, setTopBottom] = useState<number>(
@@ -44,110 +54,174 @@ export const ImageBorderDialog = observer(({ workspace, at, onClose }: ImageBord
   );
   const [color, setColor] = useState<string>(existing?.color ?? PAPER_COLOR);
 
-  const selectMode = (nextMode: ImageBorderMode) => {
-    if (nextMode === 'split' && mode === 'equal') {
-      setSides(topBottom);
-    }
-    setMode(nextMode);
-  };
+  const preview = useCallback(
+    (next: ImageBorder | undefined) => {
+      if (targetIds.current.size === 0) {
+        return;
+      }
+      didEdit.current = true;
+      workspace.setImageBorder(targetIds.current, next, sessionFrom.current);
+    },
+    [workspace],
+  );
 
-  const apply = () => {
-    const ids = new Set(selectedImages.map((item) => item.id));
-    workspace.setImageBorder(ids, {
-      mode,
-      topBottom,
-      sides: mode === 'equal' ? topBottom : sides,
-      color,
-    });
+  // Show the initial border right away when adding a new border
+  useEffect(() => {
+    if (existing === undefined && targetIds.current.size > 0) {
+      preview({
+        mode: 'equal',
+        topBottom: DEFAULT_BORDER_WIDTH,
+        sides: DEFAULT_BORDER_WIDTH,
+        color: PAPER_COLOR,
+      });
+    }
+    // Only on open
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const cancel = useCallback(() => {
+    if (didEdit.current) {
+      workspace.undo();
+    }
     onClose();
+  }, [workspace, onClose]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        event.stopPropagation();
+        cancel();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [cancel]);
+
+  const update = (changes: {
+    mode?: ImageBorderMode;
+    topBottom?: number;
+    sides?: number;
+    color?: string;
+  }) => {
+    const nextMode = changes.mode ?? mode;
+    const nextTopBottom = changes.topBottom ?? topBottom;
+    const nextSides =
+      changes.sides !== undefined
+        ? changes.sides
+        : nextMode === 'equal'
+        ? nextTopBottom
+        : changes.mode === 'split' && mode === 'equal'
+        ? nextTopBottom
+        : sides;
+    const nextColor = changes.color ?? color;
+    setMode(nextMode);
+    setTopBottom(nextTopBottom);
+    setSides(nextSides);
+    setColor(nextColor);
+    preview({
+      mode: nextMode,
+      topBottom: nextTopBottom,
+      sides: nextMode === 'equal' ? nextTopBottom : nextSides,
+      color: nextColor,
+    });
   };
 
   const remove = () => {
-    const ids = new Set(selectedImages.map((item) => item.id));
-    workspace.setImageBorder(ids, undefined);
+    preview(undefined);
     onClose();
   };
 
-  const count = selectedImages.length;
+  const count = targetIds.current.size;
+  const hasBorderNow = workspace.items
+    .slice()
+    .some(
+      (item) =>
+        item.kind === 'image' && targetIds.current.has(item.id) && item.border !== undefined,
+    );
 
   return (
-    <Dialog
-      open
-      title="Photo border"
-      icon={IconSet.BACKGROUND}
-      isMovable
-      placeAt={
-        at !== undefined ? (size) => ({ left: at.x - size.width - 12, top: at.y - 24 }) : undefined
-      }
-      onCancel={onClose}
-      describedby="image-border-info"
-    >
-      <form
-        className="workspace-dialog"
-        method="dialog"
-        onKeyDown={(event) => {
-          if (event.key !== 'Escape') {
-            event.stopPropagation();
-          }
-        }}
-        onSubmit={(event) => {
+    <section
+      className="workspace-border-panel"
+      role="dialog"
+      aria-label="Photo border"
+      data-surface-overlay
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') {
           event.preventDefault();
-          apply();
-        }}
-      >
-        <p id="image-border-info">
-          {count === 1
-            ? 'Frame the selected photo.'
-            : `Frame ${count.toLocaleString()} selected photos.`}
-        </p>
-        <div className="workspace-dialog-field">
-          <span>Style</span>
-          <div className="save-picture-formats" role="radiogroup" aria-label="Border style">
-            {BORDER_MODES.map((option) => (
-              <label key={option.mode} data-checked={mode === option.mode}>
-                <input
-                  type="radio"
-                  name="border-mode"
-                  value={option.mode}
-                  checked={mode === option.mode}
-                  onChange={() => selectMode(option.mode)}
-                />
-                <strong>{option.name}</strong>
-                <small>{option.detail}</small>
-              </label>
-            ))}
-          </div>
-        </div>
-        {mode === 'equal' ? (
+          onClose();
+        }
+        event.stopPropagation();
+      }}
+    >
+      <header className="workspace-border-header">
+        <span className="workspace-border-title">
+          {IconSet.BACKGROUND}
+          <span>Photo border</span>
+          {count > 1 && <span className="workspace-border-count">{count.toLocaleString()}</span>}
+        </span>
+        <button
+          type="button"
+          className="btn-icon"
+          aria-label="Close"
+          data-tooltip="Cancel (Esc)"
+          onClick={cancel}
+        >
+          {IconSet.CLOSE}
+        </button>
+      </header>
+
+      <div className="workspace-border-toggle" role="group" aria-label="Border style">
+        {BORDER_MODES.map((option) => (
+          <button
+            key={option.mode}
+            type="button"
+            aria-pressed={mode === option.mode}
+            onClick={() => update({ mode: option.mode })}
+          >
+            {option.name}
+          </button>
+        ))}
+      </div>
+
+      {mode === 'equal' ? (
+        <BorderWidthRow
+          label="Width"
+          value={topBottom}
+          onChange={(value) => update({ topBottom: value, sides: value })}
+        />
+      ) : (
+        <>
           <BorderWidthRow
-            label="Width"
+            label="Top & bottom"
             value={topBottom}
-            onChange={(value) => {
-              setTopBottom(value);
-              setSides(value);
-            }}
+            onChange={(value) => update({ topBottom: value })}
           />
-        ) : (
-          <>
-            <BorderWidthRow label="Top & bottom" value={topBottom} onChange={setTopBottom} />
-            <BorderWidthRow label="Sides" value={sides} onChange={setSides} />
-          </>
+          <BorderWidthRow
+            label="Sides"
+            value={sides}
+            onChange={(value) => update({ sides: value })}
+          />
+        </>
+      )}
+
+      <div className="workspace-border-color">
+        <TagColorPicker
+          color={color}
+          onPick={(picked) => update({ color: picked || PAPER_COLOR })}
+        />
+      </div>
+
+      <div className="workspace-border-actions">
+        {hasBorderNow && (
+          <span className="workspace-border-remove">
+            <Button text="Remove" styling="outlined" onClick={remove} />
+          </span>
         )}
-        <div className="workspace-dialog-field">
-          <span>Color</span>
-          <TagColorPicker color={color} onPick={(picked) => setColor(picked || PAPER_COLOR)} />
-        </div>
-        <div className="dialog-actions">
-          {hasExisting && (
-            <span className="workspace-border-remove">
-              <Button text="Remove border" styling="outlined" onClick={remove} />
-            </span>
-          )}
-          <Button text="Cancel" onClick={onClose} />
-          <Button text="Apply" styling="filled" onClick={apply} disabled={count === 0} />
-        </div>
-      </form>
-    </Dialog>
+        <Button text="Cancel" onClick={cancel} />
+        <Button text="Done" styling="filled" onClick={onClose} />
+      </div>
+    </section>
   );
 });
 

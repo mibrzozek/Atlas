@@ -921,4 +921,23 @@ describe('WorkspaceStore', () => {
     runInAction(() => workspace.undo());
     expect(workspace.items.find((i) => i.id === 'a')).toEqual(before);
   });
+
+  it('collapses live border slider steps into one undoable session without drift', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a') }]);
+    const from = workspace.items.slice();
+    const before = from.find((i) => i.id === 'a')!;
+    const ids = new Set(['a']);
+    runInAction(() => {
+      workspace.setImageBorder(ids, { mode: 'equal', topBottom: 10, sides: 10, color: '#fff' }, from);
+      workspace.setImageBorder(ids, { mode: 'equal', topBottom: 30, sides: 30, color: '#fff' }, from);
+      workspace.setImageBorder(ids, { mode: 'split', topBottom: 20, sides: 5, color: '#000' }, from);
+    });
+    const after = workspace.items.find((i) => i.id === 'a')!;
+    expect(after.width).toBe(before.width + 10);
+    expect(after.height).toBe(before.height + 40);
+    // One undo restores the original item before the whole slider session
+    runInAction(() => workspace.undo());
+    expect(workspace.items.find((i) => i.id === 'a')).toEqual(before);
+  });
 });

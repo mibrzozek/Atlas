@@ -611,14 +611,22 @@ export class ClientWorkspace {
     return this.duplicateItems(new Set(this.selection));
   }
 
-  /** Adds, updates or removes (`undefined`) the border on every photo in `ids`: one change to undo */
-  @action.bound setImageBorder(ids: ReadonlySet<string>, border: ImageBorder | undefined): void {
+  /**
+   * Adds, updates or removes (`undefined`) the border on every photo in `ids`: one change to undo.
+   * With `from`, every step of a live slider starts from that snapshot (`changeInSession`), so nothing
+   * drifts and the whole adjustment is one change to undo.
+   */
+  @action.bound setImageBorder(
+    ids: ReadonlySet<string>,
+    border: ImageBorder | undefined,
+    from?: readonly WorkspaceItem[],
+  ): void {
     if (this.isLocked || ids.size === 0) {
       return;
     }
-    const current = this.items.slice();
+    const base = from ?? this.items.slice();
     let changed = false;
-    const next = current.map((item) => {
+    const next = base.map((item) => {
       if (item.kind !== 'image' || !ids.has(item.id)) {
         return item;
       }
@@ -638,7 +646,9 @@ export class ClientWorkspace {
       }
       return item;
     });
-    if (changed) {
+    if (from !== undefined) {
+      this.changeInSession(from, next);
+    } else if (changed) {
       this.change(next);
     }
   }

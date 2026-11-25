@@ -42,6 +42,7 @@ interface LayersPanelProps {
  */
 const LayersPanel = observer(({ workspace, images }: LayersPanelProps) => {
   const { uiStore } = useStore();
+  const [isBorderOpen, setIsBorderOpen] = useState(false);
   const layers = workspace.layers;
   const { selection, isLocked } = workspace;
   const text = workspace.selectedText;
@@ -61,7 +62,15 @@ const LayersPanel = observer(({ workspace, images }: LayersPanelProps) => {
           {IconSet.ARROW_RIGHT}
         </button>
       </header>
-      <LayerList workspace={workspace} images={images} layers={layers} />
+      <LayerList
+        workspace={workspace}
+        images={images}
+        layers={layers}
+        onOpenBorder={() => setIsBorderOpen(true)}
+      />
+      {isBorderOpen && !isLocked && (
+        <ImageBorderDialog workspace={workspace} onClose={() => setIsBorderOpen(false)} />
+      )}
       {text !== undefined && <TextEditor key={text.id} workspace={workspace} text={text} />}
       {background !== undefined && (
         <BackgroundEditor workspace={workspace} background={background} />
@@ -77,6 +86,7 @@ export default LayersPanel;
 
 interface LayerListProps extends LayersPanelProps {
   layers: readonly WorkspaceItem[];
+  onOpenBorder: () => void;
 }
 
 /**
@@ -84,7 +94,7 @@ interface LayerListProps extends LayersPanelProps {
  * of layers is a row of its own, with its layers under it when it is opened. A right click groups,
  * ungroups, locks and unlocks.
  */
-const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
+const LayerList = observer(({ workspace, images, layers, onOpenBorder }: LayerListProps) => {
   const { uiStore, workspaceStore } = useStore();
   const showMenu = useContextMenu();
   const list = useRef<HTMLDivElement>(null);
@@ -94,7 +104,6 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   /** Where what is dragged would go: before the row with this number */
   const [dropAt, setDropAt] = useState<number>();
-  const [borderDialog, setBorderDialog] = useState<{ x: number; y: number }>();
   const dragged = useRef<ReadonlySet<string>>();
   const rows = layerRows(layers, workspace.groupsInUse, expanded);
 
@@ -211,7 +220,7 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
         <MenuItem
           icon={IconSet.BACKGROUND}
           text={hasBorder ? 'Edit border…' : 'Add border…'}
-          onClick={() => setBorderDialog({ x: event.clientX, y: event.clientY })}
+          onClick={onOpenBorder}
           disabled={!hasImages}
         />
         <MenuDivider />
@@ -295,13 +304,6 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
           <div className="workspace-layer-drop" style={{ top: dropAt * ROW_HEIGHT - 1 }} />
         )}
       </div>
-      {borderDialog !== undefined && (
-        <ImageBorderDialog
-          workspace={workspace}
-          at={borderDialog}
-          onClose={() => setBorderDialog(undefined)}
-        />
-      )}
     </div>
   );
 });
