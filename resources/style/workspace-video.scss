@@ -54,6 +54,8 @@
   }
 
   &[data-selected='true'] {
+    // Over the others: a later shot in the same place would cover it and its label
+    z-index: 1;
     border: 0.125rem solid var(--accent-color);
 
     &::before {
