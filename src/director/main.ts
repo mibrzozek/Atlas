@@ -181,6 +181,21 @@ export function startDirector(windowOf: () => BrowserWindow | null): void {
     if (method === 'whoAmI') {
       return { ok: true, result: { kind } };
     }
+    if (method === 'windows') {
+      // Every window and whether anyone can see it: for "Atlas runs but nothing opens"
+      return {
+        ok: true,
+        result: BrowserWindow.getAllWindows().map((window) => ({
+          title: window.getTitle(),
+          page: window.webContents.getURL().split('/').pop(),
+          isMain: window === windowOf(),
+          isVisible: window.isVisible(),
+          isMinimized: window.isMinimized(),
+          isOffscreen: window.webContents.isOffscreen(),
+          bounds: window.getBounds(),
+        })),
+      };
+    }
     if (method === 'songs') {
       return { ok: true, result: await songs() };
     }
