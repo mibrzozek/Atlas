@@ -12,6 +12,7 @@
 //   reload                                    the window loaded again (any other change is then in it)
 //   whoAmI, tags, collections, workspaces, songs, effects, ready
 //   windows                                   every window: visible, minimized, off-screen, bounds
+//   duplicate <workspace id>                  a copy right after it, opened, as Duplicate does
 //   create <name> {"tag": "<tag>"} | {"collection": "<collection>"}   add "sample": 40, "seed": 1 for
 //                                             40 of them picked at random (a large tag or collection)
 //   arrange <workspace id> columns|rows|grid [count] [gap] [{"photos": [2, 5, 9], "below": true}]

@@ -259,6 +259,12 @@ export function installDirector(rootStore: RootStore): void {
         hasVideo: w.video !== undefined,
       })),
 
+    /** A copy of a workspace right after it, opened, as Duplicate in its menu does: to work on apart */
+    duplicate: async (id: string) => {
+      const copy = await workspaceStore.duplicate(workspaceOf(id));
+      return { id: copy.id, name: copy.name, photos: copy.fileIds.length };
+    },
+
     /**
      * A new workspace of the photos of a tag or a collection, by name, opened; with `sample`, that many
      * of them picked at random (`seed`: the same ones again)
