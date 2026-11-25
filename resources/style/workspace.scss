@@ -1060,6 +1060,36 @@ input.workspace-tab-name {
   }
 }
 
+// Photo border dialog: aligned slider + number rows in rem
+.workspace-border-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+
+  input[type='range'] {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.workspace-border-label {
+  flex: none;
+  width: 6.5rem;
+  color: var(--text-color);
+  font-size: 0.9em;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.workspace-border-number {
+  flex: none;
+  width: 5.5rem;
+}
+
+.workspace-border-remove {
+  margin-right: auto;
+}
+
 // The crop button at the end of an image's row in the layers panel: on hover, and lit while that image
 // is cropped
 .workspace-layer-crop {

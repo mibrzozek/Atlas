@@ -8,6 +8,7 @@ import {
   MIN_FONT_SIZE,
   PAPER_FORMATS,
   WorkspaceBackgroundItem,
+  WorkspaceImageItem,
   WorkspaceItem,
   WorkspaceTextItem,
 } from 'common/workspace';
@@ -16,6 +17,7 @@ import { Menu, MenuDivider, MenuItem, useContextMenu } from 'widgets/menus';
 import TagColorPicker from '../../components/TagColorPicker';
 import { useStore } from '../../contexts/StoreContext';
 import { ClientWorkspace } from '../../entities/Workspace';
+import { ImageBorderDialog } from './ImageBorderDialog';
 import { WorkspaceImages } from './WorkspaceImages';
 
 /** The height of a row, in pixels: the list draws only the rows in sight, by this */
@@ -92,6 +94,7 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
   /** Where what is dragged would go: before the row with this number */
   const [dropAt, setDropAt] = useState<number>();
+  const [borderDialog, setBorderDialog] = useState<{ x: number; y: number }>();
   const dragged = useRef<ReadonlySet<string>>();
   const rows = layerRows(layers, workspace.groupsInUse, expanded);
 
@@ -187,6 +190,14 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
     event.preventDefault();
     event.stopPropagation();
     const groups = workspace.selectedGroups;
+    const selectedImages = workspace.items
+      .slice()
+      .filter(
+        (item): item is WorkspaceImageItem =>
+          item.kind === 'image' && workspace.selection.has(item.id),
+      );
+    const hasImages = selectedImages.length > 0;
+    const hasBorder = selectedImages.some((item) => item.border !== undefined);
     showMenu(
       event.clientX,
       event.clientY,
@@ -196,6 +207,12 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
           text="Duplicate"
           onClick={() => workspace.duplicateSelection()}
           disabled={workspace.selection.size === 0}
+        />
+        <MenuItem
+          icon={IconSet.BACKGROUND}
+          text={hasBorder ? 'Edit border…' : 'Add border…'}
+          onClick={() => setBorderDialog({ x: event.clientX, y: event.clientY })}
+          disabled={!hasImages}
         />
         <MenuDivider />
         <MenuItem
@@ -278,6 +295,13 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
           <div className="workspace-layer-drop" style={{ top: dropAt * ROW_HEIGHT - 1 }} />
         )}
       </div>
+      {borderDialog !== undefined && (
+        <ImageBorderDialog
+          workspace={workspace}
+          at={borderDialog}
+          onClose={() => setBorderDialog(undefined)}
+        />
+      )}
     </div>
   );
 });
