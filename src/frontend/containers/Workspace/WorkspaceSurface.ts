@@ -12,6 +12,7 @@ import {
   MAX_ZOOM,
   MIN_DOT_SPACING,
   panBy,
+  PAPER_COLOR,
   PAPER_FORMATS,
   Point,
   Rect,
@@ -31,6 +32,7 @@ import {
   zoomAt,
 } from 'common/workspace';
 import {
+  borderInsets,
   CropHandle,
   cropOf,
   dragCropHandle,
@@ -212,6 +214,7 @@ export class WorkspaceSurface {
   /** Undefined when the grid is hidden */
   private grid: WorkspaceGridStyle | undefined = 'lines';
   private colors = { line: '#888', tile: '#555' };
+  private readonly themeStyle: CSSStyleDeclaration;
 
   private frame: number | undefined;
   private settleTimer: number | undefined;
@@ -315,6 +318,7 @@ export class WorkspaceSurface {
     viewport.addEventListener('keydown', this.handleKey);
     viewport.addEventListener('keyup', this.handleKey);
     viewport.addEventListener('blur', this.handleBlur);
+    this.themeStyle = getComputedStyle(this.viewport);
     this.readColors();
     this.resize();
   }
@@ -1541,15 +1545,59 @@ export class WorkspaceSurface {
       }
       const wantsImage =
         Math.max(tileWidth, tileHeight) >= MIN_TILE_IMAGE_PIXELS * ratio && tileImageBudget-- > 0;
-      const image = wantsImage ? this.tileImages.get(tile.fileId) : undefined;
-      if (image !== undefined) {
-        context.globalAlpha = 1;
-        context.drawImage(image, ...cropSource(image, tile), left, top, tileWidth, tileHeight);
-      } else {
-        this.fillWithColor(context, tile.fileId, left, top, tileWidth, tileHeight);
-      }
+      const bitmap = wantsImage ? this.tileImages.get(tile.fileId) : undefined;
+      this.drawTileItem(context, tile, left, top, tileWidth, tileHeight, scale, bitmap);
     }
     context.globalAlpha = 1;
+  }
+
+  private resolveColor(color: string, fallback: string): string {
+    const name = /^var\((--[\w-]+)\)$/.exec(color)?.[1];
+    return (name !== undefined ? this.themeStyle.getPropertyValue(name).trim() : color) || fallback;
+  }
+
+  private drawTileItem(
+    context: CanvasRenderingContext2D,
+    item: WorkspaceImageItem,
+    left: number,
+    top: number,
+    width: number,
+    height: number,
+    scale: number,
+    bitmap: ImageBitmap | undefined,
+  ) {
+    let innerLeft = left;
+    let innerTop = top;
+    let innerWidth = width;
+    let innerHeight = height;
+    if (item.border !== undefined) {
+      const { topBottom, sides } = borderInsets(item);
+      context.globalAlpha = 1;
+      context.fillStyle = this.resolveColor(item.border.color, PAPER_COLOR);
+      context.fillRect(left, top, width, height);
+      const dx = sides * scale;
+      const dy = topBottom * scale;
+      innerLeft += dx;
+      innerTop += dy;
+      innerWidth -= 2 * dx;
+      innerHeight -= 2 * dy;
+    }
+    if (innerWidth <= 0 || innerHeight <= 0) {
+      return;
+    }
+    if (bitmap !== undefined) {
+      context.globalAlpha = 1;
+      context.drawImage(
+        bitmap,
+        ...cropSource(bitmap, item),
+        innerLeft,
+        innerTop,
+        innerWidth,
+        innerHeight,
+      );
+    } else {
+      this.fillWithColor(context, item.fileId, innerLeft, innerTop, innerWidth, innerHeight);
+    }
   }
 
   /** An image without its tiny version yet: its average colour when that is known, else a faint dot */
@@ -1642,12 +1690,7 @@ export class WorkspaceSurface {
     const width = Math.max(1, item.width * scale);
     const height = Math.max(1, item.height * scale);
     const tile = this.tileImages.peek(item.fileId);
-    if (tile !== undefined) {
-      context.globalAlpha = 1;
-      context.drawImage(tile, ...cropSource(tile, item), left, top, width, height);
-    } else {
-      this.fillWithColor(context, item.fileId, left, top, width, height);
-    }
+    this.drawTileItem(context, item, left, top, width, height, scale, tile);
   }
 
   /**

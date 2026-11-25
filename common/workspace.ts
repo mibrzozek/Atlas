@@ -5,7 +5,8 @@
  * unit is one pixel at 100%.
  */
 
-import { Crop, cropFromRow, refitCrop, subjectFromRow } from './crop';
+import { borderInsets, Crop, cropFromRow, innerImageRect, refitCrop, subjectFromRow } from './crop';
+export { borderInsets, innerImageRect };
 import { FileNaming, fileNamingFromRow } from './file-naming';
 import { VideoProject, videoFromRow } from './video';
 
@@ -50,6 +51,20 @@ export interface LayerGroup {
   isLocked: boolean;
 }
 
+/** How a border around an image is sized: one width on all sides, or top/bottom and sides separately */
+export type ImageBorderMode = 'equal' | 'split';
+
+/** A frame around a photo on a workspace, in world units */
+export interface ImageBorder {
+  mode: ImageBorderMode;
+  /** Top and bottom border width (and all four sides when `mode === 'equal'`) */
+  topBottom: number;
+  /** Left and right border width when `mode === 'split'` */
+  sides: number;
+  /** Any CSS colour, also a colour of the theme; empty is `PAPER_COLOR` */
+  color: string;
+}
+
 /**
  * An image of the library. A photo's id is the id of its file; a copy of it (`common/wall.ts` or
  * duplicated on a workspace) has an id of its own, so one file can be on a workspace more than once
@@ -63,6 +78,8 @@ export interface WorkspaceImageItem extends WorkspaceObject {
   crop?: Crop;
   /** Where the subject of the photo is, as fractions of the whole photo: what shots frame on (`Director`) */
   subject?: Point;
+  /** A border around the photo, inside `width` and `height` */
+  border?: ImageBorder;
 }
 
 /** A text, such as the name of what a batch of images came from. Its size follows from its letters */
@@ -510,7 +527,15 @@ export function rowsAndColumnsOf<T extends Rect>(
 
 /** The shape something is laid out in: an image whole, in the shape of its photo, unless it is cut */
 function layoutShape(item: WorkspaceItem): Size {
-  return item.kind === 'image' ? { width: item.imageAspect, height: 1 } : item;
+  if (item.kind !== 'image') {
+    return item;
+  }
+  if (item.border === undefined) {
+    return { width: item.imageAspect, height: 1 };
+  }
+  const inner = innerImageRect(item);
+  const { sides } = borderInsets(item);
+  return { width: inner.height * item.imageAspect + 2 * sides, height: item.height };
 }
 
 /**
@@ -591,12 +616,17 @@ export function arrangeItems(
       // chosen by hand keeps its middle in the new shape
       const sized = resizeItem(item, rect.width);
       const placed = { ...sized, x: rect.x, y: rect.y, height: rect.height, z: z++ };
+      const inner = placed.kind === 'image' ? innerImageRect(placed) : undefined;
       return [
         item.id,
         placed.kind === 'image'
           ? {
               ...placed,
-              crop: refitCrop(placed.crop, placed.imageAspect, rect.width / rect.height),
+              crop: refitCrop(
+                placed.crop,
+                placed.imageAspect,
+                inner !== undefined ? inner.width / inner.height : rect.width / rect.height,
+              ),
             }
           : placed,
       ];
@@ -1180,6 +1210,44 @@ export function duplicateItems(
 }
 
 /**
+ * Gives `item` a border (or updates/removes it), keeping the inner photo at its exact size and place
+ * on the workspace while growing or shrinking the outer frame around it.
+ */
+export function withImageBorder(
+  item: WorkspaceImageItem,
+  border: ImageBorder | undefined,
+): WorkspaceImageItem {
+  const inner = innerImageRect(item);
+  const topBottom =
+    border !== undefined && Number.isFinite(border.topBottom) ? Math.max(0, border.topBottom) : 0;
+  const sides =
+    border === undefined
+      ? 0
+      : border.mode === 'equal'
+      ? topBottom
+      : Number.isFinite(border.sides)
+      ? Math.max(0, border.sides)
+      : 0;
+  const nextBorder: ImageBorder | undefined =
+    border !== undefined && (topBottom > 0 || sides > 0)
+      ? {
+          mode: border.mode,
+          topBottom,
+          sides,
+          color: border.color.trim() || PAPER_COLOR,
+        }
+      : undefined;
+  return {
+    ...item,
+    x: inner.x - sides,
+    y: inner.y - topBottom,
+    width: inner.width + 2 * sides,
+    height: inner.height + 2 * topBottom,
+    border: nextBorder,
+  };
+}
+
+/**
  * Something brought in front of all the rest. Returns the same list when it is already in front of
  * everything it overlaps, so that a click on what is on top changes (and stores) nothing.
  */
@@ -1273,7 +1341,7 @@ export function originalsOf<T extends { fileId: string }>(items: readonly T[]): 
 /** The smallest an image can be made, in world units */
 export const MIN_ITEM_WIDTH = 16;
 
-/** At another width, in the same shape; the letters of a text grow or shrink along */
+/** At another width, in the same shape; the letters of a text and the border of an image grow or shrink along */
 export function resizeItem<T extends WorkspaceItem>(item: T, width: number): T {
   const newWidth = Math.max(MIN_ITEM_WIDTH, width);
   const scale = newWidth / item.width;
@@ -1283,6 +1351,18 @@ export function resizeItem<T extends WorkspaceItem>(item: T, width: number): T {
       width: newWidth,
       height: item.height * scale,
       fontSize: item.fontSize * scale,
+    };
+  }
+  if (item.kind === 'image' && item.border !== undefined) {
+    return {
+      ...item,
+      width: newWidth,
+      height: item.height * scale,
+      border: {
+        ...item.border,
+        topBottom: item.border.topBottom * scale,
+        sides: item.border.sides * scale,
+      },
     };
   }
   return { ...item, width: newWidth, height: item.height * scale };
@@ -1506,6 +1586,7 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
       }
       // Stored before images remembered the shape of their photo: the shape of their frame
       const aspect = isNumber(imageAspect) && imageAspect > 0 ? imageAspect : width / height;
+      const border = borderFromRow(item.border);
       validItems.push({
         kind: 'image',
         id,
@@ -1513,6 +1594,7 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
         imageAspect: aspect,
         crop: cropFromRow(item.crop),
         subject: subjectFromRow(item.subject),
+        ...(border !== undefined ? { border } : {}),
         x,
         y,
         z,
@@ -1575,6 +1657,32 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
     video: videoFromRow(video),
     fileNaming: fileNamingFromRow(fileNaming),
     saveFolder: typeof saveFolder === 'string' && saveFolder !== '' ? saveFolder : undefined,
+  };
+}
+
+/** A border read back from storage, or undefined when it is not one */
+export function borderFromRow(value: unknown): ImageBorder | undefined {
+  if (typeof value !== 'object' || value === null) {
+    return undefined;
+  }
+  const { mode, topBottom, sides, color } = value as Partial<ImageBorder>;
+  if (mode !== 'equal' && mode !== 'split') {
+    return undefined;
+  }
+  const isNonNeg = (n: unknown): n is number =>
+    typeof n === 'number' && Number.isFinite(n) && n >= 0;
+  if (!isNonNeg(topBottom)) {
+    return undefined;
+  }
+  const validSides = mode === 'equal' ? topBottom : isNonNeg(sides) ? sides : undefined;
+  if (validSides === undefined || (topBottom === 0 && validSides === 0)) {
+    return undefined;
+  }
+  return {
+    mode,
+    topBottom,
+    sides: validSides,
+    color: typeof color === 'string' && color.trim() !== '' ? color : PAPER_COLOR,
   };
 }
 

@@ -4,7 +4,7 @@ import path from 'path';
 
 import { fileNameOf, writeNewFile } from 'common/export';
 import { SHARP_DECODABLE, thumbnailWidthOf } from 'common/sharp-size';
-import { cropOf } from 'common/crop';
+import { borderInsets, cropOf } from 'common/crop';
 import {
   closestFrameWidth,
   frameCount,
@@ -223,7 +223,20 @@ export function drawFrame(
     } else {
       const bitmap = images.get(item.fileId);
       if (bitmap !== undefined && object.crop !== undefined) {
-        paint.image(bitmap, object.crop, at);
+        if (item.border !== undefined) {
+          paint.fill(item.border.color, at);
+          const { topBottom, sides } = borderInsets(item);
+          const sx = width / item.width;
+          const sy = height / item.height;
+          paint.image(bitmap, object.crop, {
+            x: at.x + sides * sx,
+            y: at.y + topBottom * sy,
+            width: Math.max(1, at.width - 2 * sides * sx),
+            height: Math.max(1, at.height - 2 * topBottom * sy),
+          });
+        } else {
+          paint.image(bitmap, object.crop, at);
+        }
       }
     }
   }

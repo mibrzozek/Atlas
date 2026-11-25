@@ -14,6 +14,8 @@ import {
   createText,
   duplicateItems,
   frontZ,
+  ImageBorder,
+  innerImageRect,
   LABEL_FONT_SIZE,
   LayerGroup,
   LayoutKind,
@@ -28,6 +30,7 @@ import {
   scaleItems,
   Size,
   swapItems,
+  withImageBorder,
   WorkspaceBackgroundItem,
   WorkspaceImage,
   WorkspaceImageItem,
@@ -223,7 +226,12 @@ export class ClientWorkspace {
       return;
     }
     this.selection.replace([item.id]);
-    this.cropping = { id: item.id, photo: photoRectOf(item), frame: item, aspect: undefined };
+    this.cropping = {
+      id: item.id,
+      photo: photoRectOf(item),
+      frame: innerImageRect(item),
+      aspect: undefined,
+    };
   }
 
   /** The photo moved or zoomed under the frame, or the frame sized, while cropping */
@@ -259,7 +267,11 @@ export class ClientWorkspace {
     const item = this.items.slice().find((i) => i.id === cropping?.id);
     if (cropping !== undefined && item?.kind === 'image') {
       const uncropped = { ...item, crop: undefined };
-      this.cropping = { ...cropping, photo: photoRectOf(uncropped), frame: item };
+      this.cropping = {
+        ...cropping,
+        photo: photoRectOf(uncropped),
+        frame: innerImageRect(item),
+      };
     }
   }
 
@@ -271,7 +283,10 @@ export class ClientWorkspace {
     if (cropping === undefined || this.isLocked || item?.kind !== 'image') {
       return;
     }
-    if (sameRect(cropping.frame, item) && sameRect(cropping.photo, photoRectOf(item))) {
+    if (
+      sameRect(cropping.frame, innerImageRect(item)) &&
+      sameRect(cropping.photo, photoRectOf(item))
+    ) {
       return;
     }
     this.change(
@@ -594,6 +609,38 @@ export class ClientWorkspace {
 
   @action.bound duplicateSelection(): number {
     return this.duplicateItems(new Set(this.selection));
+  }
+
+  /** Adds, updates or removes (`undefined`) the border on every photo in `ids`: one change to undo */
+  @action.bound setImageBorder(ids: ReadonlySet<string>, border: ImageBorder | undefined): void {
+    if (this.isLocked || ids.size === 0) {
+      return;
+    }
+    const current = this.items.slice();
+    let changed = false;
+    const next = current.map((item) => {
+      if (item.kind !== 'image' || !ids.has(item.id)) {
+        return item;
+      }
+      const updated = withImageBorder(item, border);
+      if (
+        updated.x !== item.x ||
+        updated.y !== item.y ||
+        updated.width !== item.width ||
+        updated.height !== item.height ||
+        updated.border?.mode !== item.border?.mode ||
+        updated.border?.topBottom !== item.border?.topBottom ||
+        updated.border?.sides !== item.border?.sides ||
+        updated.border?.color !== item.border?.color
+      ) {
+        changed = true;
+        return updated;
+      }
+      return item;
+    });
+    if (changed) {
+      this.change(next);
+    }
   }
 
   /** Takes things off the workspace. Only off the workspace: the files of images are not touched */

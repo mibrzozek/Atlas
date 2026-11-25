@@ -1,7 +1,7 @@
 import { shell } from 'electron';
 import path from 'path';
 
-import { cropOf, photoRectOf } from 'common/crop';
+import { borderInsets, cropOf, photoRectOf } from 'common/crop';
 import { fileNameOf, writeNewFile } from 'common/export';
 import { encodeFilePath } from 'common/fs';
 import { SHARP_DECODABLE } from 'common/sharp-size';
@@ -116,7 +116,18 @@ async function renderPicture(
       try {
         const image = await loadImage(source);
         // The part of the photo it shows, as on screen
-        paint.image(image, cropOf(item), at);
+        if (item.border !== undefined) {
+          paint.fill(item.border.color, at);
+          const { topBottom, sides } = borderInsets(item);
+          paint.image(image, cropOf(item), {
+            x: at.x + sides * scale,
+            y: at.y + topBottom * scale,
+            width: Math.max(1, at.width - 2 * sides * scale),
+            height: Math.max(1, at.height - 2 * topBottom * scale),
+          });
+        } else {
+          paint.image(image, cropOf(item), at);
+        }
         image.src = ''; // let go of the decoded pixels
       } catch (e) {
         console.error('Could not draw an image into the picture', source.file.absolutePath, e);

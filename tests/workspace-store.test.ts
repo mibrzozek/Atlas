@@ -892,4 +892,33 @@ describe('WorkspaceStore', () => {
     runInAction(() => workspace.undo());
     expect(workspace.items).toHaveLength(3);
   });
+
+  it('adds, edits and removes photo borders with undo and storage round-trip', async () => {
+    const { store, reopen } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    const before = workspace.items.find((i) => i.id === 'a')!;
+    runInAction(() => {
+      workspace.selectMany(['a', 'b'], false);
+      workspace.setImageBorder(new Set(workspace.selection), {
+        mode: 'split',
+        topBottom: 24,
+        sides: 12,
+        color: '#ffffff',
+      });
+    });
+    const bordered = workspace.items.find((i) => i.id === 'a')!;
+    expect(bordered.width).toBe(before.width + 24);
+    expect(bordered.height).toBe(before.height + 48);
+    await settle();
+    const read = (await reopen()).workspaceList[0];
+    const loaded = read.items.find((i) => i.id === 'a')!;
+    expect(loaded.kind === 'image' && loaded.border).toEqual({
+      mode: 'split',
+      topBottom: 24,
+      sides: 12,
+      color: '#ffffff',
+    });
+    runInAction(() => workspace.undo());
+    expect(workspace.items.find((i) => i.id === 'a')).toEqual(before);
+  });
 });

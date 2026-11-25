@@ -1,17 +1,19 @@
 import {
+  borderInsets,
   centeredCrop,
   croppedImage,
   cropFromRow,
   cropOf,
   dragCropHandle,
   frameInShape,
+  innerImageRect,
   movePhoto,
   photoRectOf,
   refitCrop,
   subjectOnFrame,
   zoomPhoto,
 } from '../common/crop';
-import { arrangeItems, WorkspaceImageItem, workspaceFromRow } from '../common/workspace';
+import { arrangeItems, withImageBorder, WorkspaceImageItem, workspaceFromRow } from '../common/workspace';
 
 /** A photo of 3:2 shown in a square frame of 100 at 0, 0: the middle of it, by itself */
 const square = (crop?: WorkspaceImageItem['crop']): WorkspaceImageItem => ({
@@ -201,5 +203,23 @@ describe('crops', () => {
     const middle = { x: 0.25, y: 0.25, width: 0.5, height: 0.5 };
     expect(subjectOnFrame({ x: 0.5, y: 0.5 }, frame, middle)).toEqual({ x: 350, y: 100 });
     expect(subjectOnFrame({ x: 0.1, y: 0.5 }, frame, middle)).toBeUndefined();
+  });
+
+  it('crops inside the border of a bordered photo and keeps the border around the new crop', () => {
+    const bordered = withImageBorder(square(), {
+      mode: 'split',
+      topBottom: 20,
+      sides: 10,
+      color: '#ffffff',
+    });
+    expect(borderInsets(bordered)).toEqual({ topBottom: 20, sides: 10 });
+    expect(innerImageRect(bordered)).toEqual({ x: 0, y: 0, width: 100, height: 100 });
+    expect(cropOf(bordered)).toEqual(centeredCrop(1.5, 1));
+    const photo = photoRectOf(bordered);
+    expect(close(photo)).toEqual([-25, 0, 150, 100]);
+    const cropped = croppedImage(bordered, photo, { x: -25, y: 0, width: 75, height: 100 });
+    expect(close(cropped)).toEqual([-35, -20, 95, 140]);
+    expect(innerImageRect(cropped)).toEqual({ x: -25, y: 0, width: 75, height: 100 });
+    expect(close(cropped.crop!)).toEqual([0, 0, 0.5, 1]);
   });
 });

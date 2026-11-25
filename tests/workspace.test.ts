@@ -53,6 +53,9 @@ import {
   textInk,
   pasteItems,
   duplicateItems,
+  withImageBorder,
+  borderFromRow,
+  innerImageRect,
   snapSize,
   isStartCamera,
   scaleItems,
@@ -1053,7 +1056,10 @@ describe('a sheet over an even grid', () => {
 
 describe('duplicating objects', () => {
   it('duplicates selected images, texts and backgrounds with fresh ids, keeping order and properties', () => {
-    const photo = { ...item('a', 10, 20, 3, 100), groupId: 'g1' };
+    const photo = withImageBorder(
+      { ...item('a', 10, 20, 3, 100), groupId: 'g1' },
+      { mode: 'equal', topBottom: 10, sides: 10, color: '#ffffff' },
+    );
     const text = { ...createText('t', 'Title', { x: 50, y: 60 }, 5, measure, 24), groupId: 'g1' };
     const sheet = createBackground('s', { x: 0, y: 0 }, 200, -1);
     let n = 0;
@@ -1074,6 +1080,7 @@ describe('duplicating objects', () => {
       fileId: 'a',
       x: photo.x + 20,
       y: photo.y + 30,
+      border: photo.border,
     });
     expect(dupText).toMatchObject({ kind: 'text', text: 'Title', x: 70, y: 90 });
     expect(dupPhoto.z).toBeGreaterThan(text.z);
@@ -1085,5 +1092,88 @@ describe('duplicating objects', () => {
     const { items, duplicated } = duplicateItems(there, new Set(['missing']), () => 'x');
     expect(duplicated).toEqual([]);
     expect(items).toEqual(there);
+  });
+});
+
+describe('photo borders', () => {
+  it('grows and shrinks the outer frame around the photo for equal and split borders', () => {
+    const base = { ...item('a', 100, 100, 0), width: 300, height: 200, imageAspect: 1.5 };
+    const equal = withImageBorder(base, {
+      mode: 'equal',
+      topBottom: 20,
+      sides: 99,
+      color: '#ffffff',
+    });
+    expect(equal).toMatchObject({ x: 80, y: 80, width: 340, height: 240 });
+    expect(equal.border).toEqual({ mode: 'equal', topBottom: 20, sides: 20, color: '#ffffff' });
+    expect(innerImageRect(equal)).toEqual({ x: 100, y: 100, width: 300, height: 200 });
+
+    const split = withImageBorder(equal, {
+      mode: 'split',
+      topBottom: 40,
+      sides: 10,
+      color: '#111111',
+    });
+    expect(split).toMatchObject({ x: 90, y: 60, width: 320, height: 280 });
+    expect(split.border).toEqual({ mode: 'split', topBottom: 40, sides: 10, color: '#111111' });
+    expect(innerImageRect(split)).toEqual({ x: 100, y: 100, width: 300, height: 200 });
+
+    const removed = withImageBorder(split, undefined);
+    expect(removed.border).toBeUndefined();
+    expect(removed).toMatchObject({ x: 100, y: 100, width: 300, height: 200 });
+
+    // Zero width also removes the border
+    expect(
+      withImageBorder(split, { mode: 'equal', topBottom: 0, sides: 0, color: '#ffffff' }).border,
+    ).toBeUndefined();
+  });
+
+  it('scales the border proportionally when the photo is resized', () => {
+    const bordered = withImageBorder(
+      { ...item('a', 0, 0, 0), width: 300, height: 200, imageAspect: 1.5 },
+      { mode: 'split', topBottom: 40, sides: 10, color: '#ffffff' },
+    );
+    const resized = resizeItem(bordered, 640);
+    expect(resized.width).toBe(640);
+    expect(resized.height).toBe(560);
+    expect(resized.border).toEqual({ mode: 'split', topBottom: 80, sides: 20, color: '#ffffff' });
+    expect(innerImageRect(resized)).toMatchObject({ width: 600, height: 400 });
+  });
+
+  it('keeps bordered photos uncropped when arranged in rows', () => {
+    const a = withImageBorder(
+      { ...item('a', 0, 0, 0), width: 300, height: 200, imageAspect: 1.5 },
+      { mode: 'split', topBottom: 50, sides: 10, color: '#ffffff' },
+    );
+    const b = withImageBorder(
+      { ...item('b', 400, 0, 1), width: 300, height: 200, imageAspect: 1.5 },
+      { mode: 'split', topBottom: 50, sides: 10, color: '#ffffff' },
+    );
+    const arranged = arrangeItems([a, b], new Set(['a', 'b']), 'rows', 1, { gap: 8 });
+    const first = arranged[0] as WorkspaceImageItem;
+    const inner = innerImageRect(first);
+    expect(inner.width / inner.height).toBeCloseTo(1.5, 1);
+  });
+
+  it('round-trips borders through workspaceFromRow and drops invalid ones', () => {
+    const bordered = withImageBorder(item('a', 0, 0, 0, 100), {
+      mode: 'split',
+      topBottom: 12,
+      sides: 6,
+      color: 'var(--accent-color)',
+    });
+    const row = {
+      id: 'w',
+      name: 'W',
+      index: 0,
+      items: [bordered],
+      camera: { x: 0, y: 0, zoom: 1 },
+      isLocked: false,
+      layerGroups: [],
+    };
+    expect(workspaceFromRow(row, measure)).toEqual(row);
+    expect(borderFromRow({ mode: 'equal', topBottom: 0, sides: 0, color: '#fff' })).toBeUndefined();
+    expect(borderFromRow({ mode: 'split', topBottom: -5, sides: 10, color: '#fff' })).toBeUndefined();
+    expect(borderFromRow('invalid')).toBeUndefined();
   });
 });

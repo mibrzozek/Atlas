@@ -1,6 +1,34 @@
 import type { Point, Rect, WorkspaceImageItem } from './workspace';
 
 /**
+ * How much of an image's outer frame is border on each side, in world units. Clamped so the inner
+ * photo always has at least one unit left.
+ */
+export function borderInsets(item: WorkspaceImageItem): { topBottom: number; sides: number } {
+  const { border } = item;
+  if (border === undefined) {
+    return { topBottom: 0, sides: 0 };
+  }
+  const topBottom = Math.max(0, border.topBottom);
+  const sides = border.mode === 'equal' ? topBottom : Math.max(0, border.sides);
+  return {
+    topBottom: Math.min(topBottom, Math.max(0, (item.height - 1) / 2)),
+    sides: Math.min(sides, Math.max(0, (item.width - 1) / 2)),
+  };
+}
+
+/** Where the photo itself lies inside `item`: the whole `item` when it has no border */
+export function innerImageRect(item: WorkspaceImageItem): Rect {
+  const { topBottom, sides } = borderInsets(item);
+  return {
+    x: item.x + sides,
+    y: item.y + topBottom,
+    width: item.width - 2 * sides,
+    height: item.height - 2 * topBottom,
+  };
+}
+
+/**
  * The part of a photo an image on a workspace shows, as fractions of the photo: from 0 to 1 across and
  * down. Its shape is the shape of the image's frame.
  */
@@ -37,7 +65,11 @@ export function centeredCrop(imageAspect: number, frameAspect: number): Crop {
 
 /** The part of its photo an image shows: the crop it was given, or else the middle */
 export function cropOf(item: WorkspaceImageItem): Crop {
-  return item.crop ?? centeredCrop(item.imageAspect, item.width / item.height);
+  if (item.crop !== undefined) {
+    return item.crop;
+  }
+  const inner = innerImageRect(item);
+  return centeredCrop(item.imageAspect, inner.width / inner.height);
 }
 
 /**
@@ -65,12 +97,16 @@ export function refitCrop(
 /** Where the whole photo of an image is on the workspace: larger than its frame where it is cropped */
 export function photoRectOf(item: WorkspaceImageItem): Rect {
   const crop = cropOf(item);
-  const width = item.width / crop.width;
-  const height = item.height / crop.height;
-  return { x: item.x - crop.x * width, y: item.y - crop.y * height, width, height };
+  const inner = innerImageRect(item);
+  const width = inner.width / crop.width;
+  const height = inner.height / crop.height;
+  return { x: inner.x - crop.x * width, y: inner.y - crop.y * height, width, height };
 }
 
-/** The image showing `frame` of its photo, which lies at `photo`: its new place, size and crop */
+/**
+ * The image showing `frame` of its photo, which lies at `photo`: its new place, size and crop. A border
+ * on `item` stays around `frame`.
+ */
 export function croppedImage(
   item: WorkspaceImageItem,
   photo: Rect,
@@ -80,12 +116,19 @@ export function croppedImage(
   // past the photo is dropped when it is read back (`cropFromRow`)
   const width = clamp(frame.width / photo.width, 0, 1);
   const height = clamp(frame.height / photo.height, 0, 1);
+  const topBottom = item.border !== undefined ? Math.max(0, item.border.topBottom) : 0;
+  const sides =
+    item.border === undefined
+      ? 0
+      : item.border.mode === 'equal'
+      ? topBottom
+      : Math.max(0, item.border.sides);
   return {
     ...item,
-    x: frame.x,
-    y: frame.y,
-    width: frame.width,
-    height: frame.height,
+    x: frame.x - sides,
+    y: frame.y - topBottom,
+    width: frame.width + 2 * sides,
+    height: frame.height + 2 * topBottom,
     crop: {
       x: clamp((frame.x - photo.x) / photo.width, 0, 1 - width),
       y: clamp((frame.y - photo.y) / photo.height, 0, 1 - height),

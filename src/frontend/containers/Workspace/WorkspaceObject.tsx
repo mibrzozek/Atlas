@@ -1,7 +1,7 @@
 import React, { memo, useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 import { encodeFilePath } from 'common/fs';
-import { Crop, cropOf } from 'common/crop';
+import { borderInsets, Crop, cropOf, innerImageRect } from 'common/crop';
 import { getSharpSize } from 'common/sharp-size';
 import {
   Rect,
@@ -63,6 +63,8 @@ const WorkspaceObject = memo(function WorkspaceObject(
         // The same width on the screen at every zoom
         outlineWidth: isSelected ? RING_PIXELS / zoom : undefined,
         visibility: isCropped ? 'hidden' : undefined,
+        background:
+          item.kind === 'image' && item.border !== undefined ? item.border.color : undefined,
       }}
     >
       {item.kind === 'image' ? (
@@ -132,11 +134,12 @@ function WorkspaceImage(props: {
 }) {
   const { item, source, zoom } = props;
   const crop = cropOf(item);
+  const inner = innerImageRect(item);
   // As sharp as the whole photo is large on the screen: a small part of it is shown large
   const sharpSrc = useSharpSource(
     source,
-    (item.width / crop.width) * zoom,
-    (item.height / crop.height) * zoom,
+    (inner.width / crop.width) * zoom,
+    (inner.height / crop.height) * zoom,
   );
   const src = sharpSrc ?? source?.src;
   // Broken for this source only: a thumbnail that was not made yet, or a sharp one, may still come
@@ -144,11 +147,22 @@ function WorkspaceImage(props: {
   if (source === undefined) {
     return null;
   }
+  const { topBottom, sides } = borderInsets(item);
+  // Percentages scale smoothly in place while the outer frame is dragged to another size
+  const insetStyle =
+    item.border !== undefined
+      ? {
+          left: `${(sides / item.width) * 100}%`,
+          right: `${(sides / item.width) * 100}%`,
+          top: `${(topBottom / item.height) * 100}%`,
+          bottom: `${(topBottom / item.height) * 100}%`,
+        }
+      : undefined;
   const isBroken = brokenSrc !== undefined && brokenSrc === src;
   return isBroken ? (
     <span className="workspace-image-name">{source.name}</span>
   ) : (
-    <div className="workspace-image-crop">
+    <div className="workspace-image-crop" style={insetStyle}>
       <img
         src={src}
         alt={source.name}
