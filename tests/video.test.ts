@@ -17,6 +17,7 @@ import {
   nextShotFrame,
   posesOf,
   resizeVideo,
+  rowsOf,
   shotBefore,
   snapTime,
   SoundEffect,
@@ -438,6 +439,27 @@ describe('the sound effects', () => {
     expect(soundPlayback(sound(2, 3), 0, 4)).toEqual({ wait: 2, offset: 0, span: 2 });
     expect(soundPlayback(sound(2, 3), 5, 10)).toBeUndefined();
     expect(soundPlayback(sound(12, 3), 0, 10)).toBeUndefined();
+  });
+});
+
+describe('blocks in rows', () => {
+  const block = (id: string, start: number, length: number) => ({ id, start, length });
+  const rows = (blocks: { id: string; start: number; length: number }[]) =>
+    rowsOf(blocks, (b) => b);
+
+  it('puts blocks that overlap in rows of their own, and touching ones in the same row', () => {
+    const packed = rows([
+      block('a', 0, 2),
+      block('b', 1, 2),
+      block('c', 2, 1),
+      block('d', 1.5, 0.2),
+    ]);
+    expect(packed.count).toBe(3);
+    expect(Object.fromEntries(packed.rowOf)).toEqual({ a: 0, b: 1, c: 0, d: 2 });
+  });
+
+  it('has no rows when there are no blocks', () => {
+    expect(rows([])).toEqual({ rowOf: new Map(), count: 0 });
   });
 });
 

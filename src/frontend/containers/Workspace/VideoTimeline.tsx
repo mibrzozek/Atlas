@@ -9,7 +9,9 @@ import {
   frameAround,
   InRow,
   LayoutBlock,
+  MAX_SOUND_VOLUME,
   MUSIC_EXTENSIONS,
+  rowsOf,
   snapTime,
   soundsByTime,
   startsOf,
@@ -59,6 +61,8 @@ type Drag =
   /** A motion moved, or its start or end dragged */
   | { kind: 'motion'; part: 'body' | 'start' | 'end'; motion: Motion; x: number; hasMoved: boolean }
   | { kind: 'music'; from: number; x: number; hasMoved: boolean }
+  /** A sound effect moved to another time; a click selects it */
+  | { kind: 'sound'; id: string; from: number; x: number; hasMoved: boolean }
   /** The end marker: where the video ends */
   | { kind: 'end' };
 
@@ -85,7 +89,9 @@ interface TimelineProps {
  * - Camera and layout: blocks one after another from the start. A click selects one (the workspace shows
  *   it, to be changed); its right edge sets how long it lasts; dragged, it goes to another place.
  * - Motions: blocks anywhere in time, in rows where they overlap; dragged, or by their edges.
- * - Music: the song, dragged to where it begins; its sound effects marked on the lane, read only.
+ * - Music: the song, dragged to where it begins.
+ * - Sounds (only when there are sound effects): a block for each, from where it starts, dragged to move it.
+ *   Where they overlap they go in rows of their own, or (collapsed, the disclosure) into one row.
  */
 const Timeline = observer(({ workspace, player, isSnapping, isPlayback }: TimelineProps) => {
   const video = workspace.video!;
@@ -159,6 +165,7 @@ const Timeline = observer(({ workspace, player, isSnapping, isPlayback }: Timeli
       (b, i) => b.id !== ownId && marks.push(layoutStarts[i], layoutStarts[i] + b.length),
     );
     video.motions.forEach((m) => m.id !== ownId && marks.push(m.start, m.start + m.length));
+    (video.sounds ?? []).forEach((s) => s.id !== ownId && marks.push(s.at, s.at + s.duration));
     if (ownId !== END_ID) {
       marks.push(length);
     }
@@ -244,6 +251,19 @@ const Timeline = observer(({ workspace, player, isSnapping, isPlayback }: Timeli
         }
         break;
       }
+      case 'sound': {
+        if (!current.hasMoved) {
+          if (Math.abs(event.clientX - current.x) < DRAG_DISTANCE) {
+            break;
+          }
+          // The whole drag is one change to undo, remembered as it starts to move
+          current.hasMoved = true;
+          workspace.rememberVideo();
+        }
+        const at = current.from + (event.clientX - current.x) / pixels;
+        workspace.changeSound(current.id, { at: snap(at, current.id, event) });
+        break;
+      }
     }
   };
 
@@ -265,6 +285,8 @@ const Timeline = observer(({ workspace, player, isSnapping, isPlayback }: Timeli
       select('motion', current.motion.id, current.motion.start);
     } else if (current?.kind === 'music' && !current.hasMoved) {
       select('music', MUSIC_ID, video.music?.start ?? 0);
+    } else if (current?.kind === 'sound' && !current.hasMoved) {
+      select('sound', current.id, current.from);
     }
   };
 
@@ -285,9 +307,18 @@ const Timeline = observer(({ workspace, player, isSnapping, isPlayback }: Timeli
 
   const isSelected = (id: string) =>
     !isPlayback && workspace.selectedBlock?.id === id && !player.isShowing;
-  const motionRows = rowsOf(video.motions);
+  const motionRows = rowsOf(video.motions, (motion) => motion);
   const height = isPlayback ? PLAYBACK_SIZES : SIZES;
   const motionHeight = Math.max(1, motionRows.count) * height.motionRow + (isPlayback ? 2 : 4);
+  const sounds = soundsByTime(video);
+  const soundRows = rowsOf(sounds, (sound) => ({ start: sound.at, length: sound.duration }));
+  // Rows of their own where they overlap, unless collapsed; one row when playing. Shown open once two overlap
+  const [soundsOpen, setSoundsOpen] = useState<boolean>();
+  const isSoundsOpen = !isPlayback && (soundsOpen ?? soundRows.count > 1);
+  const soundHeight = isSoundsOpen
+    ? Math.max(1, soundRows.count) * height.motionRow + (isPlayback ? 2 : 4)
+    : height.lane;
+  const soundRowHeight = isSoundsOpen ? height.motionRow : height.lane;
   const step = tickStep(pixels);
   const beatStep = Math.max(1, Math.ceil(5 / (pixels * beatSpacing(beats))));
 
@@ -300,6 +331,7 @@ const Timeline = observer(({ workspace, player, isSnapping, isPlayback }: Timeli
           <LaneName name="Layout" height={height.lane} />
           <LaneName name="Motion" height={motionHeight} />
           <LaneName name="Music" height={height.lane} />
+          {sounds.length > 0 && <LaneName name="Sounds" height={soundHeight} />}
         </div>
       ) : (
         <div className="workspace-video-lane-names">
@@ -320,6 +352,13 @@ const Timeline = observer(({ workspace, player, isSnapping, isPlayback }: Timeli
           </LaneName>
           <MotionLaneName workspace={workspace} player={player} height={motionHeight} />
           <MusicLaneName workspace={workspace} />
+          {sounds.length > 0 && (
+            <SoundLaneName
+              height={soundHeight}
+              isOpen={isSoundsOpen}
+              onToggle={() => setSoundsOpen(!isSoundsOpen)}
+            />
+          )}
         </div>
       )}
       <div ref={scroller} className="workspace-video-scroller">
@@ -532,20 +571,48 @@ const Timeline = observer(({ workspace, player, isSnapping, isPlayback }: Timeli
                 </span>
               </div>
             )}
-            {/* Sound effects: read only, a mark from where each starts, numbered as `timeline` lists them */}
-            {soundsByTime(video).map((sound, i) => (
-              <span
-                key={sound.id}
-                className="workspace-video-sound"
-                style={{
-                  left: sound.at * pixels,
-                  width: Math.max(2, sound.duration * pixels),
-                }}
-              >
-                {i + 1} {sound.name}
-              </span>
-            ))}
           </div>
+
+          {sounds.length > 0 && (
+            <div className="workspace-video-lane" style={{ height: soundHeight }}>
+              {sounds.map((sound) => {
+                const percent = Math.round(sound.volume * 100);
+                const row = isSoundsOpen ? soundRows.rowOf.get(sound.id) ?? 0 : 0;
+                return (
+                  <div
+                    key={sound.id}
+                    className="workspace-video-block workspace-video-sound"
+                    aria-current={isSelected(sound.id)}
+                    data-tooltip={`${sound.name}, from ${formatTime(sound.at)}, ${percent}%`}
+                    style={{
+                      left: sound.at * pixels,
+                      width: Math.max(1, sound.duration * pixels),
+                      top: (isPlayback ? 1 : 2) + row * soundRowHeight,
+                      height: soundRowHeight - (isPlayback ? 2 : 3),
+                    }}
+                    onPointerDown={(event) =>
+                      begin(event, {
+                        kind: 'sound',
+                        id: sound.id,
+                        from: sound.at,
+                        x: event.clientX,
+                        hasMoved: false,
+                      })
+                    }
+                  >
+                    <span className="workspace-video-block-name">
+                      <strong>{sound.name}</strong>
+                      <small>· {percent}%</small>
+                    </span>
+                    <span
+                      className="workspace-video-sound-level"
+                      style={{ width: `${(sound.volume / MAX_SOUND_VOLUME) * 100}%` }}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+          )}
 
           {dropAt !== undefined && (
             <div
@@ -789,6 +856,34 @@ const MusicLaneName = observer(({ workspace }: { workspace: ClientWorkspace }) =
   );
 });
 
+/**
+ * The sound effects: a disclosure opens them into a row of their own where they overlap, or closes them
+ * into one row. Playing, there is no disclosure: one row
+ */
+const SoundLaneName = ({
+  height,
+  isOpen,
+  onToggle,
+}: {
+  height: number;
+  isOpen: boolean;
+  onToggle: () => void;
+}) => (
+  <LaneName name="Sounds" detail="Sound effects, from where each starts" height={height}>
+    <button
+      className="btn-icon"
+      data-tooltip={
+        isOpen ? 'Show them in one row' : 'Show the ones that overlap in rows of their own'
+      }
+      aria-label="Show the sounds in rows"
+      aria-expanded={isOpen}
+      onClick={onToggle}
+    >
+      {isOpen ? IconSet.ARROW_DOWN : IconSet.ARROW_RIGHT}
+    </button>
+  </LaneName>
+);
+
 /** The shape of the song, drawn once it is decoded */
 const Waveform = ({
   file,
@@ -834,24 +929,6 @@ const Waveform = ({
   }, [file, trim, duration, pixels]);
   return <canvas ref={canvas} className="workspace-video-waveform" />;
 };
-
-/** The motions put in rows: each in the first row where it overlaps nothing */
-function rowsOf(motions: readonly Motion[]): { rowOf: Map<string, number>; count: number } {
-  const ends: number[] = [];
-  const rowOf = new Map<string, number>();
-  [...motions]
-    .sort((a, b) => a.start - b.start)
-    .forEach((motion) => {
-      let row = ends.findIndex((end) => end <= motion.start + 1e-6);
-      if (row === -1) {
-        row = ends.length;
-        ends.push(0);
-      }
-      ends[row] = motion.start + motion.length;
-      rowOf.set(motion.id, row);
-    });
-  return { rowOf, count: ends.length };
-}
 
 /** Where a block dragged to `time` goes in its row: before the first other whose middle is past it */
 function placeAmong(blocks: readonly InRow[], id: string, time: number): number {

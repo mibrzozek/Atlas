@@ -11,8 +11,10 @@ import {
   Easing,
   FRAME_RATES,
   FrameRate,
+  MAX_SOUND_VOLUME,
   MIN_BLOCK_LENGTH,
   outputSize,
+  SoundEffect,
   STAYS,
   VIDEO_FORMATS,
   videoLength,
@@ -312,7 +314,7 @@ const EasingChoice = ({
   </label>
 );
 
-/** The settings of the block selected on the timeline: a camera stop, a layout, a motion or the music */
+/** The settings of the block selected on the timeline: a camera stop, a layout, a motion, the music or a sound */
 export const BlockSettings = observer(({ workspace }: { workspace: ClientWorkspace }) => {
   const video = workspace.video!;
   const selected = workspace.selectedBlock;
@@ -572,6 +574,13 @@ export const BlockSettings = observer(({ workspace }: { workspace: ClientWorkspa
     }
   }
 
+  if (selected?.lane === 'sound') {
+    const sound = video.sounds?.find((s) => s.id === selected.id);
+    if (sound !== undefined) {
+      return <SoundSettings key={sound.id} workspace={workspace} sound={sound} remove={remove} />;
+    }
+  }
+
   if (selected?.lane === 'music' && selected.id === MUSIC_ID && video.music !== undefined) {
     const { music } = video;
     return (
@@ -623,6 +632,63 @@ export const BlockSettings = observer(({ workspace }: { workspace: ClientWorkspa
     </div>
   );
 });
+
+/**
+ * A sound effect selected: its name, how loud it is, where it starts and how long it lasts. Every change
+ * made before the controls are left (or pressed again) is one change to undo: the first remembers the video
+ */
+const SoundSettings = observer(
+  ({
+    workspace,
+    sound,
+    remove,
+  }: {
+    workspace: ClientWorkspace;
+    sound: SoundEffect;
+    remove: React.ReactNode;
+  }) => {
+    const isRemembered = useRef(false);
+    const change = (changes: Partial<Pick<SoundEffect, 'at' | 'volume'>>) => {
+      if (!isRemembered.current) {
+        workspace.rememberVideo();
+        isRemembered.current = true;
+      }
+      workspace.changeSound(sound.id, changes);
+    };
+    const startAgain = () => (isRemembered.current = false);
+    return (
+      <div className="workspace-video-settings" onPointerDown={startAgain} onFocus={startAgain}>
+        <div className="workspace-video-row">
+          <label>
+            <span>Sound</span>
+            <strong className="workspace-video-song">{sound.name}</strong>
+          </label>
+          <label>
+            <span>Volume</span>
+            <Percent
+              value={sound.volume}
+              min={0}
+              max={MAX_SOUND_VOLUME}
+              step={0.05}
+              onChange={(volume) => change({ volume })}
+            />
+          </label>
+        </div>
+        <div className="workspace-video-row">
+          <label>
+            <span>Starts at</span>
+            <Seconds value={sound.at} onChange={(at) => change({ at })} />
+          </label>
+          <label>
+            <span>Lasts</span>
+            <strong>{sound.duration.toFixed(1)} s</strong>
+          </label>
+          <div className="workspace-video-actions">{remove}</div>
+        </div>
+      </div>
+    );
+  },
+);
 
 /**
  * Where the video ends, in seconds: the end marker of the timeline, which it follows while it is dragged.

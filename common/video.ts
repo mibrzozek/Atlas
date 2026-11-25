@@ -756,6 +756,31 @@ export function snapTime(time: number, marks: readonly number[], threshold: numb
   return best;
 }
 
+/**
+ * Blocks put in rows, as a lane shows them where they overlap: each in the first row where it overlaps
+ * none before it (touching is not overlapping). `timeOf` says where a block is in time
+ */
+export function rowsOf<T extends { id: string }>(
+  blocks: readonly T[],
+  timeOf: (block: T) => { start: number; length: number },
+): { rowOf: Map<string, number>; count: number } {
+  const ends: number[] = [];
+  const rowOf = new Map<string, number>();
+  blocks
+    .map((block) => ({ block, ...timeOf(block) }))
+    .sort((a, b) => a.start - b.start)
+    .forEach(({ block, start, length }) => {
+      let row = ends.findIndex((end) => end <= start + 1e-6);
+      if (row === -1) {
+        row = ends.length;
+        ends.push(0);
+      }
+      ends[row] = start + length;
+      rowOf.set(block.id, row);
+    });
+  return { rowOf, count: ends.length };
+}
+
 // Storage
 
 const isNumber = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);

@@ -438,7 +438,12 @@ Probe pitfalls that cost time:
   at first; the wheel over the timeline moves it left and right, Ctrl + wheel zooms it around the
   pointer. Every drag on it is one
   pointer capture on the track (`begin`), never HTML drag and drop (which took over the drags of edges);
-  dragged edges snap to beats, other edges and the playhead (`snapTime`; Alt: not). The video ends at
+  dragged edges snap to beats, other edges and the playhead (`snapTime`; Alt: not). Sound effects have a
+  lane of their own under the music (only once there are some): a block each, from where it starts, dragged
+  to move it (its start snaps like an edge; the drag is one undo step, `rememberVideo` as it starts to move),
+  its volume a bar along its foot (0 to 150%). Where they overlap they go in rows (`rowsOf`, tested); the
+  disclosure of the lane folds them into one row, and playing shows one row. The settings panel changes
+  them with `changeSound`, one undo step per control (`SoundSettings`). The video ends at
   the end marker (a red triangle on the ruler, `.workspace-video-end`; what follows is dimmed): `video.end`,
   undefined while it follows the end of the camera (`naturalEnd`), set by dragging it or in the End field
   of Export (`setVideoEnd`; the ↻ button puts it back). Adding a camera stop puts it back on the end of

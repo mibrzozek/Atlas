@@ -1036,6 +1036,7 @@ export class ClientWorkspace {
         camera: video.camera.filter((stop) => stop.id !== id),
         layouts: video.layouts.filter((layout) => layout.id !== id),
         motions: video.motions.filter((motion) => motion.id !== id),
+        sounds: video.sounds?.filter((sound) => sound.id !== id),
         music: lane === 'music' ? undefined : video.music,
       },
       !isContinuing,
@@ -1146,7 +1147,7 @@ export class ClientWorkspace {
 
   /**
    * A sound effect moved to another time, or made louder or softer. No change to undo of its own: the
-   * Director's settings take a `rememberVideo` before, as the music's do
+   * timeline's drags and the panel's settings take a `rememberVideo` before, as the music's do
    */
   @action.bound changeSound(
     id: string,
@@ -1428,7 +1429,7 @@ function restoredVideo(
 }
 
 /** The lanes of a video's timeline */
-export type VideoLane = 'camera' | 'layout' | 'motion' | 'music';
+export type VideoLane = 'camera' | 'layout' | 'motion' | 'music' | 'sound';
 
 /** The music is one block of its lane: it has this id */
 export const MUSIC_ID = 'music';
@@ -1440,6 +1441,7 @@ function hasBlock(video: VideoProject | undefined, id: string): boolean {
     (video.camera.some((b) => b.id === id) ||
       video.layouts.some((b) => b.id === id) ||
       video.motions.some((b) => b.id === id) ||
+      (video.sounds ?? []).some((b) => b.id === id) ||
       (id === MUSIC_ID && video.music !== undefined))
   );
 }

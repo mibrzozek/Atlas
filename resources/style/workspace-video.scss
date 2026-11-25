@@ -613,19 +613,32 @@
   pointer-events: none;
 }
 
-// A sound effect on the music lane: read only, a bar from where it starts for as long as it plays
+// A sound effect on the sounds lane: a block like the music's, its volume a bar along its foot (100% is two
+// thirds of the way: the most is 150%)
 .workspace-video-sound {
-  position: absolute;
-  bottom: 0.125rem;
-  height: 0.75rem;
-  box-sizing: border-box;
-  padding: 0 0.25rem;
+  bottom: auto;
   overflow: hidden;
-  border-left: 0.125rem solid var(--accent-color);
-  color: var(--text-color-strong);
-  font-size: 0.5625rem;
-  line-height: 0.75rem;
-  white-space: nowrap;
+  background: linear-gradient(rgba(63, 185, 80, 0.2), rgba(63, 185, 80, 0.2)),
+    var(--background-color-alt);
+
+  strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: 600;
+  }
+
+  small {
+    white-space: nowrap;
+  }
+}
+
+.workspace-video-sound-level {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 0.1875rem;
+  background: var(--accent-color);
   pointer-events: none;
 }
 
