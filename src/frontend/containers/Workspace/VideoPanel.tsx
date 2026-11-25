@@ -41,9 +41,9 @@ const VideoPanel = observer(
         uiStore.setVideoPanelTab('block');
       }
     }, [selectedId, uiStore]);
-    // Never lower than all of it needs, so nothing is hidden: it opens that tall, grows when the lanes
-    // need more (the settings of every tab are as tall: switching tabs changes nothing), and can be made
-    // taller by hand but not lower. Measured when the lanes change, not with every frame while playing
+    // Never lower than all of it needs, so nothing is hidden: it opens that tall, follows the settings and
+    // the lanes when they need more or less (a lane folded or opened), and can be made taller by hand but
+    // not lower; the height added by hand is kept on top. Measured when they change, not while playing
     const leastHeight = useRef(0);
     const hasVideo = video !== undefined;
     const motionCount = video?.motions.length ?? 0;
@@ -65,16 +65,24 @@ const VideoPanel = observer(
         );
         element.style.height = height;
         settings.style.flex = '';
+        const addedByHand = isOpening.current
+          ? 0
+          : Math.max(0, uiStore.videoPanelHeight - leastHeight.current);
         leastHeight.current = needed;
-        if (isOpening.current || uiStore.videoPanelHeight < needed) {
-          uiStore.setVideoPanelHeight(needed);
+        if (isOpening.current || uiStore.videoPanelHeight !== needed + addedByHand) {
+          uiStore.setVideoPanelHeight(needed + addedByHand);
         }
         isOpening.current = false;
       };
       fit();
-      // The settings taller (another tab or block, a larger zoom, a narrower window): grown along
+      // The settings or the lanes taller or lower (another tab or block, a lane folded or opened, a larger
+      // zoom, a narrower window): followed. Neither changes with the panel's own height, so this settles
       const observer = new ResizeObserver(fit);
       observer.observe(settings);
+      const lanes = element.querySelector('.workspace-video-timeline');
+      if (lanes !== null) {
+        observer.observe(lanes);
+      }
       return () => observer.disconnect();
     }, [hasVideo, motionCount, uiStore]);
     if (video === undefined) {
