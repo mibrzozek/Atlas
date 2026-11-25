@@ -12,6 +12,7 @@ import {
   changeText,
   createBackground,
   createText,
+  duplicateItems,
   frontZ,
   LABEL_FONT_SIZE,
   LayerGroup,
@@ -573,6 +574,26 @@ export class ClientWorkspace {
       this.selection.replace(pasted.map((item) => item.id));
     }
     return pasted.length;
+  }
+
+  /**
+   * Duplicates the objects `ids` (images, texts, backgrounds) on this workspace as new layers,
+   * selected: one change to undo. Returns how many were duplicated.
+   */
+  @action.bound duplicateItems(ids: ReadonlySet<string>, offset?: Point): number {
+    if (this.isLocked || ids.size === 0) {
+      return 0;
+    }
+    const { items, duplicated } = duplicateItems(this.items.slice(), ids, generateId, offset);
+    if (duplicated.length > 0) {
+      this.change(items);
+      this.selection.replace(duplicated.map((item) => item.id));
+    }
+    return duplicated.length;
+  }
+
+  @action.bound duplicateSelection(): number {
+    return this.duplicateItems(new Set(this.selection));
   }
 
   /** Takes things off the workspace. Only off the workspace: the files of images are not touched */

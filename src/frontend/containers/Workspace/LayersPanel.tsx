@@ -12,7 +12,7 @@ import {
   WorkspaceTextItem,
 } from 'common/workspace';
 import { IconSet, KeyCombo } from 'widgets';
-import { Menu, MenuItem, useContextMenu } from 'widgets/menus';
+import { Menu, MenuDivider, MenuItem, useContextMenu } from 'widgets/menus';
 import TagColorPicker from '../../components/TagColorPicker';
 import { useStore } from '../../contexts/StoreContext';
 import { ClientWorkspace } from '../../entities/Workspace';
@@ -185,11 +185,19 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
       return;
     }
     event.preventDefault();
+    event.stopPropagation();
     const groups = workspace.selectedGroups;
     showMenu(
       event.clientX,
       event.clientY,
       <Menu>
+        <MenuItem
+          icon={IconSet.COPY}
+          text="Duplicate"
+          onClick={() => workspace.duplicateSelection()}
+          disabled={workspace.selection.size === 0}
+        />
+        <MenuDivider />
         <MenuItem
           icon={IconSet.LAYERS}
           text="Group layers…"
@@ -249,6 +257,7 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
                 )
               }
               onDragEnd={endDrag}
+              onContextMenu={handleContextMenu}
             />
           ) : (
             <LayerRow
@@ -260,6 +269,7 @@ const LayerList = observer(({ workspace, images, layers }: LayerListProps) => {
               images={images}
               onDragStart={(event) => startDrag(event, [row.item.id])}
               onDragEnd={endDrag}
+              onContextMenu={handleContextMenu}
               onLook={() => workspaceStore.surface?.lookAt(row.item.id)}
             />
           ),
@@ -281,6 +291,7 @@ interface GroupRowProps {
   onToggleExpanded: () => void;
   onDragStart: (event: React.DragEvent) => void;
   onDragEnd: () => void;
+  onContextMenu: (event: React.MouseEvent) => void;
 }
 
 /**
@@ -288,8 +299,17 @@ interface GroupRowProps {
  * and locked (its layers are one) or unlocked by its lock
  */
 const GroupRow = observer((props: GroupRowProps) => {
-  const { group, members, top, workspace, isExpanded, onToggleExpanded, onDragStart, onDragEnd } =
-    props;
+  const {
+    group,
+    members,
+    top,
+    workspace,
+    isExpanded,
+    onToggleExpanded,
+    onDragStart,
+    onDragEnd,
+    onContextMenu,
+  } = props;
   const [isRenaming, setIsRenaming] = useState(false);
   const isSelected = members.every((member) => workspace.selection.has(member.id));
   return (
@@ -305,6 +325,12 @@ const GroupRow = observer((props: GroupRowProps) => {
       onClick={(event) =>
         workspace.selectGroup(group.id, event.shiftKey || event.ctrlKey || event.metaKey)
       }
+      onContextMenu={(event) => {
+        if (!isSelected) {
+          workspace.selectGroup(group.id, false);
+        }
+        onContextMenu(event);
+      }}
       onDoubleClick={() => setIsRenaming(true)}
       data-tooltip="A group of layers: double click to rename it"
     >
@@ -374,11 +400,22 @@ interface LayerRowProps {
   images: WorkspaceImages;
   onDragStart: (event: React.DragEvent) => void;
   onDragEnd: () => void;
+  onContextMenu: (event: React.MouseEvent) => void;
   onLook: () => void;
 }
 
 const LayerRow = observer((props: LayerRowProps) => {
-  const { layer, isInGroup, top, workspace, images, onDragStart, onDragEnd, onLook } = props;
+  const {
+    layer,
+    isInGroup,
+    top,
+    workspace,
+    images,
+    onDragStart,
+    onDragEnd,
+    onContextMenu,
+    onLook,
+  } = props;
   const { workspaceStore } = useStore();
   const isCropped = workspace.cropping?.id === layer.id;
   const source = layer.kind === 'image' ? images.sources.get(layer.fileId) : undefined;
@@ -403,6 +440,12 @@ const LayerRow = observer((props: LayerRowProps) => {
       onClick={(event) =>
         workspace.select(layer.id, event.shiftKey || event.ctrlKey || event.metaKey)
       }
+      onContextMenu={(event) => {
+        if (!workspace.selection.has(layer.id)) {
+          workspace.select(layer.id, false);
+        }
+        onContextMenu(event);
+      }}
       onDoubleClick={onLook}
       data-tooltip="Drag up or down to change its layer; double click to go to it"
     >

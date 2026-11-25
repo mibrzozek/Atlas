@@ -875,4 +875,21 @@ describe('WorkspaceStore', () => {
     const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
     expect(workspace.layers.map((i) => i.id).slice(1)).toEqual(['b', 'a']);
   });
+
+  it('duplicates selected objects with one undo step and keeps them after a restart', async () => {
+    const { store, reopen } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    runInAction(() => {
+      workspace.selectAll();
+      workspace.duplicateSelection();
+    });
+    expect(workspace.items).toHaveLength(6);
+    expect(workspace.fileIds).toEqual(['a', 'b']);
+    expect(workspace.selection.size).toBe(3);
+    await settle();
+    const read = (await reopen()).workspaceList[0];
+    expect(read.items).toHaveLength(6);
+    runInAction(() => workspace.undo());
+    expect(workspace.items).toHaveLength(3);
+  });
 });

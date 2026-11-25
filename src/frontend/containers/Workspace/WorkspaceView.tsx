@@ -357,7 +357,12 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
             {cropping !== undefined && (
               <CropOverlay
                 workspace={workspace}
-                source={images.sources.get(cropping.id)}
+                source={(() => {
+                  const croppedItem = workspace.items.find((i) => i.id === cropping.id);
+                  return croppedItem?.kind === 'image'
+                    ? images.sources.get(croppedItem.fileId)
+                    : undefined;
+                })()}
                 zoom={settledZoom}
               />
             )}

@@ -52,6 +52,7 @@ import {
   LIGHT_INK,
   textInk,
   pasteItems,
+  duplicateItems,
   snapSize,
   isStartCamera,
   scaleItems,
@@ -1047,5 +1048,42 @@ describe('a sheet over an even grid', () => {
     expect(groupUnder(sheet, grid)).toBeUndefined();
     const other = createBackground('o', { x: 1000, y: 1000 }, 50, -2);
     expect(groupUnder(sheet, [other, item('a', 990, 990, 1, 5)])).toBeUndefined();
+  });
+});
+
+describe('duplicating objects', () => {
+  it('duplicates selected images, texts and backgrounds with fresh ids, keeping order and properties', () => {
+    const photo = { ...item('a', 10, 20, 3, 100), groupId: 'g1' };
+    const text = { ...createText('t', 'Title', { x: 50, y: 60 }, 5, measure, 24), groupId: 'g1' };
+    const sheet = createBackground('s', { x: 0, y: 0 }, 200, -1);
+    let n = 0;
+    const { items, duplicated } = duplicateItems(
+      [sheet, photo, text],
+      new Set(['s', 'a', 't']),
+      () => `dup${n++}`,
+      { x: 20, y: 30 },
+    );
+    expect(items).toHaveLength(6);
+    expect(duplicated.map((d) => d.id)).toEqual(['dup0', 'dup1', 'dup2']);
+    expect(duplicated.every((d) => d.groupId === undefined)).toBe(true);
+    const [dupSheet, dupPhoto, dupText] = duplicated;
+    expect(dupSheet).toMatchObject({ kind: 'background', x: sheet.x + 20, y: sheet.y + 30 });
+    expect(dupSheet.z).toBeLessThan(sheet.z);
+    expect(dupPhoto).toMatchObject({
+      kind: 'image',
+      fileId: 'a',
+      x: photo.x + 20,
+      y: photo.y + 30,
+    });
+    expect(dupText).toMatchObject({ kind: 'text', text: 'Title', x: 70, y: 90 });
+    expect(dupPhoto.z).toBeGreaterThan(text.z);
+    expect(dupText.z).toBeGreaterThan(dupPhoto.z);
+  });
+
+  it('returns nothing when no ids match', () => {
+    const there = [item('a', 0, 0, 0)];
+    const { items, duplicated } = duplicateItems(there, new Set(['missing']), () => 'x');
+    expect(duplicated).toEqual([]);
+    expect(items).toEqual(there);
   });
 });

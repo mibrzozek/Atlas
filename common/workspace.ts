@@ -51,8 +51,8 @@ export interface LayerGroup {
 }
 
 /**
- * An image of the library. A photo's id is the id of its file; a copy of it (`common/wall.ts`) has an id of
- * its own, so one file can be on a workspace more than once
+ * An image of the library. A photo's id is the id of its file; a copy of it (`common/wall.ts` or
+ * duplicated on a workspace) has an id of its own, so one file can be on a workspace more than once
  */
 export interface WorkspaceImageItem extends WorkspaceObject {
   kind: 'image';
@@ -1144,6 +1144,39 @@ export function pasteItems(
     z: item.kind === 'background' ? back++ : front++,
   }));
   return { items: [...items, ...pasted], pasted };
+}
+
+/**
+ * Duplicates the objects `ids` on the workspace, offset by `offset`, in their relative order:
+ * backgrounds under everything else, everything else in front. Every copy gets a new id (`newId`),
+ * including images (whose `fileId` stays so they share the same photo). Returns everything, and the
+ * duplicates.
+ */
+export function duplicateItems(
+  items: readonly WorkspaceItem[],
+  ids: ReadonlySet<string>,
+  newId: () => string,
+  offset: Point = { x: 24, y: 24 },
+): { items: WorkspaceItem[]; duplicated: WorkspaceItem[] } {
+  const chosen = items.filter((item) => ids.has(item.id)).sort((a, b) => a.z - b.z);
+  if (chosen.length === 0) {
+    return { items: [...items], duplicated: [] };
+  }
+  let front = frontZ(items);
+  let lowest = 0;
+  for (const item of items) {
+    lowest = Math.min(lowest, item.z);
+  }
+  let back = lowest - chosen.filter((item) => item.kind === 'background').length;
+  const duplicated = chosen.map((item) => ({
+    ...item,
+    id: newId(),
+    groupId: undefined,
+    x: item.x + offset.x,
+    y: item.y + offset.y,
+    z: item.kind === 'background' ? back++ : front++,
+  }));
+  return { items: [...items, ...duplicated], duplicated };
 }
 
 /**
