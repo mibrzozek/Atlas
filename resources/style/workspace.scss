@@ -418,6 +418,44 @@
   }
 }
 
+.workspace-layer-visibility {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.25rem;
+  height: 1.25rem;
+  margin-left: 0.125rem;
+  padding: 0;
+  border: none;
+  border-radius: 0.25rem;
+  background: none;
+  color: var(--text-color-muted);
+  cursor: pointer;
+
+  svg {
+    width: 0.875rem;
+    height: 0.875rem;
+  }
+
+  &:hover {
+    background: var(--hover-color);
+    color: var(--text-color);
+  }
+
+  &[aria-pressed='false'] {
+    opacity: 0.45;
+  }
+}
+
+.workspace-layer[data-hidden='true'] {
+  .workspace-layer-preview,
+  .workspace-layer-name,
+  .workspace-layer-count {
+    opacity: 0.42;
+  }
+}
+
 .workspace-layer-count {
   margin-left: auto;
   font-size: 0.6875rem;

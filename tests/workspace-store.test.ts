@@ -1032,4 +1032,27 @@ describe('WorkspaceStore', () => {
     runInAction(() => workspace.undo());
     expect(order()).toEqual(['c', 'a', 'b']);
   });
+
+  it('toggles layer visibility in a single undoable drag-paint session and hides from shownItems', async () => {
+    const { store, reopen } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b', 'c') }]);
+    const from = workspace.items.slice();
+    runInAction(() => {
+      workspace.select('a', false);
+      workspace.setItemsHidden(new Set(['a']), true, from);
+      workspace.setItemsHidden(new Set(['b']), true, from);
+    });
+    expect(workspace.selection.has('a')).toBe(false);
+    expect(workspace.shownItems.filter((i) => i.kind === 'image').map((i) => i.id)).toEqual(['c']);
+    await settle();
+    const loaded = (await reopen()).workspaceList[0];
+    expect(loaded.shownItems.filter((i) => i.kind === 'image').map((i) => i.id)).toEqual(['c']);
+    // One undo restores all layers painted hidden in the drag session
+    runInAction(() => workspace.undo());
+    expect(workspace.shownItems.filter((i) => i.kind === 'image').map((i) => i.id)).toEqual([
+      'a',
+      'b',
+      'c',
+    ]);
+  });
 });

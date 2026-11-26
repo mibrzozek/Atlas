@@ -115,7 +115,41 @@ const LayerList = observer(({ workspace, images, layers, onOpenBorder }: LayerLi
   /** Where what is dragged would go: before the row with this number */
   const [dropAt, setDropAt] = useState<number>();
   const dragged = useRef<ReadonlySet<string>>();
+  /** Active click-hold-drag paint across eye toggles: one undoable session */
+  const paintHidden = useRef<{ target: boolean; from: WorkspaceItem[] }>();
   const rows = layerRows(layers, workspace.groupsInUse, expanded);
+
+  useEffect(() => {
+    const stopPaint = () => {
+      paintHidden.current = undefined;
+    };
+    window.addEventListener('pointerup', stopPaint);
+    window.addEventListener('pointercancel', stopPaint);
+    window.addEventListener('blur', stopPaint);
+    return () => {
+      window.removeEventListener('pointerup', stopPaint);
+      window.removeEventListener('pointercancel', stopPaint);
+      window.removeEventListener('blur', stopPaint);
+    };
+  }, []);
+
+  const startVisibilityPaint = (ids: string[], currentlyHidden: boolean) => {
+    if (workspace.isLocked || ids.length === 0) {
+      return;
+    }
+    const target = !currentlyHidden;
+    const from = workspace.items.slice();
+    paintHidden.current = { target, from };
+    workspace.setItemsHidden(new Set(ids), target, from);
+  };
+
+  const continueVisibilityPaint = (ids: string[]) => {
+    const paint = paintHidden.current;
+    if (paint === undefined || workspace.isLocked || ids.length === 0) {
+      return;
+    }
+    workspace.setItemsHidden(new Set(ids), paint.target, paint.from);
+  };
 
   useLayoutEffect(() => {
     const element = list.current!;
@@ -313,6 +347,13 @@ const LayerList = observer(({ workspace, images, layers, onOpenBorder }: LayerLi
               }
               onDragEnd={endDrag}
               onContextMenu={handleContextMenu}
+              onVisibilityDown={(currentlyHidden) =>
+                startVisibilityPaint(
+                  row.members.map((m) => m.id),
+                  currentlyHidden,
+                )
+              }
+              onVisibilityEnter={() => continueVisibilityPaint(row.members.map((m) => m.id))}
             />
           ) : (
             <LayerRow
@@ -326,6 +367,10 @@ const LayerList = observer(({ workspace, images, layers, onOpenBorder }: LayerLi
               onDragEnd={endDrag}
               onContextMenu={handleContextMenu}
               onLook={() => workspaceStore.surface?.lookAt(row.item.id)}
+              onVisibilityDown={(currentlyHidden) =>
+                startVisibilityPaint([row.item.id], currentlyHidden)
+              }
+              onVisibilityEnter={() => continueVisibilityPaint([row.item.id])}
             />
           ),
         )}
@@ -347,6 +392,8 @@ interface GroupRowProps {
   onDragStart: (event: React.DragEvent) => void;
   onDragEnd: () => void;
   onContextMenu: (event: React.MouseEvent) => void;
+  onVisibilityDown: (currentlyHidden: boolean) => void;
+  onVisibilityEnter: () => void;
 }
 
 /**
@@ -364,15 +411,19 @@ const GroupRow = observer((props: GroupRowProps) => {
     onDragStart,
     onDragEnd,
     onContextMenu,
+    onVisibilityDown,
+    onVisibilityEnter,
   } = props;
   const [isRenaming, setIsRenaming] = useState(false);
   const isSelected = members.every((member) => workspace.selection.has(member.id));
+  const isAllHidden = members.length > 0 && members.every((member) => member.isHidden === true);
   return (
     <div
       className="workspace-layer workspace-layer-group"
       role="option"
       aria-selected={isSelected}
       aria-expanded={isExpanded}
+      data-hidden={isAllHidden}
       style={{ top, height: ROW_HEIGHT }}
       draggable={!workspace.isLocked && !isRenaming}
       onDragStart={onDragStart}
@@ -442,6 +493,14 @@ const GroupRow = observer((props: GroupRowProps) => {
       >
         {group.isLocked ? IconSet.LOCK : IconSet.UNLOCK}
       </button>
+      {!workspace.isLocked && (
+        <VisibilityToggle
+          isHidden={isAllHidden}
+          label={isAllHidden ? `Show ${group.name}` : `Hide ${group.name}`}
+          onDown={() => onVisibilityDown(isAllHidden)}
+          onEnter={onVisibilityEnter}
+        />
+      )}
     </div>
   );
 });
@@ -457,6 +516,8 @@ interface LayerRowProps {
   onDragEnd: () => void;
   onContextMenu: (event: React.MouseEvent) => void;
   onLook: () => void;
+  onVisibilityDown: (currentlyHidden: boolean) => void;
+  onVisibilityEnter: () => void;
 }
 
 const LayerRow = observer((props: LayerRowProps) => {
@@ -470,9 +531,12 @@ const LayerRow = observer((props: LayerRowProps) => {
     onDragEnd,
     onContextMenu,
     onLook,
+    onVisibilityDown,
+    onVisibilityEnter,
   } = props;
   const { workspaceStore } = useStore();
   const isCropped = workspace.cropping?.id === layer.id;
+  const isHidden = layer.isHidden === true;
   const source = layer.kind === 'image' ? images.sources.get(layer.fileId) : undefined;
   const name =
     layer.kind === 'image'
@@ -488,6 +552,7 @@ const LayerRow = observer((props: LayerRowProps) => {
       aria-selected={workspace.selection.has(layer.id)}
       data-cropping={isCropped}
       data-in-group={isInGroup}
+      data-hidden={isHidden}
       style={{ top, height: ROW_HEIGHT }}
       draggable={!workspace.isLocked}
       onDragStart={onDragStart}
@@ -533,9 +598,75 @@ const LayerRow = observer((props: LayerRowProps) => {
           {IconSet.CROP}
         </button>
       )}
+      {!workspace.isLocked && (
+        <VisibilityToggle
+          isHidden={isHidden}
+          label={isHidden ? `Show ${name}` : `Hide ${name}`}
+          onDown={() => onVisibilityDown(isHidden)}
+          onEnter={onVisibilityEnter}
+        />
+      )}
     </div>
   );
 });
+
+/** Eye toggle aligned at the right edge of every group and layer row; supports click-hold-drag paint */
+function VisibilityToggle({
+  isHidden,
+  label,
+  onDown,
+  onEnter,
+}: {
+  isHidden: boolean;
+  label: string;
+  onDown: () => void;
+  onEnter: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="workspace-layer-visibility btn-icon"
+      aria-label={label}
+      aria-pressed={!isHidden}
+      data-tooltip="Click or drag down to hide/show layers"
+      draggable={false}
+      onPointerDown={(event) => {
+        if (event.button !== 0) {
+          return;
+        }
+        event.stopPropagation();
+        event.preventDefault();
+        onDown();
+      }}
+      onPointerEnter={onEnter}
+      onClick={(event) => event.stopPropagation()}
+    >
+      {isHidden ? (
+        <svg
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          aria-hidden="true"
+        >
+          <path d="M2 8s2.4-4 6-4 6 4 6 4-2.4 4-6 4-6-4-6-4z" strokeOpacity="0.45" />
+          <path d="M2.5 13.5L13.5 2.5" strokeLinecap="round" />
+        </svg>
+      ) : (
+        <svg
+          viewBox="0 0 16 16"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          aria-hidden="true"
+        >
+          <path d="M2 8s2.4-4 6-4 6 4 6 4-2.4 4-6 4-6-4-6-4z" />
+          <circle cx="8" cy="8" r="1.75" fill="currentColor" stroke="none" />
+        </svg>
+      )}
+    </button>
+  );
+}
 
 /** The words, size and colour of the text that is selected */
 const TextEditor = observer(

@@ -27,8 +27,9 @@ function pictureArea(workspace: ClientWorkspace): Rect | undefined {
   if (background !== undefined) {
     return background;
   }
-  const selected = workspace.items.filter((item) => workspace.selection.has(item.id));
-  return boundsOf(selected.length > 0 ? selected : workspace.items);
+  const visible = workspace.items.filter((item) => !item.isHidden);
+  const selected = visible.filter((item) => workspace.selection.has(item.id));
+  return boundsOf(selected.length > 0 ? selected : visible);
 }
 
 /**
@@ -82,7 +83,7 @@ async function renderPicture(
   themeOf: HTMLElement,
 ): Promise<HTMLCanvasElement> {
   const inArea = workspace.items
-    .filter((item) => overlaps(item, area))
+    .filter((item) => !item.isHidden && overlaps(item, area))
     .sort(
       (a, b) =>
         (a.kind === 'background' ? -1 : 0) - (b.kind === 'background' ? -1 : 0) || a.z - b.z,

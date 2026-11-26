@@ -317,7 +317,7 @@ export class ClientWorkspace {
 
   /** Everything as the workspace shows it: where it is, or where the video has it while locked (`shownPoses`) */
   @computed get shownItems(): WorkspaceItem[] {
-    const items = this.items.slice();
+    const items = this.items.slice().filter((item) => !item.isHidden);
     return this.shownPoses === undefined ? items : placedAt(items, this.shownPoses);
   }
 
@@ -676,6 +676,43 @@ export class ClientWorkspace {
   /** Whether an in-progress edit session started from `from` is still the active undo session */
   isInSession(from: readonly WorkspaceItem[]): boolean {
     return this.sessionFrom === from;
+  }
+
+  /**
+   * Turns layers on or off (`isHidden`). With `from`, live drag-paint across multiple eye toggles in
+   * the Layers panel collapses into a single undoable session.
+   */
+  @action.bound setItemsHidden(
+    ids: ReadonlySet<string>,
+    hidden: boolean,
+    from?: readonly WorkspaceItem[],
+  ): void {
+    if (this.isLocked || ids.size === 0) {
+      return;
+    }
+    let changed = false;
+    const next = this.items.slice().map((item) => {
+      if (!ids.has(item.id) || Boolean(item.isHidden) === hidden) {
+        return item;
+      }
+      changed = true;
+      if (hidden) {
+        return { ...item, isHidden: true };
+      }
+      const visible = { ...item };
+      delete visible.isHidden;
+      return visible;
+    });
+    if (hidden) {
+      ids.forEach((id) => this.selection.delete(id));
+    }
+    if (from !== undefined) {
+      if (changed || from === this.sessionFrom) {
+        this.changeInSession(from, next);
+      }
+    } else if (changed) {
+      this.change(next);
+    }
   }
 
   /** Takes things off the workspace. Only off the workspace: the files of images are not touched */

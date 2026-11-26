@@ -38,6 +38,8 @@ interface WorkspaceObject extends Rect {
   z: number;
   /** The group of layers it is in (`LayerGroup`), if any */
   groupId?: string;
+  /** Hidden layers stay in the Layers panel but are not drawn on the canvas, pictures, or video */
+  isHidden?: boolean;
 }
 
 /**
@@ -1614,13 +1616,22 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
       });
     }
   }
-  // Groups of layers: those that are whole, and that still have layers in them
+  // Groups and visibility of layers: those that are whole, and that still have layers in them
   const storedGroupOf = new Map<string, unknown>();
+  const storedHiddenOf = new Set<string>();
   for (const stored of Array.isArray(items) ? items : []) {
-    const { id: itemId, fileId, groupId } = (stored ?? {}) as unknown as Record<string, unknown>;
+    const {
+      id: itemId,
+      fileId,
+      groupId,
+      isHidden,
+    } = (stored ?? {}) as unknown as Record<string, unknown>;
     const key = typeof itemId === 'string' ? itemId : fileId;
     if (typeof key === 'string') {
       storedGroupOf.set(key, groupId);
+      if (isHidden === true) {
+        storedHiddenOf.add(key);
+      }
     }
   }
   const validGroups = (Array.isArray(layerGroups) ? layerGroups : []).filter(
@@ -1629,8 +1640,14 @@ export function workspaceFromRow(row: unknown, measure: MeasureText): WorkspaceR
   const groupIds = new Set(validGroups.map((group) => group.id));
   validItems.forEach((item, i) => {
     const groupId = storedGroupOf.get(item.id);
-    if (typeof groupId === 'string' && groupIds.has(groupId)) {
-      validItems[i] = { ...item, groupId };
+    const hasGroup = typeof groupId === 'string' && groupIds.has(groupId);
+    const isHidden = storedHiddenOf.has(item.id);
+    if (hasGroup || isHidden) {
+      validItems[i] = {
+        ...item,
+        ...(hasGroup ? { groupId } : undefined),
+        ...(isHidden ? { isHidden: true } : undefined),
+      };
     }
   });
   const usedGroups = new Set(validItems.map((item) => item.groupId));

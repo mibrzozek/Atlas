@@ -244,11 +244,14 @@ export function drawFrame(
   context.globalAlpha = 1;
 }
 
-/** The objects of a workspace in the order they are drawn: sheets first, then from back to front */
+/** The objects of a workspace in the order they are drawn: visible only, sheets first, then back to front */
 export function drawingOrder(items: readonly WorkspaceItem[]): WorkspaceItem[] {
-  return [...items].sort(
-    (a, b) => (a.kind === 'background' ? -1 : 0) - (b.kind === 'background' ? -1 : 0) || a.z - b.z,
-  );
+  return items
+    .filter((item) => !item.isHidden)
+    .sort(
+      (a, b) =>
+        (a.kind === 'background' ? -1 : 0) - (b.kind === 'background' ? -1 : 0) || a.z - b.z,
+    );
 }
 
 /** A whole second between key frames: places a player can start from */
