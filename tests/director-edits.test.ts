@@ -7,6 +7,7 @@ import {
   motionChanges,
   numbered,
   numberOf,
+  parseBatchSteps,
   Places,
   ShotFacts,
   shotFrame,
@@ -203,6 +204,25 @@ describe('the Director edits', () => {
     expect(shotFrame(start, tall, { photo: 1 }, withSubject)).toEqual(
       shotFrame(start, tall, { photo: 1 }, places),
     );
+  });
+
+  it('parses batch steps in tuple or object form and rejects nested or main-process commands', () => {
+    expect(
+      parseBatchSteps([
+        ['subject', 'ws1', 1, 0.5, 0.5],
+        { method: 'setVideo', args: ['ws1', { fps: 30 }] },
+        { method: 'ready' },
+      ]),
+    ).toEqual([
+      { method: 'subject', args: ['ws1', 1, 0.5, 0.5] },
+      { method: 'setVideo', args: ['ws1', { fps: 30 }] },
+      { method: 'ready', args: [] },
+    ]);
+    expect(() => parseBatchSteps([])).toThrow('non-empty');
+    expect(() => parseBatchSteps([['batch', []]])).toThrow('not inside batch');
+    expect(() => parseBatchSteps([['save', 'ws1', 'phone']])).toThrow('not inside batch');
+    expect(() => parseBatchSteps([['music', 'ws1', 'song.mp3']])).toThrow('not inside batch');
+    expect(() => parseBatchSteps([123])).toThrow('Step 1');
   });
 });
 

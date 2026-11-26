@@ -387,6 +387,46 @@ export function timelineWarnings(shots: readonly ShotFacts[], beat?: number): st
   return warnings;
 }
 
+/** A single step inside a `batch` call */
+export interface BatchStep {
+  method: string;
+  args: unknown[];
+}
+
+/** Commands whose file paths are checked by the main process, or that cannot nest inside `batch` */
+const NON_BATCH_COMMANDS = new Set(['batch', 'music', 'sound', 'save']);
+const MAX_BATCH_STEPS = 500;
+
+/** Validates a `batch` list of either `{ method, args? }` objects or `[method, ...args]` tuples */
+export function parseBatchSteps(raw: unknown): BatchStep[] {
+  if (!Array.isArray(raw) || raw.length === 0) {
+    throw new Error('batch expects a non-empty list of steps');
+  }
+  if (raw.length > MAX_BATCH_STEPS) {
+    throw new Error(`batch accepts at most ${MAX_BATCH_STEPS} steps`);
+  }
+  return raw.map((entry, i) => {
+    let method: unknown;
+    let args: unknown[];
+    if (Array.isArray(entry)) {
+      [method, ...args] = entry;
+    } else if (entry !== null && typeof entry === 'object') {
+      const obj = entry as { method?: unknown; args?: unknown };
+      method = obj.method;
+      args = obj.args === undefined ? [] : Array.isArray(obj.args) ? obj.args : [obj.args];
+    } else {
+      throw new Error(`Step ${i + 1}: expected [method, ...args] or { method, args }`);
+    }
+    if (typeof method !== 'string' || method.length === 0) {
+      throw new Error(`Step ${i + 1}: missing command name`);
+    }
+    if (NON_BATCH_COMMANDS.has(method)) {
+      throw new Error(`Step ${i + 1}: ${method} must be called directly, not inside batch`);
+    }
+    return { method, args };
+  });
+}
+
 const isRect = (rect: Rect | undefined): rect is Rect => rect !== undefined;
 
 const ALIGNS = ['start', 'middle', 'end'] as const;

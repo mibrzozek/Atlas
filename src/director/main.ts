@@ -32,8 +32,8 @@ import {
  * window, not a restart of Atlas
  */
 const COMMAND_NAME = /^[a-z][A-Za-z]{0,31}$/;
-/** The most a command's body may be */
-const MAX_BODY = 64 * 1024;
+/** The most a command's body may be (enough for large `batch` / `zoomChain` payloads) */
+const MAX_BODY = 512 * 1024;
 /** How long the page has for a command (saving a video takes the longest) */
 const PAGE_TIMEOUT = 30 * 60_000;
 /**

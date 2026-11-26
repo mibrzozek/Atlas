@@ -1,9 +1,13 @@
 // Sends one command to the Director of a running Atlas (development build) and prints the answer; exits as
 // soon as it has it, and every wait has an end. See CLAUDE.md and docs/director-plan.md.
 //
-//   node scripts/dev/atlas.js [--to hidden] [--out picture.jpg] <command> [arguments...]
+//   node scripts/dev/atlas.js [--to hidden] [--out picture.jpg] [--stdin | --file payload.json] <command> [arguments...]
 //
-// Arguments are read as JSON when they are JSON (numbers, {"tag": "..."}), else as text. Commands:
+// Arguments are read as JSON when they are JSON (numbers, {"tag": "..."}), else as text.
+// Passing --stdin or --file <path> appends a parsed JSON payload as the final argument (avoids shell quoting).
+// Commands:
+//   batch <steps JSON | --stdin | --file>     run many renderer commands sequentially in one IPC call
+//                                             each step is [method, ...args] or {"method": "...", "args": [...]}
 //   start                                     the user's Atlas, if it is not running: started by Windows
 //                                             (not by this command, so it lives on whatever happens to
 //                                             the shell), answered once it is ready
@@ -96,8 +100,22 @@ const option = (name) => {
   const at = argv.indexOf(name);
   return at === -1 ? undefined : argv.splice(at, 2)[1];
 };
+const flag = (name) => {
+  const at = argv.indexOf(name);
+  if (at === -1) {
+    return false;
+  }
+  argv.splice(at, 1);
+  return true;
+};
 const to = option('--to') ?? 'user';
 const out = option('--out');
+const fromFile = option('--file');
+const fromStdin = flag('--stdin');
+if (fromFile !== undefined && fromStdin) {
+  console.error('Use either --file or --stdin, not both');
+  process.exit(1);
+}
 const [method, ...rest] = argv;
 const args = rest.map((arg) => {
   try {
@@ -106,6 +124,10 @@ const args = rest.map((arg) => {
     return arg;
   }
 });
+if (fromFile !== undefined || fromStdin) {
+  const raw = fromStdin ? fs.readFileSync(0, 'utf8') : fs.readFileSync(fromFile, 'utf8');
+  args.push(JSON.parse(raw));
+}
 // `picture` takes its times as one list, and then an optional {"width": ...}
 const pictureArgs = (list) => {
   const last = list[list.length - 1];

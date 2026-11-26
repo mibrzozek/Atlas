@@ -68,6 +68,7 @@ import {
   motionChanges,
   numbered,
   numberOf,
+  parseBatchSteps,
   photoIds,
   photoNumbers,
   Places,
@@ -1323,6 +1324,25 @@ export function installDirector(rootStore: RootStore): void {
                   .map(tenths),
               },
       };
+    },
+
+    /** Runs a list of renderer commands sequentially in one IPC round-trip */
+    batch: async (rawSteps: unknown) => {
+      const steps = parseBatchSteps(rawSteps);
+      const results: unknown[] = [];
+      for (let i = 0; i < steps.length; i++) {
+        const { method, args } = steps[i];
+        if (!Object.prototype.hasOwnProperty.call(commands, method)) {
+          throw new Error(`Step ${i + 1} (${method}): No such command: ${method}`);
+        }
+        try {
+          results.push(await commands[method](...args));
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e);
+          throw new Error(`Step ${i + 1} (${method}): ${msg}`);
+        }
+      }
+      return results;
     },
 
     /** Whether the Director is there: what a reload waits for */
