@@ -48,6 +48,7 @@ import {
   DEFAULT_ARRIVAL_TIME,
   DEFAULT_BLOCK_LENGTH,
   followLayout,
+  followLockedLayers,
   frameAround,
   LayoutBlock,
   MAX_SOUND_VOLUME,
@@ -157,6 +158,7 @@ export class ClientWorkspace {
    * every step starts again from it, and the whole session is one change to undo
    */
   private sessionFrom: readonly WorkspaceItem[] | undefined;
+  private sessionVideoFrom: VideoProject | undefined;
 
   constructor(store: WorkspaceStore, row: WorkspaceRow) {
     this.store = store;
@@ -1355,11 +1357,19 @@ export class ClientWorkspace {
 
   /** What is on it from now on: remembered for undoing, and stored */
   private change(items: WorkspaceItem[]) {
-    this.remember(this.items.slice());
+    const prevItems = this.items.slice();
+    const nextVideo =
+      this.video !== undefined ? followLockedLayers(this.video, prevItems, items) : undefined;
+    const videoChanged = nextVideo !== undefined && nextVideo !== this.video;
+    this.remember(prevItems, videoChanged ? 'whole' : undefined);
     // Another change ends a crop that was going on; applying it is a change of its own
     this.cropping = undefined;
     this.sessionFrom = undefined;
+    this.sessionVideoFrom = undefined;
     this.items.replace(items);
+    if (videoChanged) {
+      this.video = nextVideo;
+    }
     this.followInLayout();
     this.store.saveSoon(this);
   }
@@ -1368,9 +1378,20 @@ export class ClientWorkspace {
   private changeInSession(from: readonly WorkspaceItem[], items: WorkspaceItem[]) {
     if (from !== this.sessionFrom) {
       this.sessionFrom = from;
-      this.remember(from);
+      this.sessionVideoFrom = this.video;
+      const baseVideo = this.sessionVideoFrom;
+      const nextVideo =
+        baseVideo !== undefined ? followLockedLayers(baseVideo, from, items) : undefined;
+      const videoChanged = nextVideo !== undefined && nextVideo !== baseVideo;
+      this.remember(from, videoChanged ? 'whole' : undefined);
     }
     this.items.replace(items);
+    if (this.sessionVideoFrom !== undefined) {
+      const nextVideo = followLockedLayers(this.sessionVideoFrom, from, items);
+      if (nextVideo !== this.video) {
+        this.video = nextVideo;
+      }
+    }
     this.followInLayout();
     this.store.saveSoon(this);
   }
@@ -1408,6 +1429,7 @@ export class ClientWorkspace {
     });
     this.cropping = undefined;
     this.sessionFrom = undefined;
+    this.sessionVideoFrom = undefined;
     this.items.replace([...snapshot.items]);
     if (video !== undefined) {
       this.video = restoredVideo(this.video, video.project, video.part);

@@ -6,6 +6,7 @@ import {
   ease,
   endOf,
   followLayout,
+  followLockedLayers,
   frameCount,
   frameIn,
   frameInShape,
@@ -16,6 +17,7 @@ import {
   outputSize,
   nextShotFrame,
   posesOf,
+  predictedLayerForShot,
   resizeVideo,
   rowsOf,
   shotBefore,
@@ -553,5 +555,67 @@ describe('storage', () => {
     expect(read.camera.map((s) => s.length)).toEqual([3, 3]);
     expect(read.layouts.map((l) => l.poses.a.x)).toEqual([0, 50]);
     expect(ease('linear', 0.5)).toBe(0.5);
+  });
+});
+
+describe('lock shot to layer', () => {
+  it('predicts the topmost layer covering the majority of a nested shot', () => {
+    const backdrop = { ...image('big', 0), x: 0, y: 0, width: 10000, height: 15000, z: 1 };
+    const parent = { ...image('mid', 0), x: 2000, y: 2000, width: 1000, height: 1500, z: 2 };
+    const tiny = { ...image('tiny', 0), x: 2400, y: 2400, width: 100, height: 150, z: 3 };
+    const items = [backdrop, parent, tiny];
+    // Shot framing the tiny top photo predicts `tiny` even though `parent` and `backdrop` also cover it
+    expect(predictedLayerForShot({ x: 2400, y: 2400, width: 100, height: 150 }, items)?.id).toBe(
+      'tiny',
+    );
+    // Shot framing `parent` (with `tiny` covering < 2% of it) predicts `parent`
+    expect(predictedLayerForShot({ x: 2000, y: 2000, width: 1000, height: 1500 }, items)?.id).toBe(
+      'mid',
+    );
+    // Shot framing `backdrop` predicts `big`
+    expect(predictedLayerForShot({ x: 0, y: 0, width: 10000, height: 15000 }, items)?.id).toBe(
+      'big',
+    );
+  });
+
+  it('moves, scales, and cleans up locked shots when their layer changes or is removed', () => {
+    const prev = [
+      { ...image('a', 0), x: 100, y: 200, width: 400, height: 600, z: 1 },
+      { ...image('b', 0), x: 1000, y: 0, width: 400, height: 600, z: 2 },
+    ];
+    const base = newVideo(view);
+    const lockedStop: CameraStop = {
+      id: 's1',
+      frame: { x: 150, y: 250, width: 180, height: 320 },
+      length: 3,
+      arrival: 'cut',
+      arrivalTime: 1,
+      stay: 'still',
+      easing: 'smooth',
+      lockToLayer: 'a',
+    };
+    const unlockedStop: CameraStop = {
+      id: 's2',
+      frame: { x: 1000, y: 0, width: 180, height: 320 },
+      length: 3,
+      arrival: 'glide',
+      arrivalTime: 1,
+      stay: 'still',
+      easing: 'smooth',
+    };
+    const video = { ...base, camera: [lockedStop, unlockedStop] };
+
+    // Moving + doubling size of layer `a` moves and doubles shot `s1`, leaving `s2` untouched
+    const scaled = [{ ...prev[0], x: 500, y: 600, width: 800, height: 1200 }, prev[1]];
+    const afterScale = followLockedLayers(video, prev, scaled);
+    expect(afterScale.camera[0].frame).toEqual({ x: 600, y: 700, width: 360, height: 640 });
+    expect(afterScale.camera[1]).toBe(unlockedStop);
+
+    // Round-trips `lockToLayer` through storage
+    expect(videoFromRow(JSON.parse(JSON.stringify(afterScale)))!.camera[0].lockToLayer).toBe('a');
+
+    // Deleting layer `a` clears `lockToLayer` cleanly
+    const afterRemove = followLockedLayers(afterScale, scaled, [prev[1]]);
+    expect(afterRemove.camera[0].lockToLayer).toBeUndefined();
   });
 });

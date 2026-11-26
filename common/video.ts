@@ -82,6 +82,8 @@ export interface CameraStop extends InRow {
   arrivalTime: number;
   stay: Stay;
   easing: Easing;
+  /** Layer id this shot is locked to: moving or resizing that layer moves and scales this shot with it */
+  lockToLayer?: string;
 }
 
 export interface LayoutBlock extends InRow {
@@ -860,6 +862,9 @@ export function videoFromRow(value: unknown): VideoProject | undefined {
           : DEFAULT_ARRIVAL_TIME,
       stay: STAYS.some((s) => s.stay === stop.stay) ? stop.stay! : 'still',
       easing: isEasing(stop.easing) ? stop.easing : 'smooth',
+      ...(typeof stop.lockToLayer === 'string' && stop.lockToLayer.length > 0
+        ? { lockToLayer: stop.lockToLayer }
+        : undefined),
     });
   }
   for (const stored of Array.isArray(layouts) ? layouts : []) {
@@ -963,4 +968,138 @@ function soundFromRow(value: unknown): SoundEffect | undefined {
       : SOUND_VOLUME,
     duration: sound.duration,
   };
+}
+
+/**
+ * Predicts which layer takes up the majority of a shot's visible frame by sampling a 7×7 grid across
+ * `frame` and crediting the topmost (highest `z`) layer at each point — accurately handling nested and
+ * overlapping photos. Falls back to largest overlap area when all overlapping layers are tiny.
+ */
+export function predictedLayerForShot(
+  frame: Rect,
+  items: readonly WorkspaceItem[],
+): WorkspaceItem | undefined {
+  if (frame.width <= 0 || frame.height <= 0 || items.length === 0) {
+    return undefined;
+  }
+  const overlapping = items.filter(
+    (item) =>
+      item.width > 0 &&
+      item.height > 0 &&
+      item.x < frame.x + frame.width &&
+      item.x + item.width > frame.x &&
+      item.y < frame.y + frame.height &&
+      item.y + item.height > frame.y,
+  );
+  if (overlapping.length === 0) {
+    return undefined;
+  }
+  // Prefer non-background layers when any overlap; backgrounds are fallback only
+  const foreground = overlapping.filter((item) => item.kind !== 'background');
+  const candidates = (foreground.length > 0 ? foreground : overlapping).sort((a, b) => b.z - a.z);
+  const counts = new Map<string, number>();
+  const samples = 7;
+  for (let gx = 0; gx < samples; gx++) {
+    const px = frame.x + ((gx + 0.5) / samples) * frame.width;
+    for (let gy = 0; gy < samples; gy++) {
+      const py = frame.y + ((gy + 0.5) / samples) * frame.height;
+      for (const item of candidates) {
+        if (
+          px >= item.x &&
+          px <= item.x + item.width &&
+          py >= item.y &&
+          py <= item.y + item.height
+        ) {
+          counts.set(item.id, (counts.get(item.id) ?? 0) + 1);
+          break;
+        }
+      }
+    }
+  }
+  let best: WorkspaceItem | undefined;
+  let bestScore = 0;
+  for (const item of candidates) {
+    const hits = counts.get(item.id) ?? 0;
+    if (hits > bestScore) {
+      bestScore = hits;
+      best = item;
+    }
+  }
+  if (best !== undefined) {
+    return best;
+  }
+  // Fallback: largest intersection area (for sub-grid slivers)
+  for (const item of candidates) {
+    const ox = Math.min(frame.x + frame.width, item.x + item.width) - Math.max(frame.x, item.x);
+    const oy = Math.min(frame.y + frame.height, item.y + item.height) - Math.max(frame.y, item.y);
+    const area = Math.max(0, ox) * Math.max(0, oy);
+    if (area > bestScore) {
+      bestScore = area;
+      best = item;
+    }
+  }
+  return best;
+}
+
+/**
+ * Updates any camera stop locked to a layer (`lockToLayer`) when that layer moves, resizes, or is removed.
+ * Preserves each shot's aspect ratio and relative position/scale on its locked layer. Returns `video`
+ * unchanged when no locked layer changed.
+ */
+export function followLockedLayers(
+  video: VideoProject,
+  prevItems: readonly WorkspaceItem[],
+  nextItems: readonly WorkspaceItem[],
+): VideoProject {
+  if (!video.camera.some((stop) => stop.lockToLayer !== undefined)) {
+    return video;
+  }
+  const prevById = new Map(prevItems.map((item) => [item.id, item]));
+  const nextById = new Map(nextItems.map((item) => [item.id, item]));
+  let changed = false;
+  const camera = video.camera.map((stop) => {
+    if (stop.lockToLayer === undefined) {
+      return stop;
+    }
+    const nextItem = nextById.get(stop.lockToLayer);
+    if (nextItem === undefined) {
+      changed = true;
+      const unlocked: CameraStop = { ...stop };
+      delete unlocked.lockToLayer;
+      return unlocked;
+    }
+    const prevItem = prevById.get(stop.lockToLayer);
+    if (
+      prevItem === undefined ||
+      prevItem.width <= 0 ||
+      prevItem.height <= 0 ||
+      (prevItem.x === nextItem.x &&
+        prevItem.y === nextItem.y &&
+        prevItem.width === nextItem.width &&
+        prevItem.height === nextItem.height)
+    ) {
+      return stop;
+    }
+    changed = true;
+    const { frame } = stop;
+    const rx = (frame.x + frame.width / 2 - prevItem.x) / prevItem.width;
+    const ry = (frame.y + frame.height / 2 - prevItem.y) / prevItem.height;
+    const scale = Math.sqrt(
+      (nextItem.width * nextItem.height) / (prevItem.width * prevItem.height),
+    );
+    const width = frame.width * scale;
+    const height = frame.height * scale;
+    const cx = nextItem.x + rx * nextItem.width;
+    const cy = nextItem.y + ry * nextItem.height;
+    return {
+      ...stop,
+      frame: {
+        x: cx - width / 2,
+        y: cy - height / 2,
+        width,
+        height,
+      },
+    };
+  });
+  return changed ? { ...video, camera } : video;
 }

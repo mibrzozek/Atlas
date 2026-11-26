@@ -1092,3 +1092,27 @@
     white-space: nowrap;
   }
 }
+
+.workspace-video-lock-layer {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+
+  .workspace-video-lock-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    cursor: pointer;
+
+    input[type='checkbox'] {
+      margin: 0;
+      accent-color: var(--accent-color);
+      cursor: pointer;
+    }
+  }
+
+  select {
+    max-width: 16rem;
+  }
+}

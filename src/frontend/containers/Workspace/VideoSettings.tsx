@@ -14,6 +14,7 @@ import {
   MAX_SOUND_VOLUME,
   MIN_BLOCK_LENGTH,
   outputSize,
+  predictedLayerForShot,
   SoundEffect,
   STAYS,
   VIDEO_FORMATS,
@@ -316,6 +317,7 @@ const EasingChoice = ({
 
 /** The settings of the block selected on the timeline: a camera stop, a layout, a motion, the music or a sound */
 export const BlockSettings = observer(({ workspace }: { workspace: ClientWorkspace }) => {
+  const { workspaceStore } = useStore();
   const video = workspace.video!;
   const selected = workspace.selectedBlock;
   const remove = selected !== undefined && (
@@ -400,6 +402,72 @@ export const BlockSettings = observer(({ workspace }: { workspace: ClientWorkspa
           {remove}
         </div>
       );
+      // Lock shot to a layer: predicts the layer covering the majority of the shot and lets the user
+      // toggle locking on/off or switch to any other layer (or the currently selected canvas layer)
+      const layers = workspace.layers;
+      const sources = workspaceStore.imagesOf(workspace)?.sources;
+      const labelOf = (item: (typeof layers)[number]) =>
+        item.kind === 'image'
+          ? sources?.get(item.fileId)?.name ?? 'Photo'
+          : item.kind === 'text'
+          ? item.text.trim().slice(0, 28) || 'Text'
+          : `${item.format} sheet`;
+      const predicted = predictedLayerForShot(stop.frame, layers);
+      const isLockedToLayer =
+        stop.lockToLayer !== undefined && layers.some((item) => item.id === stop.lockToLayer);
+      const activeLayerId = isLockedToLayer
+        ? stop.lockToLayer
+        : predicted?.id ?? layers[0]?.id ?? '';
+      const singleSelectedId =
+        workspace.selection.size === 1
+          ? (workspace.selection.values().next().value as string)
+          : undefined;
+      const canUseSelected =
+        singleSelectedId !== undefined &&
+        layers.some((item) => item.id === singleSelectedId) &&
+        singleSelectedId !== stop.lockToLayer;
+      const lockToLayerControl = layers.length > 0 && (
+        <div className="workspace-video-lock-layer">
+          <label
+            className="workspace-video-lock-toggle"
+            data-tooltip="Keep this shot framed on the chosen layer when that layer moves or resizes"
+          >
+            <input
+              type="checkbox"
+              checked={isLockedToLayer}
+              disabled={activeLayerId === ''}
+              onChange={(event) =>
+                change({ lockToLayer: event.target.checked ? activeLayerId : undefined })
+              }
+            />
+            <span>Lock shot to layer</span>
+          </label>
+          <select
+            aria-label="Layer to lock shot to"
+            value={activeLayerId}
+            onChange={(event) => {
+              const chosen = event.target.value;
+              if (chosen !== '') {
+                change({ lockToLayer: chosen });
+              }
+            }}
+          >
+            {layers.map((item) => (
+              <option key={item.id} value={item.id}>
+                {labelOf(item)}
+                {predicted?.id === item.id ? ' (predicted)' : ''}
+              </option>
+            ))}
+          </select>
+          {canUseSelected && (
+            <Button
+              text="Use selected"
+              tooltip="Lock this shot to the layer currently selected on the workspace"
+              onClick={() => change({ lockToLayer: singleSelectedId })}
+            />
+          )}
+        </div>
+      );
       // The first stop is where the video begins: nothing to get there
       if (index === 0) {
         return (
@@ -410,6 +478,7 @@ export const BlockSettings = observer(({ workspace }: { workspace: ClientWorkspa
               {place}
               {actions}
             </div>
+            {lockToLayerControl && <div className="workspace-video-row">{lockToLayerControl}</div>}
           </div>
         );
       }
@@ -448,6 +517,7 @@ export const BlockSettings = observer(({ workspace }: { workspace: ClientWorkspa
             {place}
             {actions}
           </div>
+          {lockToLayerControl && <div className="workspace-video-row">{lockToLayerControl}</div>}
         </div>
       );
     }
