@@ -1069,4 +1069,60 @@ describe('WorkspaceStore', () => {
     runInAction(() => workspace.selectBlock('camera', workspace.video!.camera[0].id));
     expect([...workspace.selection]).toEqual(['b']);
   });
+
+  it('orders tag batches deterministically in createOf regardless of Library random sort', async () => {
+    const searchFiles = jest.fn(async () => [
+      { id: 'f3', name: 'img_10.jpg', width: 300, height: 200 },
+      { id: 'f1', name: 'img_2.jpg', width: 300, height: 200 },
+      { id: 'f2b', name: 'img_2.jpg', width: 300, height: 200 },
+      { id: 'f2a', name: 'img_2.jpg', width: 300, height: 200 },
+    ]);
+    const rootStore = {
+      fileStore: { orderBy: 'random', orderDirection: 1 },
+      uiStore: {
+        galleryLayout: undefined,
+        activeWorkspace: undefined,
+        closedWorkspaceTabIds: observable<string>([]),
+        openWorkspace: jest.fn(),
+      },
+    };
+    const store = new WorkspaceStore(
+      { searchFiles } as unknown as DataStorage,
+      new WorkspaceDatabase(`Test_Workspaces_${databaseCounter++}`),
+      rootStore as unknown as RootStore,
+      measure,
+    );
+    const fakeCriteria = {
+      toCondition: () => ({ key: 'tags', value: ['t1'], operator: 'contains' }),
+    };
+    const ws = await store.createOf(
+      { label: 'Park', criteria: [fakeCriteria as any] },
+      'Park Deterministic',
+    );
+    expect(searchFiles).toHaveBeenCalledWith(expect.anything(), 'name', 0, undefined);
+    // Numeric natural sort on name, then stable tie-break on id
+    expect(ws.fileIds).toEqual(['f1', 'f2a', 'f2b', 'f3']);
+  });
+
+  it('duplicates a single item inside a locked group without copying its group mates, and ungroups by id', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b', 'c') }]);
+    const group = runInAction(() => {
+      workspace.selectMany(['a', 'b'], false);
+      return workspace.groupSelection('Cluster 1')!;
+    });
+    expect(group.isLocked).toBe(true);
+    const copiedCount = runInAction(() => workspace.duplicateItems(new Set(['a']), { x: 0, y: 0 }));
+    expect(copiedCount).toBe(1);
+    const allImages = workspace.items.filter((i) => i.kind === 'image');
+    expect(allImages).toHaveLength(4);
+    const copy = allImages.find((i) => i.id !== 'a' && i.id !== 'b' && i.id !== 'c')!;
+    expect(copy.kind === 'image' && copy.fileId).toBe('a');
+    expect(copy.groupId).toBeUndefined();
+    // Ungroup by id works without touching locked-group selection and is undoable in one step
+    expect(runInAction(() => workspace.ungroup(group.id))).toBe(true);
+    expect(workspace.groupsInUse).toHaveLength(0);
+    runInAction(() => workspace.undo());
+    expect(workspace.groupsInUse.map((g) => g.id)).toEqual([group.id]);
+  });
 });

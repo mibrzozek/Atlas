@@ -16,7 +16,7 @@ import {
   WorkspaceRow,
 } from 'common/workspace';
 import { DataStorage } from '../../api/data-storage';
-import { ConditionDTO } from '../../api/data-storage-search';
+import { ConditionDTO, OrderDirection } from '../../api/data-storage-search';
 import { FileDTO } from '../../api/file';
 import { generateId, ID } from '../../api/id';
 import { WorkspaceDatabase } from '../../backend/workspace-db';
@@ -276,7 +276,7 @@ class WorkspaceStore {
     name: string,
     sample?: { count: number; seed: number },
   ): Promise<ClientWorkspace> {
-    const found = 'images' in batch ? batch.images : await this.imagesFound(batch);
+    const found = 'images' in batch ? batch.images : await this.imagesFound(batch, true);
     const images =
       sample !== undefined && sample.count < found.length
         ? shuffled(found, seededRandom(sample.seed)).slice(0, sample.count)
@@ -390,18 +390,21 @@ class WorkspaceStore {
     }
   }
 
-  private async imagesFound(search: {
-    criteria: readonly ClientFileSearchCriteria[];
-    matchAny?: boolean;
-  }): Promise<WorkspaceImage[]> {
+  private async imagesFound(
+    search: {
+      criteria: readonly ClientFileSearchCriteria[];
+      matchAny?: boolean;
+    },
+    deterministic = false,
+  ): Promise<WorkspaceImage[]> {
     if (search.criteria.length === 0) {
       return [];
     }
-    // Read before the wait, as the Library is now
+    // Read before the wait, as the Library is now (or a fixed name/id order for reproducible creates)
     const { conditions, orderBy, orderDirection } = runInAction(() => ({
       conditions: search.criteria.map((criteria) => criteria.toCondition(this.rootStore)),
-      orderBy: this.rootStore.fileStore.orderBy,
-      orderDirection: this.rootStore.fileStore.orderDirection,
+      orderBy: deterministic ? ('name' as const) : this.rootStore.fileStore.orderBy,
+      orderDirection: deterministic ? OrderDirection.Asc : this.rootStore.fileStore.orderDirection,
     }));
     const files = await this.backend.searchFiles(
       conditions as [ConditionDTO<FileDTO>, ...ConditionDTO<FileDTO>[]],
@@ -409,7 +412,16 @@ class WorkspaceStore {
       orderDirection,
       search.matchAny,
     );
-    return files.map((file) => ({ fileId: file.id, width: file.width, height: file.height }));
+    const ordered = deterministic
+      ? files
+          .slice()
+          .sort(
+            (a, b) =>
+              a.name.localeCompare(b.name, undefined, { numeric: true }) ||
+              a.id.localeCompare(b.id),
+          )
+      : files;
+    return ordered.map((file) => ({ fileId: file.id, width: file.width, height: file.height }));
   }
 
   copy(workspace: ClientWorkspace): void {

@@ -433,8 +433,8 @@ export function installDirector(rootStore: RootStore): void {
     },
 
     /**
-     * Duplicates named photos on the workspace (for multi-cluster seamless relay compositions)
-     * and returns their new 1-based photo numbers in the same order.
+     * Duplicates named photos on the workspace (bypassing locked-group selection expansion, leaving
+     * copies ungrouped) and returns their new 1-based photo numbers in the exact order requested.
      */
     copy: (id: string, photos: number[]) => {
       const workspace = workspaceOf(id);
@@ -448,26 +448,126 @@ export function installDirector(rootStore: RootStore): void {
       if (!Array.isArray(photos) || photos.length === 0) {
         throw new Error('Give a list of photo numbers to copy');
       }
-      const ids: string[] = [];
+      const requested: WorkspaceImageItem[] = [];
+      const uniqueIds = new Set<string>();
       for (const raw of photos) {
         const photo = numberOf(raw, 'photo', 1, images.length);
         if (!Number.isInteger(photo)) {
           throw new Error('photo must be a whole number');
         }
-        ids.push(images[photo - 1].id);
+        const item = images[photo - 1];
+        if (uniqueIds.has(item.id)) {
+          throw new Error(`Photo ${photo} is listed more than once`);
+        }
+        uniqueIds.add(item.id);
+        requested.push(item);
       }
       const beforeIds = new Set(images.map((item) => item.id));
-      workspace.selectMany(ids, false);
-      workspace.duplicateSelection();
+      workspace.duplicateItems(uniqueIds, { x: 0, y: 0 });
       workspace.clearSelection();
       const afterImages = imagesOf(workspace);
-      const createdNums: number[] = [];
-      afterImages.forEach((item, idx) => {
-        if (!beforeIds.has(item.id)) {
-          createdNums.push(idx + 1);
-        }
+      const created = afterImages
+        .map((item, idx) => ({ item, n: idx + 1 }))
+        .filter(({ item }) => !beforeIds.has(item.id));
+      // Match copies back to the caller's requested order (duplicateItems appends in z-order)
+      const remaining = [...created];
+      return requested.map((src) => {
+        const matchIdx = remaining.findIndex(
+          ({ item }) =>
+            item.fileId === src.fileId &&
+            item.x === src.x &&
+            item.y === src.y &&
+            item.width === src.width &&
+            item.height === src.height,
+        );
+        const matched = remaining.splice(matchIdx === -1 ? 0 : matchIdx, 1)[0];
+        return matched.n;
       });
-      return createdNums;
+    },
+
+    /**
+     * Metadata for every photo layer on the workspace (basename only, never a disk path): number,
+     * stable fileId, filename, aspect, bounds, group name, and whether it is a duplicate layer.
+     */
+    photosInfo: async (id: string) => {
+      const workspace = workspaceOf(id);
+      const images = imagesOf(workspace);
+      const prepared = workspaceStore.imagesOf(workspace)?.sources;
+      const missingIds = images
+        .map((item) => item.fileId)
+        .filter((fileId) => prepared?.get(fileId) === undefined);
+      const fetched =
+        missingIds.length > 0
+          ? await workspaceStore.fetchImageSources([...new Set(missingIds)])
+          : undefined;
+      const groupNames = new Map(workspace.groupsInUse.map((g) => [g.id, g.name]));
+      const seenFiles = new Set<string>();
+      return images.map((item, i) => {
+        const isCopy = seenFiles.has(item.fileId);
+        seenFiles.add(item.fileId);
+        const source = prepared?.get(item.fileId) ?? fetched?.get(item.fileId);
+        return {
+          n: i + 1,
+          fileId: item.fileId,
+          name: source?.name,
+          aspect: Math.round(item.imageAspect * 1000) / 1000,
+          width: Math.round(item.width * 10) / 10,
+          height: Math.round(item.height * 10) / 10,
+          x: Math.round(item.x * 10) / 10,
+          y: Math.round(item.y * 10) / 10,
+          group: item.groupId !== undefined ? groupNames.get(item.groupId) : undefined,
+          isCopy,
+        };
+      });
+    },
+
+    /** Removes named photo layers from the workspace (never touches files on disk) */
+    deleteItems: (id: string, photos: number[]) => {
+      const workspace = workspaceOf(id);
+      if (workspace.isLocked) {
+        throw new Error('The workspace is locked');
+      }
+      const images = imagesOf(workspace);
+      if (images.length === 0) {
+        throw new Error('It has no photos');
+      }
+      if (!Array.isArray(photos) || photos.length === 0) {
+        throw new Error('Give a list of photo numbers to delete');
+      }
+      const ids = new Set<string>();
+      for (const raw of photos) {
+        const photo = numberOf(raw, 'photo', 1, images.length);
+        if (!Number.isInteger(photo)) {
+          throw new Error('photo must be a whole number');
+        }
+        ids.add(images[photo - 1].id);
+      }
+      workspace.removeItems(ids);
+      return { removed: ids.size };
+    },
+
+    /** Ungroups a named layer group on the workspace without deleting its layers */
+    ungroup: (id: string, name: string) => {
+      const workspace = workspaceOf(id);
+      if (workspace.isLocked) {
+        throw new Error('The workspace is locked');
+      }
+      const trimmed = String(name ?? '').trim();
+      const group = workspace.groupsInUse.find((g) => g.name === trimmed);
+      if (group === undefined) {
+        throw new Error(`No such group: ${trimmed}`);
+      }
+      workspace.ungroup(group.id);
+      return { ungrouped: group.name };
+    },
+
+    /** Deletes a workspace (never touches photo files on disk) */
+    deleteWorkspace: async (id: string) => {
+      const workspace = workspaceOf(id);
+      const { name } = workspace;
+      uiStore.closeWorkspaceTab(workspace);
+      await workspaceStore.remove(workspace);
+      return { deleted: name };
     },
 
     /**

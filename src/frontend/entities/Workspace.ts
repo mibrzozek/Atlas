@@ -1370,6 +1370,17 @@ export class ClientWorkspace {
     );
   }
 
+  /** One group undone by id without touching the selection: its layers stay, each on its own */
+  @action.bound ungroup(groupId: string): boolean {
+    if (this.isLocked || !this.items.some((item) => item.groupId === groupId)) {
+      return false;
+    }
+    this.change(
+      this.items.map((item) => (item.groupId === groupId ? { ...item, groupId: undefined } : item)),
+    );
+    return true;
+  }
+
   @action.bound toggleGroupLock(groupId: string): void {
     this.updateGroup(groupId, (group) => ({ ...group, isLocked: !group.isLocked }));
   }
