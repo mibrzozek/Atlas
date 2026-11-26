@@ -52,6 +52,7 @@ export function startDirector(windowOf: () => BrowserWindow | null): void {
   const audio = path.join(repo, 'audio');
   const sfx = path.join(audio, 'sfx');
   const demo = path.join(repo, 'demo');
+  const desktop = app.getPath('desktop');
   // The hidden copy (scripts/dev/hidden.js) has a profile of its own: its connection is another file
   const kind = app.getPath('userData').includes('.dev-hidden-profile') ? 'hidden' : 'user';
   const connectionFile = path.join(folder, `${kind}.json`);
@@ -230,14 +231,21 @@ export function startDirector(windowOf: () => BrowserWindow | null): void {
     }
     if (method === 'save') {
       const [workspace, size] = args;
-      if (size !== 'phone' && size !== 'full') {
-        return { ok: false, error: 'The size is phone or full' };
+      if (size !== 'phone' && size !== 'phone-full' && size !== 'full') {
+        return { ok: false, error: 'The size is phone, phone-full or full' };
       }
-      await fse.mkdir(demo).catch(() => undefined);
-      const answer = await inPage('save', [workspace, size, demo]);
-      // The name of the new file, not where it is
+      const targetDir = size === 'phone-full' ? desktop : demo;
+      await fse.mkdir(targetDir).catch(() => undefined);
+      const answer = await inPage('save', [workspace, size, targetDir]);
+      // The name of the new file (with Desktop/ tag for phone-full), never the full OS path
       return answer.ok && typeof answer.result === 'string'
-        ? { ok: true, result: path.basename(answer.result) }
+        ? {
+            ok: true,
+            result:
+              size === 'phone-full'
+                ? `Desktop/${path.basename(answer.result)}`
+                : path.basename(answer.result),
+          }
         : answer;
     }
     return inPage(method, args);

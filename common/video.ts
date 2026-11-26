@@ -248,11 +248,18 @@ export function shotBefore(video: VideoProject, id: string | undefined): CameraS
 /** The music files a video can take: what the file dialog shows, and the songs of `audio/` */
 export const MUSIC_EXTENSIONS = ['mp3', 'm4a', 'aac', 'wav', 'ogg', 'oga', 'opus', 'flac', 'webm'];
 
-/** What a video is saved at: its own size, or small enough to be sent to a phone */
-export type VideoSize = 'full' | 'phone';
+/**
+ * What a video is saved at:
+ * - `phone`: 720p (1280 long side) capped under 26 MB for uploading/viewing in the Claude phone app
+ * - `phone-full`: full 1080p reel size (1920 long side), uncapped bitrate, saved to Desktop for self-upload
+ * - `full`: the video's own size, uncapped bitrate
+ */
+export type VideoSize = 'phone' | 'phone-full' | 'full';
 
-/** The longest side of a video saved at phone size, in pixels (720 × 1280 for 9:16) */
+/** The longest side of a video saved at capped phone size, in pixels (720 × 1280 for 9:16) */
 const PHONE_SIDE = 1280;
+/** The longest side of a video saved at full reel size, in pixels (1080 × 1920 for 9:16) */
+const REEL_SIDE = 1920;
 /**
  * How large a video saved at phone size may become at most, in bytes: the phone link of the Claude app
  * takes up to 30 MB, and the file has some room around the picture and the sound
@@ -261,23 +268,27 @@ const PHONE_BUDGET = 26 * 1024 * 1024;
 /** The bitrate of the music in a saved video, in bits a second (the AAC encoder's) */
 export const MUSIC_BITRATE = 192_000;
 
-/** The size the frames of a saved video are drawn at: the video's own, or at phone size its shape kept */
+/** The size the frames of a saved video are drawn at: its own, full reel (1080p), or capped phone (720p) */
 export function outputSize(video: Size, size: VideoSize = 'full'): Size {
+  const longest = Math.max(video.width, video.height);
   const scale =
-    size === 'phone' ? Math.min(1, PHONE_SIDE / Math.max(video.width, video.height)) : 1;
+    size === 'phone'
+      ? Math.min(1, PHONE_SIDE / longest)
+      : size === 'phone-full'
+      ? Math.min(1, REEL_SIDE / longest)
+      : 1;
   return videoSize(video.width * scale, video.height * scale);
 }
 
 /**
  * The bitrate of the picture of a saved video, in bits a second: enough for a clean picture of photos
- * (about 12 Mbit/s at 1080 × 1920, 30 frames a second); at phone size no more than keeps the whole file,
- * the music included, within the budget for its length. Never under 0.5 Mbit/s, below which photos smear:
- * a phone video of over about 6 minutes is then larger than the budget. The encoder aims at the bitrate,
- * it is not held to it
+ * (about 12 Mbit/s at 1080 × 1920, 30 frames a second); at `phone` size capped to keep the whole file,
+ * the music included, within the 26 MB budget for its length. `phone-full` and `full` are uncapped.
+ * Never under 0.5 Mbit/s, below which photos smear. The encoder aims at the bitrate, it is not held to it
  */
 export function videoBitrate(output: Size, fps: number, length: number, size: VideoSize): number {
   const clean = Math.round(output.width * output.height * fps * 0.2);
-  if (size === 'full') {
+  if (size !== 'phone') {
     return clean;
   }
   const budget = (PHONE_BUDGET * 8) / Math.max(1, length) - MUSIC_BITRATE;

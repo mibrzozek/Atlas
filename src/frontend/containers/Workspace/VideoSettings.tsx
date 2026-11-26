@@ -26,6 +26,7 @@ import { MOTION_KINDS, MotionKind } from 'common/video-motion';
 import { readingOrder } from 'common/workspace';
 import { Button, IconSet } from 'widgets';
 import { useStore } from '../../contexts/StoreContext';
+import { RendererMessenger } from '../../../ipc/renderer';
 import { ClientWorkspace, MUSIC_ID } from '../../entities/Workspace';
 import {
   chooseSaveFolder,
@@ -830,8 +831,24 @@ export const ExportSettings = observer(({ workspace }: { workspace: ClientWorksp
       nextFileNameIn(naming, target).then(setHint);
     }
   }, [naming, folder]);
-  // Small enough to be sent to a phone, unless asked for the full size
+  // Tier 1 phone (<= 26 MB) by default; `phone-full` saves uncapped 1080p reels straight to Desktop
   const [size, setSize] = useState<VideoSize>('phone');
+  const [desktopFolder, setDesktopFolder] = useState<string | undefined>();
+  useEffect(() => {
+    let active = true;
+    RendererMessenger.getPath('desktop')
+      .then((p) => existingFolder(p))
+      .then((found) => {
+        if (active) {
+          setDesktopFolder(found);
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  const effectiveFolder = size === 'phone-full' ? desktopFolder ?? folder : folder;
   const output = outputSize(video, size);
   const fileName = fileNameOf(name);
   const length = videoLength(video);
@@ -841,9 +858,9 @@ export const ExportSettings = observer(({ workspace }: { workspace: ClientWorksp
     if (!canSave) {
       return;
     }
-    // Into the folder it saves to, else one picked now
+    // `phone-full` goes straight to Desktop unless overridden; others use workspace folder or picker
     const target =
-      folder ??
+      effectiveFolder ??
       (await chooseSaveFolder(
         `Choose a folder for "${fileName}.mp4"`,
         storedFolder(VIDEO_FOLDER_KEY),
@@ -851,7 +868,9 @@ export const ExportSettings = observer(({ workspace }: { workspace: ClientWorksp
     if (target === undefined) {
       return;
     }
-    rememberFolder(VIDEO_FOLDER_KEY, target);
+    if (size !== 'phone-full') {
+      rememberFolder(VIDEO_FOLDER_KEY, target);
+    }
     // The next name in the folder, unless the user named the video
     const videoName =
       naming !== undefined && typedName === undefined
@@ -885,11 +904,17 @@ export const ExportSettings = observer(({ workspace }: { workspace: ClientWorksp
           />
         </div>
       </div>
-      {folder !== undefined && (
+      {effectiveFolder !== undefined && (
         <SavesTo
-          folder={folder}
+          folder={effectiveFolder}
           title={`Choose a folder for "${fileName}.mp4"`}
-          onChange={setFolder}
+          onChange={(picked) => {
+            if (size === 'phone-full') {
+              setDesktopFolder(picked);
+            } else {
+              setFolder(picked);
+            }
+          }}
         />
       )}
       <div className="workspace-video-row">
@@ -899,10 +924,15 @@ export const ExportSettings = observer(({ workspace }: { workspace: ClientWorksp
             options={[
               {
                 value: 'phone',
-                name: 'Phone',
-                detail: 'Small enough to send to a phone (under 30 MB)',
+                name: 'Phone (≤ 26 MB)',
+                detail: '720p, capped under 26 MB for viewing in the Claude phone app',
               },
-              { value: 'full', name: 'Full', detail: 'The size of the video, for posting' },
+              {
+                value: 'phone-full',
+                name: 'Phone (Full Reel)',
+                detail: 'Full 1080p reel quality, uncapped — saves directly to Desktop',
+              },
+              { value: 'full', name: 'Full', detail: 'The size of the video, uncapped' },
             ]}
             value={size}
             onChange={setSize}

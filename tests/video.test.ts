@@ -203,6 +203,28 @@ describe('blocks in a row', () => {
     expect(videoBitrate(phone, 30, 5, 'phone')).toBe(videoBitrate(phone, 30, 5, 'full'));
   });
 
+  it('supports tier-2 phone-full export at full 1080p reel size with uncapped bitrate', () => {
+    expect(outputSize({ width: 1080, height: 1920 }, 'phone-full')).toEqual({
+      width: 1080,
+      height: 1920,
+    });
+    expect(outputSize({ width: 1920, height: 1080 }, 'phone-full')).toEqual({
+      width: 1920,
+      height: 1080,
+    });
+    expect(outputSize({ width: 1080, height: 1350 }, 'phone-full')).toEqual({
+      width: 1080,
+      height: 1350,
+    });
+    // Uncapped clean bitrate even on long 60s / 60fps reels
+    const reel = { width: 1080, height: 1920 };
+    expect(videoBitrate(reel, 30, 60, 'phone-full')).toBe(videoBitrate(reel, 30, 60, 'full'));
+    expect(videoBitrate(reel, 60, 60, 'phone-full')).toBe(videoBitrate(reel, 60, 60, 'full'));
+    expect(videoBitrate(reel, 30, 60, 'phone-full')).toBeGreaterThan(
+      videoBitrate({ width: 720, height: 1280 }, 30, 60, 'phone'),
+    );
+  });
+
   it('know the shot before one, where the camera comes from', () => {
     const video = {
       ...newVideo(view),

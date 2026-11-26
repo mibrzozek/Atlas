@@ -52,7 +52,9 @@
 //   end <workspace id> [seconds]             where the video ends; none: the end of its camera
 //   waves <workspace id> [strength]          a wave through the photos on every swell of its song
 //   edit <workspace id> cuts|flow|mixed <seed>
-//   save <workspace id> phone|full            into demo/, a new file
+//   save <workspace id> phone|phone-full|full   phone: 720p <= 26 MB into demo/ (Claude app);
+//                                             phone-full: uncapped 1080p reel onto Desktop (for self-upload);
+//                                             full: uncapped video size into demo/
 //   picture <workspace id> [times...] [{"width": 540}] --out <file.jpg>   frames side by side, each this wide
 //   cuts <workspace id> [{"width": 360, "from": 1}] --out <file.jpg>      the first frame, then per cut the last
 //                                             moment of a shot and the arrival of the next, then the last

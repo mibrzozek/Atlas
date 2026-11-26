@@ -98,6 +98,16 @@ another, and the other photos from the tag should be grouped together and labell
     and group the remaining unused photos from the tag into their own labelled group (e.g.
     `Unused Tag Photos`).
 
+## Notes on phone export tiers (2026-11-26)
+
+"There should be 2 tiers of phone export: the first tier limited to 26 MB for viewing through the Claude
+app on phone, and the second tier full-resolution reel-sized uncapped saved to my Desktop for uploading
+myself."
+
+23. **Two-tier phone export:**
+    - `save <id> phone` — `720 × 1280` capped under 26 MB into `demo/` (for sending/viewing in the Claude phone app).
+    - `save <id> phone-full` — full `1080 × 1920` reel quality, uncapped bitrate, saved directly to the owner's Desktop for self-uploading.
+
 ## To ask the owner
 
 - The worst moments in the lowrider and Halloween reels (`demo/`), in their words.
