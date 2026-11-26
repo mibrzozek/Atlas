@@ -42,6 +42,7 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
   const cropWorld = useRef<HTMLDivElement>(null);
   const cropTools = useRef<HTMLDivElement>(null);
   const shots = useRef<HTMLDivElement>(null);
+  const selectionBeacon = useRef<HTMLButtonElement>(null);
   const placeShots = useCallback(() => surface.current?.placeShots(), []);
   // The playhead and the preview of the video; not stored
   const [player] = useState(() => new VideoPlayer());
@@ -70,6 +71,7 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
         crop: cropWorld.current!,
         cropTools: cropTools.current!,
         shots: shots.current!,
+        selectionBeacon: selectionBeacon.current!,
       },
       workspace,
       images.tiles,
@@ -377,6 +379,26 @@ const WorkspaceView = observer(({ workspace }: { workspace: ClientWorkspace }) =
           <div ref={cropTools} className="workspace-crop-tools-layer">
             {cropping !== undefined && <CropTools workspace={workspace} />}
           </div>
+          {/* Screen-space beacon for selected layers that are tiny or off-screen: click to glide to them */}
+          <button
+            ref={selectionBeacon}
+            type="button"
+            className="workspace-selection-beacon"
+            data-surface-overlay
+            hidden
+            aria-label="Go to selected layer"
+            data-tooltip="Selected layer — click to zoom to it"
+            onClick={() => {
+              const firstSelected: string | undefined = workspace.selection.values().next().value;
+              if (firstSelected !== undefined) {
+                surface.current?.lookAt(firstSelected);
+              }
+            }}
+          >
+            <span className="workspace-beacon-ping" aria-hidden="true" />
+            <span className="workspace-beacon-ring" aria-hidden="true" />
+            <span className="workspace-beacon-arrow" aria-hidden="true" />
+          </button>
           <PreparingOverlay images={images} />
           {isVideoMode && player.isShowing && workspace.video !== undefined && (
             <VideoPreview

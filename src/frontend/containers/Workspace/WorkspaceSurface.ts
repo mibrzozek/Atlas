@@ -69,6 +69,10 @@ const MIN_TILE_IMAGE_PIXELS = 4;
 const OVERVIEW_SIZE = 4096;
 /** Only build/blit the 64 MB overview canvas when there are enough tiny tiles to justify it */
 const MIN_OVERVIEW_TILES = 200;
+/** Selected layers smaller than this on screen get a crisp screen-space beacon so they stay easy to spot */
+const TINY_SELECTION_PIXELS = 32;
+/** Padding from the viewport edge for an off-screen selection beacon, in screen pixels */
+const BEACON_EDGE_MARGIN = 24;
 /** How long the images have to rest before the overview is drawn anew, in ms */
 const OVERVIEW_REST = 250;
 /** How far around the view images are already put in the page, in screen pixels */
@@ -140,6 +144,8 @@ export interface SurfaceLayers {
   shots: HTMLElement;
   /** The tools of cropping, in pixels of the screen, placed under the frame (`placeCropTools`) */
   cropTools: HTMLElement;
+  /** Screen-space indicator for tiny or off-screen selected layers (`placeSelectionBeacon`) */
+  selectionBeacon: HTMLElement;
 }
 
 interface SurfaceEvents {
@@ -269,6 +275,8 @@ export class WorkspaceSurface {
   private readonly resizeObserver: ResizeObserver;
   private readonly stopFollowingCrop: () => void;
   private readonly stopFollowingVideo: () => void;
+  private readonly stopFollowingSelection: () => void;
+  private lastBeaconKey = '';
   private isVideoMode = false;
   /** How much of the foot of the view the video panel lies over: what is shown is fitted above it */
   private videoInset = 0;
@@ -294,6 +302,11 @@ export class WorkspaceSurface {
     this.stopFollowingVideo = reaction(
       () => workspace.selectedBlock,
       () => this.isVideoMode && this.lookAtSelectedBlock(),
+    );
+    // Selection changed (e.g. clicking a tiny layer in the Layers panel): update the screen-space beacon
+    this.stopFollowingSelection = reaction(
+      () => [...workspace.selection].join(','),
+      () => this.requestFrame(),
     );
     tileImages.onLoad = (id) => {
       this.drawIntoOverview(id);
@@ -329,6 +342,7 @@ export class WorkspaceSurface {
     this.resizeObserver.disconnect();
     this.stopFollowingCrop();
     this.stopFollowingVideo();
+    this.stopFollowingSelection();
     // A crop is not stored: left for another tab, it would come back with its image hidden and out of view
     this.workspace.cancelCrop();
     this.viewport.removeEventListener('wheel', this.handleWheel);
@@ -602,6 +616,75 @@ export class WorkspaceSurface {
     );
     const top = Math.min(corner.y + CROP_TOOLS_GAP, this.view.height - height - CROP_TOOLS_GAP);
     tools.style.transform = `translate(${Math.round(left)}px, ${Math.round(top)}px)`;
+  }
+
+  /**
+   * Positions the screen-space selection beacon when the selected layer(s) are either too small to see
+   * clearly (< TINY_SELECTION_PIXELS) or completely off-screen.
+   */
+  private placeSelectionBeacon() {
+    const beacon = this.layers.selectionBeacon;
+    const { selection, cropping } = this.workspace;
+    if (cropping !== undefined || selection.size === 0 || this.view.width <= 1) {
+      beacon.hidden = true;
+      this.lastBeaconKey = '';
+      return;
+    }
+    const selected: WorkspaceItem[] = [];
+    for (const id of selection) {
+      const item = this.items.get(id);
+      if (item !== undefined) {
+        selected.push(item);
+      }
+    }
+    const bounds = boundsOf(selected);
+    if (bounds === undefined) {
+      beacon.hidden = true;
+      this.lastBeaconKey = '';
+      return;
+    }
+    const { x, y, zoom } = this.camera;
+    const left = (bounds.x - x) * zoom;
+    const top = (bounds.y - y) * zoom;
+    const sw = bounds.width * zoom;
+    const sh = bounds.height * zoom;
+    const usableHeight = Math.max(BEACON_EDGE_MARGIN * 2, this.view.height - this.videoInset);
+    const isOffscreen =
+      left + sw < 0 || left > this.view.width || top + sh < 0 || top > usableHeight;
+    const isTiny = !isOffscreen && Math.max(sw, sh) < TINY_SELECTION_PIXELS;
+    if (!isOffscreen && !isTiny) {
+      beacon.hidden = true;
+      return;
+    }
+    const cx = left + sw / 2;
+    const cy = top + sh / 2;
+    beacon.hidden = false;
+    if (isTiny) {
+      beacon.dataset.state = 'tiny';
+      beacon.style.transform = `translate3d(${cx}px, ${cy}px, 0)`;
+      beacon.style.removeProperty('--beacon-angle');
+    } else {
+      const clampedX = Math.min(
+        Math.max(cx, BEACON_EDGE_MARGIN),
+        this.view.width - BEACON_EDGE_MARGIN,
+      );
+      const clampedY = Math.min(
+        Math.max(cy, BEACON_EDGE_MARGIN),
+        usableHeight - BEACON_EDGE_MARGIN,
+      );
+      const angle = (Math.atan2(cy - clampedY, cx - clampedX) * 180) / Math.PI;
+      beacon.dataset.state = 'offscreen';
+      beacon.style.transform = `translate3d(${clampedX}px, ${clampedY}px, 0)`;
+      beacon.style.setProperty('--beacon-angle', `${angle.toFixed(1)}deg`);
+    }
+    const key = [...selection].join(',');
+    if (key !== this.lastBeaconKey) {
+      this.lastBeaconKey = key;
+      beacon.classList.remove('is-pinging');
+      // Force reflow so the one-shot ping replays on each newly selected tiny/off-screen layer
+      void beacon.offsetWidth;
+      beacon.classList.add('is-pinging');
+    }
   }
 
   /** Where on the workspace a point of the window is, such as where something was dropped */
@@ -1410,6 +1493,7 @@ export class WorkspaceSurface {
     this.layers.crop.style.setProperty('--zoom', String(zoom));
     this.placeCropTools();
     this.placeShots();
+    this.placeSelectionBeacon();
 
     // Whether an image gets an element is decided at steps of the zoom, not in every frame: while zooming,
     // the images that change from a tile to an element and back do so a few at a time instead of always

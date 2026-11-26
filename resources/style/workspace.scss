@@ -1481,3 +1481,133 @@ input.workspace-tab-name {
     transform: translate(-50%, 0);
   }
 }
+
+// Screen-space beacon for selected layers that are tiny (< 32px) or off-screen
+@keyframes workspace-beacon-ping {
+  0% {
+    transform: translate(-50%, -50%) scale(0.65);
+    opacity: 0.75;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(2.1);
+    opacity: 0;
+  }
+}
+
+.workspace-selection-beacon {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 6;
+  width: 2rem;
+  height: 2rem;
+  margin: -1rem 0 0 -1rem;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  pointer-events: auto;
+  color: var(--accent-color);
+
+  &[hidden] {
+    display: none;
+  }
+
+  .workspace-beacon-ping {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 1.75rem;
+    height: 1.75rem;
+    border: 0.09375rem solid currentColor;
+    border-radius: 50%;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  &.is-pinging .workspace-beacon-ping {
+    animation: workspace-beacon-ping 0.65s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  }
+
+  // Tiny on-screen layer: refined viewfinder reticle with delicate crosshairs + center dot
+  &[data-state='tiny'] {
+    .workspace-beacon-ring {
+      position: absolute;
+      inset: 0.25rem;
+      border: 0.09375rem solid currentColor;
+      border-radius: 50%;
+      background: rgba(var(--accent-color-rgb, 51, 154, 240), 0.1);
+      box-shadow: 0 0 0 0.0625rem rgba(0, 0, 0, 0.45), 0 0.125rem 0.5rem rgba(0, 0, 0, 0.35);
+      transition: transform 0.15s ease, background-color 0.15s ease;
+
+      &::before,
+      &::after {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        background: currentColor;
+        transform: translate(-50%, -50%);
+      }
+
+      &::before {
+        width: 0.25rem;
+        height: 0.25rem;
+        border-radius: 50%;
+      }
+
+      &::after {
+        width: 2.125rem;
+        height: 0.0625rem;
+        background: linear-gradient(
+          to right,
+          currentColor 0,
+          currentColor 0.25rem,
+          transparent 0.25rem,
+          transparent 1.875rem,
+          currentColor 1.875rem,
+          currentColor 2.125rem
+        );
+      }
+    }
+
+    &:hover .workspace-beacon-ring {
+      transform: scale(1.12);
+      background: rgba(var(--accent-color-rgb, 51, 154, 240), 0.2);
+    }
+
+    .workspace-beacon-arrow {
+      display: none;
+    }
+  }
+
+  // Off-screen selected layer: subtle floating badge at viewport edge pointing toward it
+  &[data-state='offscreen'] {
+    .workspace-beacon-ring {
+      position: absolute;
+      inset: 0.1875rem;
+      border: 0.09375rem solid currentColor;
+      border-radius: 50%;
+      background: var(--background-color);
+      box-shadow: 0 0.1875rem 0.625rem rgba(0, 0, 0, 0.35);
+      transition: transform 0.15s ease;
+    }
+
+    .workspace-beacon-arrow {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0.5rem;
+      height: 0.5rem;
+      border-top: 0.125rem solid currentColor;
+      border-right: 0.125rem solid currentColor;
+      transform: translate(-50%, -50%) rotate(calc(var(--beacon-angle, 0deg) + 45deg));
+      pointer-events: none;
+    }
+
+    &:hover .workspace-beacon-ring {
+      transform: scale(1.1);
+    }
+  }
+}
