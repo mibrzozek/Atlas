@@ -337,6 +337,48 @@ export function installDirector(rootStore: RootStore): void {
     },
 
     /**
+     * Places named photos at exact positions and sizes, stacked in the order given (first on top):
+     * for nested/embedded compositions. Height follows the photo's natural aspect when omitted.
+     */
+    place: (
+      id: string,
+      placements: Array<{ photo: number; x: number; y: number; width: number; height?: number }>,
+    ) => {
+      const workspace = workspaceOf(id);
+      if (workspace.isLocked) {
+        throw new Error('The workspace is locked');
+      }
+      if (!Array.isArray(placements) || placements.length === 0) {
+        throw new Error('Give a list of { photo, x, y, width, height? }');
+      }
+      const images = imagesOf(workspace);
+      const poses: Record<string, Rect> = {};
+      const topDown: string[] = [];
+      for (const p of placements) {
+        if (!p || typeof p !== 'object') {
+          throw new Error('Each placement must be { photo, x, y, width, height? }');
+        }
+        const index = numberOf(p.photo, 'photo', 1, images.length) - 1;
+        const item = images[index];
+        if (poses[item.id] !== undefined) {
+          throw new Error(`Photo ${p.photo} is listed more than once`);
+        }
+        const width = numberOf(p.width, 'width', 1, 1e7);
+        const height =
+          p.height !== undefined ? numberOf(p.height, 'height', 1, 1e7) : width / item.imageAspect;
+        poses[item.id] = {
+          x: numberOf(p.x, 'x', -1e7, 1e7),
+          y: numberOf(p.y, 'y', -1e7, 1e7),
+          width,
+          height,
+        };
+        topDown.push(item.id);
+      }
+      workspace.arrange(poses, topDown);
+      return topDown.length;
+    },
+
+    /**
      * Its photos along a path to pan over (`photoPath`), right of everything else and out of its way, as
      * high as they are now, each leg over the ones after it: one change to undo. Where the camera starts, and each leg with the frame at
      * its end and the photos to hide before it begins, by number

@@ -17,6 +17,8 @@
 //                                             40 of them picked at random (a large tag or collection)
 //   arrange <workspace id> columns|rows|grid [count] [gap] [{"photos": [2, 5, 9], "below": true}]
 //                                             only those photos, in that order; below: under everything else
+//   place <workspace id> [{"photo": 1, "x": 0, "y": 0, "width": 100, "height": 150}, ...]
+//                                             exact positions/sizes stacked top-down (for nested compositions)
 //   path <workspace id> <seed> [gap] [{"turns": "loop"}]   its photos along a path to pan over: short rows
 //                                             of the wide ones and columns of the tall ones in turn, turning
 //                                             at random, or with "loop" right, down, left, up round and round
