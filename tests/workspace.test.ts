@@ -1178,4 +1178,21 @@ describe('photo borders', () => {
     ).toBeUndefined();
     expect(borderFromRow('invalid')).toBeUndefined();
   });
+
+  it('indexes huge nested rects without cell explosion and queries them accurately', () => {
+    const index = new SpatialIndex(1024);
+    index.set('huge', { x: 100000, y: 0, width: 2200000, height: 3300000 });
+    index.set('tiny', { x: 1554015, y: 1158578, width: 40, height: 60 });
+    expect(index.size).toBe(2);
+    // Tight viewport over the tiny nested photo finds both
+    const hit = index.query({ x: 1554000, y: 1158550, width: 100, height: 100 });
+    expect(hit).toEqual(new Set(['huge', 'tiny']));
+    // Viewport outside both finds neither
+    expect(index.query({ x: -5000, y: -5000, width: 100, height: 100 }).size).toBe(0);
+    // Deleting the huge item is immediate and leaves only the tiny one
+    index.delete('huge');
+    expect(index.query({ x: 1554000, y: 1158550, width: 100, height: 100 })).toEqual(
+      new Set(['tiny']),
+    );
+  });
 });

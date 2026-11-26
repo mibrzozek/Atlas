@@ -67,6 +67,8 @@ const MIN_TILE_IMAGE_PIXELS = 4;
  * is far away. Then a frame draws that one picture instead of every image on its own (some 64 MB)
  */
 const OVERVIEW_SIZE = 4096;
+/** Only build/blit the 64 MB overview canvas when there are enough tiny tiles to justify it */
+const MIN_OVERVIEW_TILES = 200;
 /** How long the images have to rest before the overview is drawn anew, in ms */
 const OVERVIEW_REST = 250;
 /** How far around the view images are already put in the page, in screen pixels */
@@ -1520,7 +1522,11 @@ export class WorkspaceSurface {
 
     // What was asked for in an earlier frame and is not on screen now is not loaded first anymore
     this.tileImages.forgetUrgent();
-    if (tiles.length > 0 && this.dragged === undefined && this.drawOverview(context, scale)) {
+    if (
+      tiles.length >= MIN_OVERVIEW_TILES &&
+      this.dragged === undefined &&
+      this.drawOverview(context, scale)
+    ) {
       return;
     }
     // More tiny images than can be kept would be loaded over and over: the rest are dots

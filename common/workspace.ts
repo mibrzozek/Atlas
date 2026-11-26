@@ -1407,9 +1407,16 @@ export function scaleItems(
  * Finds the objects in a part of the world without looking at all of them: every object is listed in the
  * square cells of the world that it touches.
  */
+/**
+ * Objects covering more grid cells than this are kept in a small side list instead of hashed into
+ * every cell: prevents a huge nested/backdrop photo from allocating millions of map entries.
+ */
+const MAX_INDEX_CELLS = 64;
+
 export class SpatialIndex {
   private readonly cells = new Map<string, Set<string>>();
   private readonly rects = new Map<string, Rect>();
+  private readonly large = new Set<string>();
 
   constructor(private readonly cellSize = 1024) {}
 
@@ -1420,6 +1427,10 @@ export class SpatialIndex {
   set(id: string, rect: Rect): void {
     this.delete(id);
     this.rects.set(id, rect);
+    if (this.cellCount(rect) > MAX_INDEX_CELLS) {
+      this.large.add(id);
+      return;
+    }
     this.forEachCell(rect, (key) => {
       let cell = this.cells.get(key);
       if (cell === undefined) {
@@ -1436,6 +1447,9 @@ export class SpatialIndex {
       return;
     }
     this.rects.delete(id);
+    if (this.large.delete(id)) {
+      return;
+    }
     this.forEachCell(rect, (key) => {
       const cell = this.cells.get(key);
       cell?.delete(id);
@@ -1459,6 +1473,7 @@ export class SpatialIndex {
       this.rects.forEach((_, id) => add(id));
     } else {
       this.forEachCell(area, (key) => this.cells.get(key)?.forEach(add));
+      this.large.forEach(add);
     }
     return found;
   }
