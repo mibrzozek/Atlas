@@ -39,6 +39,8 @@ export interface ShotChanges {
   arrivalTime?: number;
   stay?: string;
   easing?: string;
+  /** Lock this shot to a layer: true (target photo or majority layer), a photo number, or false (unlock) */
+  lock?: boolean | number;
 }
 
 export interface MotionChanges {
@@ -167,10 +169,10 @@ export function shotFrame(frame: Rect, aspect: number, changes: ShotChanges, pla
     const [x, y, width, height] = Array.isArray(changes.frame) ? changes.frame : [];
     result = frameInShape(
       {
-        x: numberOf(x, 'frame x', -1e6, 1e6),
-        y: numberOf(y, 'frame y', -1e6, 1e6),
-        width: numberOf(width, 'frame width', 1, 1e6),
-        height: numberOf(height, 'frame height', 1, 1e6),
+        x: numberOf(x, 'frame x', -1e7, 1e7),
+        y: numberOf(y, 'frame y', -1e7, 1e7),
+        width: numberOf(width, 'frame width', 1, 1e7),
+        height: numberOf(height, 'frame height', 1, 1e7),
       },
       aspect,
     );
@@ -388,6 +390,37 @@ export function timelineWarnings(shots: readonly ShotFacts[], beat?: number): st
     }
   });
   return warnings;
+}
+
+/** Resolves a shot's `lock` option into a layer id change (`false` clears, `true` uses target photo or prediction) */
+export function resolveShotLock(
+  lock: boolean | number | undefined,
+  targetPhoto: number | undefined,
+  places: Places,
+  predictedId: string | undefined,
+): { hasChange: boolean; lockToLayer?: string } {
+  if (lock === undefined) {
+    return { hasChange: false };
+  }
+  if (lock === false) {
+    return { hasChange: true, lockToLayer: undefined };
+  }
+  if (typeof lock === 'number') {
+    if (!Number.isInteger(lock)) {
+      throw new Error('lock photo must be a whole number');
+    }
+    return { hasChange: true, lockToLayer: numbered(places.photos, lock, 'photo') };
+  }
+  if (lock === true) {
+    if (targetPhoto !== undefined) {
+      return { hasChange: true, lockToLayer: numbered(places.photos, targetPhoto, 'photo') };
+    }
+    if (predictedId !== undefined) {
+      return { hasChange: true, lockToLayer: predictedId };
+    }
+    throw new Error('No layer found to lock this shot to');
+  }
+  throw new Error('lock is true, false, or a photo number');
 }
 
 /** A pair of timestamps immediately before and at a cut or loop seam, to test pixel continuity */

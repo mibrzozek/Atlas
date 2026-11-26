@@ -74,7 +74,8 @@
 //   setShot <workspace id> <shot> {...}       {"photo": 12} fills it with photo 12 ("room": 0.1 shows all
 //                                             of it), or {"photos": [3, 4]}, {"title": true}, {"all": true},
 //                                             {"frame": [x, y, w, h]}; then "zoom": 1.5, "move": [0.1, 0];
-//                                             and "length", "arrival", "arrivalTime", "stay", "easing".
+//                                             and "length", "arrival", "arrivalTime", "stay", "easing",
+//                                             "lock": true | false | <photo>.
 //                                             A pan over all of a photo: {"photo": 12, "align": "start"},
 //                                             then a shot {"photo": 12, "align": "end", "arrival": "scroll"}
 //   addShot <workspace id> <after shot, 0: first> [{...}]   the same changes

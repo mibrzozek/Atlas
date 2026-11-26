@@ -11,6 +11,7 @@ import {
   parseBatchSteps,
   pixelDiff,
   Places,
+  resolveShotLock,
   seamPairs,
   ShotFacts,
   shotFrame,
@@ -270,6 +271,34 @@ describe('the Director edits', () => {
     const pop = new Uint8ClampedArray([250, 250, 250, 255, 0, 0, 0, 255]);
     expect(pixelDiff(a, b)).toEqual({ rmse: 0.58, maxDelta: 1, seamless: true });
     expect(pixelDiff(a, pop).seamless).toBe(false);
+  });
+
+  it('resolves shot layer lock options and aligns explicit frame bounds with place (+/-1e7)', () => {
+    expect(resolveShotLock(undefined, 1, places, 'a')).toEqual({ hasChange: false });
+    expect(resolveShotLock(false, 1, places, 'a')).toEqual({
+      hasChange: true,
+      lockToLayer: undefined,
+    });
+    expect(resolveShotLock(true, 2, places, 'a')).toEqual({ hasChange: true, lockToLayer: 'b' });
+    expect(resolveShotLock(true, undefined, places, 'c')).toEqual({
+      hasChange: true,
+      lockToLayer: 'c',
+    });
+    expect(resolveShotLock(3, 1, places, 'a')).toEqual({ hasChange: true, lockToLayer: 'c' });
+    expect(() => resolveShotLock(true, undefined, places, undefined)).toThrow('No layer');
+    expect(() => resolveShotLock(1.5, undefined, places, 'a')).toThrow('whole number');
+    expect(() => resolveShotLock('a' as unknown as boolean, undefined, places, 'a')).toThrow(
+      'lock is',
+    );
+
+    const wideCoord = shotFrame(
+      start,
+      tall,
+      { frame: [5_000_000, 3_000_000, 900_000, 1_600_000] },
+      places,
+    );
+    expect(wideCoord.x).toBeCloseTo(5_000_000);
+    expect(wideCoord.width).toBeCloseTo(900_000);
   });
 });
 

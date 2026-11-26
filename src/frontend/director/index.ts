@@ -20,6 +20,7 @@ import {
   frameAround,
   InRow,
   MAX_SOUND_VOLUME,
+  predictedLayerForShot,
   SOUND_VOLUME,
   soundsByTime,
   startsOf,
@@ -78,6 +79,7 @@ import {
   photoNumbers,
   pixelDiff,
   Places,
+  resolveShotLock,
   seamPairs,
   ShotChanges,
   shotFrame,
@@ -207,6 +209,17 @@ export function installDirector(rootStore: RootStore): void {
         placesAt(workspace, middleOfShot(video, n)),
       );
       workspace.changeCameraStop(id, { frame });
+    }
+    if (changes.lock !== undefined) {
+      const video = videoOf(workspace);
+      const n = video.camera.findIndex((stop) => stop.id === id);
+      const stop = video.camera[n];
+      const places = placesAt(workspace, middleOfShot(video, n));
+      const predicted = predictedLayerForShot(stop.frame, workspace.items.slice());
+      const resolved = resolveShotLock(changes.lock, changes.photo, places, predicted);
+      if (resolved.hasChange) {
+        workspace.changeCameraStop(id, { lockToLayer: resolved.lockToLayer });
+      }
     }
   };
   /**
@@ -1101,6 +1114,9 @@ export function installDirector(rootStore: RootStore): void {
             arrivalTime: tenths(stop.arrivalTime),
             stay: stop.stay,
             easing: stop.easing,
+            ...(stop.lockToLayer !== undefined
+              ? { lockedTo: allPlaces.photos.indexOf(stop.lockToLayer) + 1 || undefined }
+              : {}),
             shows: photoNumbers(places, shown),
             frame: [stop.frame.x, stop.frame.y, stop.frame.width, stop.frame.height].map(
               Math.round,
