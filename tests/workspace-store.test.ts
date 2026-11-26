@@ -1055,4 +1055,18 @@ describe('WorkspaceStore', () => {
       'c',
     ]);
   });
+
+  it('selects the locked layer in the Layers panel when selecting a locked camera shot', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.addCameraStop();
+      workspace.changeCameraStop(workspace.video!.camera[0].id, { lockToLayer: 'b' });
+      workspace.clearSelection();
+    });
+    expect(workspace.selection.size).toBe(0);
+    runInAction(() => workspace.selectBlock('camera', workspace.video!.camera[0].id));
+    expect([...workspace.selection]).toEqual(['b']);
+  });
 });

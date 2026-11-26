@@ -1058,12 +1058,20 @@ export class ClientWorkspace {
       }
     } else if (lane === 'camera') {
       const index = video.camera.findIndex((stop) => stop.id === id);
+      const stop = index === -1 ? undefined : video.camera[index];
       const layout =
         index === -1
           ? undefined
           : video.layouts[blockAt(video.layouts, startsOf(video.camera)[index])];
       if (layout !== undefined) {
         this.show(layout.poses);
+      }
+      // Selecting a shot locked to a layer highlights that exact layer in the Layers panel
+      if (
+        stop?.lockToLayer !== undefined &&
+        this.items.some((item) => item.id === stop.lockToLayer)
+      ) {
+        this.selection.replace([stop.lockToLayer]);
       }
     }
   }
