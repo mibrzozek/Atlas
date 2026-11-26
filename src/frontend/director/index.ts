@@ -1597,6 +1597,8 @@ export function installDirector(rootStore: RootStore): void {
               ...src,
               id: generateId(),
               groupId: group?.id,
+              crop: undefined,
+              border: undefined,
               x: layer.rect.x,
               y: layer.rect.y,
               width: layer.rect.width,
@@ -1628,6 +1630,8 @@ export function installDirector(rootStore: RootStore): void {
         }
         return {
           ...item,
+          crop: undefined,
+          border: undefined,
           x: upd.rect.x,
           y: upd.rect.y,
           width: upd.rect.width,

@@ -1156,4 +1156,40 @@ describe('WorkspaceStore', () => {
     expect(workspace.groupsInUse).toHaveLength(0);
     expect(workspace.video!.camera).toHaveLength(0);
   });
+
+  it('does not shift locked camera stops when switching layouts, and undoes multi-step scale sessions cleanly', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.addLayout();
+      workspace.moveItems(new Set(['a']), 200, 0);
+      workspace.addLayout();
+      workspace.addCameraStop({ x: 100, y: 0, width: 90, height: 160 });
+      workspace.changeCameraStop(workspace.video!.camera[0].id, { lockToLayer: 'a' });
+    });
+    const frameBefore = workspace.video!.camera[0].frame;
+    // Clicking layout 1 moves 'a' back to layout 1's pose, but must NOT shift the locked camera stop
+    runInAction(() => workspace.selectBlock('layout', workspace.video!.layouts[0].id));
+    expect(workspace.video!.camera[0].frame).toEqual(frameBefore);
+
+    // Multi-step session where step 1 is a no-op (factor = 1) and step 2 scales: one undo reverts BOTH items and locked shot
+    runInAction(() => workspace.clearBlockSelection());
+    const from = workspace.items.slice();
+    runInAction(() => {
+      workspace.select('a', false);
+      workspace.scaleSelection(1, { x: 0, y: 0 }, from);
+      workspace.scaleSelection(2, { x: 0, y: 0 }, from);
+    });
+    expect(workspace.video!.camera[0].frame.width).toBeCloseTo(frameBefore.width * 2);
+    runInAction(() => workspace.undo());
+    expect(workspace.video!.camera[0].frame).toEqual(frameBefore);
+
+    // Selecting a locked camera stop on a locked workspace keeps selection empty
+    runInAction(() => {
+      workspace.toggleLock();
+      workspace.selectBlock('camera', workspace.video!.camera[0].id);
+    });
+    expect(workspace.selection.size).toBe(0);
+  });
 });

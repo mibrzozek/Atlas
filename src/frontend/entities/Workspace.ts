@@ -1095,6 +1095,7 @@ export class ClientWorkspace {
       }
       // Selecting a shot locked to a layer highlights that exact layer in the Layers panel
       if (
+        !this.isLocked &&
         stop?.lockToLayer !== undefined &&
         this.items.some((item) => item.id === stop.lockToLayer)
       ) {
@@ -1108,7 +1109,8 @@ export class ClientWorkspace {
     if (this.isLocked) {
       this.shownPoses = poses;
     } else {
-      this.arrange(poses);
+      // Restoring a layout's stored poses for preview/selection must not shift locked camera stops
+      this.arrange(poses, [], false);
     }
   }
 
@@ -1294,7 +1296,11 @@ export class ClientWorkspace {
    * With `topDown`, those objects are stacked in that order, the first on top. Nothing changes when all
    * is there already.
    */
-  @action.bound arrange(poses: Record<string, Pose>, topDown: readonly string[] = []): void {
+  @action.bound arrange(
+    poses: Record<string, Pose>,
+    topDown: readonly string[] = [],
+    followLocked = true,
+  ): void {
     const items = this.items.slice();
     const posed = [...topDown]
       .reverse()
@@ -1304,7 +1310,7 @@ export class ClientWorkspace {
       item.z !== before.z ||
       (item.kind === 'image' && before.kind === 'image' && !sameRect(cropOf(item), cropOf(before)));
     if (!this.isLocked && posed.some((item, i) => isMoved(item, items[i]))) {
-      this.change(posed);
+      this.change(posed, followLocked);
     }
   }
 
@@ -1439,10 +1445,12 @@ export class ClientWorkspace {
   }
 
   /** What is on it from now on: remembered for undoing, and stored */
-  private change(items: WorkspaceItem[]) {
+  private change(items: WorkspaceItem[], followLocked = true) {
     const prevItems = this.items.slice();
     const nextVideo =
-      this.video !== undefined ? followLockedLayers(this.video, prevItems, items) : undefined;
+      followLocked && this.video !== undefined
+        ? followLockedLayers(this.video, prevItems, items)
+        : undefined;
     const videoChanged = nextVideo !== undefined && nextVideo !== this.video;
     this.remember(prevItems, videoChanged ? 'whole' : undefined);
     // Another change ends a crop that was going on; applying it is a change of its own
@@ -1463,10 +1471,10 @@ export class ClientWorkspace {
       this.sessionFrom = from;
       this.sessionVideoFrom = this.video;
       const baseVideo = this.sessionVideoFrom;
-      const nextVideo =
-        baseVideo !== undefined ? followLockedLayers(baseVideo, from, items) : undefined;
-      const videoChanged = nextVideo !== undefined && nextVideo !== baseVideo;
-      this.remember(from, videoChanged ? 'whole' : undefined);
+      const hasLockedShots =
+        baseVideo !== undefined && baseVideo.camera.some((stop) => stop.lockToLayer !== undefined);
+      // Remember the video whenever any shot is locked to a layer so later steps in the session undo cleanly
+      this.remember(from, hasLockedShots ? 'whole' : undefined);
     }
     this.items.replace(items);
     if (this.sessionVideoFrom !== undefined) {

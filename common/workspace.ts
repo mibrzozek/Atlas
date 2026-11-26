@@ -1273,8 +1273,7 @@ export function bringToFront(
 }
 
 /**
- * Objects moved by `dx, dy`. They end up in front of all the others, as something put down on a table
- * lies on top, in the same order among themselves.
+ * Objects moved by `dx, dy`, keeping their stacking order (the Layers panel is the source of truth for z).
  */
 export function moveItems(
   items: readonly WorkspaceItem[],

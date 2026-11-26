@@ -995,6 +995,7 @@ export function predictedLayerForShot(
   }
   const overlapping = items.filter(
     (item) =>
+      !item.isHidden &&
       item.width > 0 &&
       item.height > 0 &&
       item.x < frame.x + frame.width &&

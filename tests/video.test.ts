@@ -225,6 +225,35 @@ describe('blocks in a row', () => {
     );
   });
 
+  it('skips hidden layers when predicting the majority layer for a shot', () => {
+    const visible = {
+      id: 'visible',
+      kind: 'image' as const,
+      fileId: 'f1',
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 200,
+      z: 1,
+      imageAspect: 1,
+    };
+    const hiddenTop = {
+      id: 'hidden',
+      kind: 'image' as const,
+      fileId: 'f2',
+      x: 0,
+      y: 0,
+      width: 200,
+      height: 200,
+      z: 5,
+      imageAspect: 1,
+      isHidden: true,
+    };
+    expect(
+      predictedLayerForShot({ x: 10, y: 10, width: 100, height: 100 }, [visible, hiddenTop])?.id,
+    ).toBe('visible');
+  });
+
   it('know the shot before one, where the camera comes from', () => {
     const video = {
       ...newVideo(view),

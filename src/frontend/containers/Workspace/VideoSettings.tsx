@@ -824,13 +824,6 @@ export const ExportSettings = observer(({ workspace }: { workspace: ClientWorksp
       }
     });
   }, [workspace]);
-  // The next name in that folder (or the one videos were saved to last), shown as the name to begin with
-  useEffect(() => {
-    const target = folder ?? storedFolder(VIDEO_FOLDER_KEY);
-    if (naming !== undefined && target !== undefined) {
-      nextFileNameIn(naming, target).then(setHint);
-    }
-  }, [naming, folder]);
   // Tier 1 phone (<= 26 MB) by default; `phone-full` saves uncapped 1080p reels straight to Desktop
   const [size, setSize] = useState<VideoSize>('phone');
   const [desktopFolder, setDesktopFolder] = useState<string | undefined>();
@@ -849,6 +842,13 @@ export const ExportSettings = observer(({ workspace }: { workspace: ClientWorksp
     };
   }, []);
   const effectiveFolder = size === 'phone-full' ? desktopFolder ?? folder : folder;
+  // The next name in the effective target folder (including Desktop for `phone-full`), shown as the name to begin with
+  useEffect(() => {
+    const target = effectiveFolder ?? storedFolder(VIDEO_FOLDER_KEY);
+    if (naming !== undefined && target !== undefined) {
+      nextFileNameIn(naming, target).then(setHint);
+    }
+  }, [naming, effectiveFolder]);
   const output = outputSize(video, size);
   const fileName = fileNameOf(name);
   const length = videoLength(video);
