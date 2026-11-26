@@ -20,6 +20,7 @@
 //   place <workspace id> [{"photo": 1, "x": 0, "y": 0, "width": 100, "height": 150}, ...]
 //                                             exact positions/sizes stacked top-down (for nested compositions)
 //   group <workspace id> <name> [photos...] [{"lock": true}]   group named photos into a labelled layer group
+//   copy <workspace id> [photos...]           duplicate named photos on the workspace; returns new photo numbers
 //   path <workspace id> <seed> [gap] [{"turns": "loop"}]   its photos along a path to pan over: short rows
 //                                             of the wide ones and columns of the tall ones in turn, turning
 //                                             at random, or with "loop" right, down, left, up round and round

@@ -433,6 +433,44 @@ export function installDirector(rootStore: RootStore): void {
     },
 
     /**
+     * Duplicates named photos on the workspace (for multi-cluster seamless relay compositions)
+     * and returns their new 1-based photo numbers in the same order.
+     */
+    copy: (id: string, photos: number[]) => {
+      const workspace = workspaceOf(id);
+      if (workspace.isLocked) {
+        throw new Error('The workspace is locked');
+      }
+      const images = imagesOf(workspace);
+      if (images.length === 0) {
+        throw new Error('It has no photos');
+      }
+      if (!Array.isArray(photos) || photos.length === 0) {
+        throw new Error('Give a list of photo numbers to copy');
+      }
+      const ids: string[] = [];
+      for (const raw of photos) {
+        const photo = numberOf(raw, 'photo', 1, images.length);
+        if (!Number.isInteger(photo)) {
+          throw new Error('photo must be a whole number');
+        }
+        ids.push(images[photo - 1].id);
+      }
+      const beforeIds = new Set(images.map((item) => item.id));
+      workspace.selectMany(ids, false);
+      workspace.duplicateSelection();
+      workspace.clearSelection();
+      const afterImages = imagesOf(workspace);
+      const createdNums: number[] = [];
+      afterImages.forEach((item, idx) => {
+        if (!beforeIds.has(item.id)) {
+          createdNums.push(idx + 1);
+        }
+      });
+      return createdNums;
+    },
+
+    /**
      * Its photos along a path to pan over (`photoPath`), right of everything else and out of its way, as
      * high as they are now, each leg over the ones after it: one change to undo. Where the camera starts, and each leg with the frame at
      * its end and the photos to hide before it begins, by number
