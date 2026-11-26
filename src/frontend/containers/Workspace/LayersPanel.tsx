@@ -42,11 +42,17 @@ interface LayersPanelProps {
  */
 const LayersPanel = observer(({ workspace, images }: LayersPanelProps) => {
   const { uiStore } = useStore();
-  const [isBorderOpen, setIsBorderOpen] = useState(false);
+  const [borderSession, setBorderSession] = useState(0);
   const layers = workspace.layers;
   const { selection, isLocked } = workspace;
   const text = workspace.selectedText;
   const background = workspace.selectedBackground;
+
+  useEffect(() => {
+    if (isLocked) {
+      setBorderSession(0);
+    }
+  }, [isLocked]);
 
   return (
     <aside className="workspace-layers" aria-label="Layers">
@@ -66,10 +72,14 @@ const LayersPanel = observer(({ workspace, images }: LayersPanelProps) => {
         workspace={workspace}
         images={images}
         layers={layers}
-        onOpenBorder={() => setIsBorderOpen(true)}
+        onOpenBorder={() => setBorderSession((n) => n + 1)}
       />
-      {isBorderOpen && !isLocked && (
-        <ImageBorderDialog workspace={workspace} onClose={() => setIsBorderOpen(false)} />
+      {borderSession > 0 && !isLocked && (
+        <ImageBorderDialog
+          key={borderSession}
+          workspace={workspace}
+          onClose={() => setBorderSession(0)}
+        />
       )}
       {text !== undefined && <TextEditor key={text.id} workspace={workspace} text={text} />}
       {background !== undefined && (

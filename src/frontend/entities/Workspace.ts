@@ -647,10 +647,17 @@ export class ClientWorkspace {
       return item;
     });
     if (from !== undefined) {
-      this.changeInSession(from, next);
+      if (changed || from === this.sessionFrom) {
+        this.changeInSession(from, next);
+      }
     } else if (changed) {
       this.change(next);
     }
+  }
+
+  /** Whether an in-progress edit session started from `from` is still the active undo session */
+  isInSession(from: readonly WorkspaceItem[]): boolean {
+    return this.sessionFrom === from;
   }
 
   /** Takes things off the workspace. Only off the workspace: the files of images are not touched */

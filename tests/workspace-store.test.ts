@@ -929,9 +929,21 @@ describe('WorkspaceStore', () => {
     const before = from.find((i) => i.id === 'a')!;
     const ids = new Set(['a']);
     runInAction(() => {
-      workspace.setImageBorder(ids, { mode: 'equal', topBottom: 10, sides: 10, color: '#fff' }, from);
-      workspace.setImageBorder(ids, { mode: 'equal', topBottom: 30, sides: 30, color: '#fff' }, from);
-      workspace.setImageBorder(ids, { mode: 'split', topBottom: 20, sides: 5, color: '#000' }, from);
+      workspace.setImageBorder(
+        ids,
+        { mode: 'equal', topBottom: 10, sides: 10, color: '#fff' },
+        from,
+      );
+      workspace.setImageBorder(
+        ids,
+        { mode: 'equal', topBottom: 30, sides: 30, color: '#fff' },
+        from,
+      );
+      workspace.setImageBorder(
+        ids,
+        { mode: 'split', topBottom: 20, sides: 5, color: '#000' },
+        from,
+      );
     });
     const after = workspace.items.find((i) => i.id === 'a')!;
     expect(after.width).toBe(before.width + 10);
@@ -939,5 +951,62 @@ describe('WorkspaceStore', () => {
     // One undo restores the original item before the whole slider session
     runInAction(() => workspace.undo());
     expect(workspace.items.find((i) => i.id === 'a')).toEqual(before);
+  });
+
+  it('does not pollute undo/redo on a no-op setImageBorder and tracks active session', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a') }]);
+    const ids = new Set(['a']);
+    runInAction(() => {
+      workspace.setImageBorder(ids, { mode: 'equal', topBottom: 16, sides: 16, color: '#fff' });
+      workspace.undo();
+    });
+    const from = workspace.items.slice();
+    // No-op: photo has no border and we pass undefined with `from`
+    runInAction(() => workspace.setImageBorder(ids, undefined, from));
+    expect(workspace.isInSession(from)).toBe(false);
+    // Redo stack is still intact
+    runInAction(() => workspace.redo());
+    const redone = workspace.items.find((i) => i.id === 'a')!;
+    expect(redone.kind === 'image' && redone.border?.topBottom).toBe(16);
+
+    // Real edit starts a session; an external undo ends it
+    const sessionStart = workspace.items.slice();
+    runInAction(() =>
+      workspace.setImageBorder(
+        ids,
+        { mode: 'equal', topBottom: 12, sides: 12, color: '#fff' },
+        sessionStart,
+      ),
+    );
+    expect(workspace.isInSession(sessionStart)).toBe(true);
+    runInAction(() => workspace.undo());
+    expect(workspace.isInSession(sessionStart)).toBe(false);
+  });
+
+  it('removes a selected sound block, clears selection, and supports undo/redo', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a') }]);
+    const soundId = 'sfx-1';
+    runInAction(() => {
+      workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 });
+      workspace.addSound({
+        id: soundId,
+        path: 'camera/shutter.mp3',
+        name: 'shutter',
+        at: 2,
+        duration: 1.5,
+        volume: 0.35,
+      });
+      workspace.selectBlock('sound', soundId);
+    });
+    expect(workspace.selectedBlock).toEqual({ lane: 'sound', id: soundId });
+    runInAction(() => workspace.removeBlock('sound', soundId));
+    expect(workspace.selectedBlock).toBeUndefined();
+    expect(workspace.video?.sounds).toHaveLength(0);
+    runInAction(() => workspace.undo());
+    expect(workspace.video?.sounds).toHaveLength(1);
+    runInAction(() => workspace.redo());
+    expect(workspace.video?.sounds).toHaveLength(0);
   });
 });

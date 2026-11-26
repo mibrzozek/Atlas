@@ -13,7 +13,12 @@ import {
   subjectOnFrame,
   zoomPhoto,
 } from '../common/crop';
-import { arrangeItems, withImageBorder, WorkspaceImageItem, workspaceFromRow } from '../common/workspace';
+import {
+  arrangeItems,
+  withImageBorder,
+  WorkspaceImageItem,
+  workspaceFromRow,
+} from '../common/workspace';
 
 /** A photo of 3:2 shown in a square frame of 100 at 0, 0: the middle of it, by itself */
 const square = (crop?: WorkspaceImageItem['crop']): WorkspaceImageItem => ({
@@ -221,5 +226,20 @@ describe('crops', () => {
     expect(close(cropped)).toEqual([-35, -20, 95, 140]);
     expect(innerImageRect(cropped)).toEqual({ x: -25, y: 0, width: 75, height: 100 });
     expect(close(cropped.crop!)).toEqual([0, 0, 0.5, 1]);
+  });
+
+  it('clamps oversized border insets so the inner photo retains at least 1 unit', () => {
+    const tiny = {
+      ...square(),
+      width: 20,
+      height: 10,
+      border: { mode: 'split' as const, topBottom: 50, sides: 50, color: '#ffffff' },
+    };
+    const insets = borderInsets(tiny);
+    expect(insets.sides).toBe(9.5);
+    expect(insets.topBottom).toBe(4.5);
+    const inner = innerImageRect(tiny);
+    expect(inner.width).toBe(1);
+    expect(inner.height).toBe(1);
   });
 });

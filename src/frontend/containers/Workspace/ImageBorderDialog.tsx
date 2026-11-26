@@ -59,8 +59,15 @@ export const ImageBorderDialog = observer(({ workspace, onClose }: ImageBorderDi
       if (targetIds.current.size === 0) {
         return;
       }
-      didEdit.current = true;
+      // If an external edit or Ctrl+Z ended our session while this floating panel stayed open,
+      // start a fresh session from current items instead of clobbering intermediate changes
+      if (didEdit.current && !workspace.isInSession(sessionFrom.current)) {
+        sessionFrom.current = workspace.items.slice();
+      }
       workspace.setImageBorder(targetIds.current, next, sessionFrom.current);
+      if (workspace.isInSession(sessionFrom.current)) {
+        didEdit.current = true;
+      }
     },
     [workspace],
   );
@@ -80,7 +87,7 @@ export const ImageBorderDialog = observer(({ workspace, onClose }: ImageBorderDi
   }, []);
 
   const cancel = useCallback(() => {
-    if (didEdit.current) {
+    if (didEdit.current && workspace.isInSession(sessionFrom.current)) {
       workspace.undo();
     }
     onClose();

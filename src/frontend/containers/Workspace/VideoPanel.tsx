@@ -59,18 +59,17 @@ const VideoPanel = observer(
         const { height } = element.style;
         element.style.height = 'auto';
         settings.style.flex = 'none';
-        const needed = Math.min(
-          element.offsetHeight,
-          Math.round(window.innerHeight * MOST_OF_WINDOW),
-        );
+        const max = Math.round(window.innerHeight * MOST_OF_WINDOW);
+        const needed = Math.min(element.offsetHeight, max);
         element.style.height = height;
         settings.style.flex = '';
         const addedByHand = isOpening.current
           ? 0
           : Math.max(0, uiStore.videoPanelHeight - leastHeight.current);
         leastHeight.current = needed;
-        if (isOpening.current || uiStore.videoPanelHeight !== needed + addedByHand) {
-          uiStore.setVideoPanelHeight(needed + addedByHand);
+        const target = Math.min(needed + addedByHand, max);
+        if (isOpening.current || uiStore.videoPanelHeight !== target) {
+          uiStore.setVideoPanelHeight(target);
         }
         isOpening.current = false;
       };

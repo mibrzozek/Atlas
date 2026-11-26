@@ -352,16 +352,22 @@ export function installDirector(rootStore: RootStore): void {
         throw new Error('Give a list of { photo, x, y, width, height? }');
       }
       const images = imagesOf(workspace);
+      if (images.length === 0) {
+        throw new Error('It has no photos');
+      }
       const poses: Record<string, Rect> = {};
       const topDown: string[] = [];
       for (const p of placements) {
         if (!p || typeof p !== 'object') {
           throw new Error('Each placement must be { photo, x, y, width, height? }');
         }
-        const index = numberOf(p.photo, 'photo', 1, images.length) - 1;
-        const item = images[index];
+        const photo = numberOf(p.photo, 'photo', 1, images.length);
+        if (!Number.isInteger(photo)) {
+          throw new Error('photo must be a whole number');
+        }
+        const item = images[photo - 1];
         if (poses[item.id] !== undefined) {
-          throw new Error(`Photo ${p.photo} is listed more than once`);
+          throw new Error(`Photo ${photo} is listed more than once`);
         }
         const width = numberOf(p.width, 'width', 1, 1e7);
         const height =

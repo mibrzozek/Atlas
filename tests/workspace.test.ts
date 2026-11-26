@@ -1173,7 +1173,9 @@ describe('photo borders', () => {
     };
     expect(workspaceFromRow(row, measure)).toEqual(row);
     expect(borderFromRow({ mode: 'equal', topBottom: 0, sides: 0, color: '#fff' })).toBeUndefined();
-    expect(borderFromRow({ mode: 'split', topBottom: -5, sides: 10, color: '#fff' })).toBeUndefined();
+    expect(
+      borderFromRow({ mode: 'split', topBottom: -5, sides: 10, color: '#fff' }),
+    ).toBeUndefined();
     expect(borderFromRow('invalid')).toBeUndefined();
   });
 });
