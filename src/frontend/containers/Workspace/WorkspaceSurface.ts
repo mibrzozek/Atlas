@@ -60,6 +60,11 @@ import { MAX_TILES, TileImages } from './TileImages';
  * an element for each of thousands of images would make every frame slow
  */
 const MIN_ELEMENT_PIXELS = 48;
+/**
+ * Images larger than this on screen are also drawn clipped on the canvas instead of as a DOM element:
+ * a 50,000,000px scaled DOM layer inside a nested workspace causes Chromium GPU OOM crashes on rapid zoom-out
+ */
+const MAX_ELEMENT_PIXELS = 8192;
 /** Smaller than this, an image is a plain dot: not worth loading even a tiny version */
 const MIN_TILE_IMAGE_PIXELS = 4;
 /**
@@ -1427,15 +1432,21 @@ export class WorkspaceSurface {
   }
 
   private moveCamera(camera: Camera) {
+    const isZooming = camera.zoom !== this.camera.zoom;
     this.camera = camera;
     // What is being drawn or dragged stays held where it was pressed on the workspace
     if (this.press?.hasMoved === true && this.press.gesture.kind !== 'pan') {
       this.follow(this.press);
     }
     if (!this.isMoving) {
-      // Moved as one picture on the graphics card while it moves; drawn sharp again once it stops
       this.isMoving = true;
-      this.worlds.forEach((world) => (world.style.willChange = 'transform'));
+      // Only promote to a GPU layer while panning: changing scale() rapidly on a will-change: transform
+      // container forces Chromium to re-rasterize massive GPU tile pyramids and can crash the renderer
+      if (!isZooming) {
+        this.worlds.forEach((world) => (world.style.willChange = 'transform'));
+      }
+    } else if (isZooming) {
+      this.worlds.forEach((world) => (world.style.willChange = ''));
     }
     window.clearTimeout(this.settleTimer);
     this.settleTimer = window.setTimeout(this.settle, SETTLE_DELAY);
@@ -1521,10 +1532,12 @@ export class WorkspaceSurface {
       if (!nearby.has(item.id)) {
         continue;
       }
-      // Texts and backgrounds are few, and always sharp
+      // Texts and backgrounds are few, and always sharp; images too small or too huge on screen go to canvas
+      const screenSpan = Math.max(item.width, item.height) * zoom;
       if (
         item.kind !== 'image' ||
-        Math.max(item.width, item.height) * steppedZoom >= MIN_ELEMENT_PIXELS
+        (Math.max(item.width, item.height) * steppedZoom >= MIN_ELEMENT_PIXELS &&
+          screenSpan <= MAX_ELEMENT_PIXELS)
       ) {
         shown.add(item.id);
       } else {
@@ -1649,15 +1662,23 @@ export class WorkspaceSurface {
     scale: number,
     bitmap: ImageBitmap | undefined,
   ) {
+    const canvasW = context.canvas.width;
+    const canvasH = context.canvas.height;
     let innerLeft = left;
     let innerTop = top;
     let innerWidth = width;
     let innerHeight = height;
     if (item.border !== undefined) {
       const { topBottom, sides } = borderInsets(item);
-      context.globalAlpha = 1;
-      context.fillStyle = this.resolveColor(item.border.color, PAPER_COLOR);
-      context.fillRect(left, top, width, height);
+      const bx0 = Math.max(0, left);
+      const by0 = Math.max(0, top);
+      const bx1 = Math.min(canvasW, left + width);
+      const by1 = Math.min(canvasH, top + height);
+      if (bx1 > bx0 && by1 > by0) {
+        context.globalAlpha = 1;
+        context.fillStyle = this.resolveColor(item.border.color, PAPER_COLOR);
+        context.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
+      }
       const dx = sides * scale;
       const dy = topBottom * scale;
       innerLeft += dx;
@@ -1668,18 +1689,34 @@ export class WorkspaceSurface {
     if (innerWidth <= 0 || innerHeight <= 0) {
       return;
     }
+    // Clip destination rect to the canvas viewport so oversized nested backdrops draw in O(viewport)
+    const dx0 = Math.max(0, innerLeft);
+    const dy0 = Math.max(0, innerTop);
+    const dx1 = Math.min(canvasW, innerLeft + innerWidth);
+    const dy1 = Math.min(canvasH, innerTop + innerHeight);
+    if (dx1 <= dx0 || dy1 <= dy0) {
+      return;
+    }
     if (bitmap !== undefined) {
       context.globalAlpha = 1;
+      const [sx, sy, sw, sh] = cropSource(bitmap, item);
+      const fx0 = (dx0 - innerLeft) / innerWidth;
+      const fx1 = (dx1 - innerLeft) / innerWidth;
+      const fy0 = (dy0 - innerTop) / innerHeight;
+      const fy1 = (dy1 - innerTop) / innerHeight;
       context.drawImage(
         bitmap,
-        ...cropSource(bitmap, item),
-        innerLeft,
-        innerTop,
-        innerWidth,
-        innerHeight,
+        sx + fx0 * sw,
+        sy + fy0 * sh,
+        (fx1 - fx0) * sw,
+        (fy1 - fy0) * sh,
+        dx0,
+        dy0,
+        dx1 - dx0,
+        dy1 - dy0,
       );
     } else {
-      this.fillWithColor(context, item.fileId, innerLeft, innerTop, innerWidth, innerHeight);
+      this.fillWithColor(context, item.fileId, dx0, dy0, dx1 - dx0, dy1 - dy0);
     }
   }
 
