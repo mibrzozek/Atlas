@@ -23,6 +23,9 @@
 //                                             only those photos, in that order; below: under everything else
 //   place <workspace id> [{"photo": 1, "x": 0, "y": 0, "width": 100, "height": 150}, ...]
 //                                             exact positions/sizes stacked top-down (for nested compositions)
+//   zoomChain <workspace id> <spec JSON | --stdin | --file>   build a full continuous zero-pause nested zoom-out
+//                                             (auto-clusters, relay bridges, optional loop, full-frame wide photos,
+//                                             constant zoom speed, locked cluster groups, and locked camera shots)
 //   group <workspace id> <name> [photos...] [{"lock": true}]   group named photos into a labelled layer group
 //   ungroup <workspace id> <name>             ungroup a named layer group (keeps its layers)
 //   copy <workspace id> [photos...]           duplicate named photos (safe inside locked groups); returns new photo numbers

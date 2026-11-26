@@ -167,7 +167,7 @@ export const MIN_BLOCK_LENGTH = 0.1;
 /** How much of the timeline is shown at first, in seconds; it zooms in and out */
 export const TIMELINE_SECONDS = 60;
 /** How much closer a push in ends (or a pull out begins): the frame this much smaller */
-const PUSH = 0.85;
+export const PUSH = 0.85;
 /** How long a whip takes at most */
 const WHIP_TIME = 0.35;
 
