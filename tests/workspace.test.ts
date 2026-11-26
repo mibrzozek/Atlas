@@ -639,8 +639,8 @@ describe('back to front', () => {
     const moved = moveItems(items, new Set(['b', 'c']), 10, -20);
     expect(moved.map((i) => [i.id, i.x, i.y, i.z])).toEqual([
       ['a', 0, 0, 5],
-      ['b', 510, -20, 6],
-      ['c', 910, -20, 7],
+      ['b', 510, -20, 1],
+      ['c', 910, -20, 3],
     ]);
   });
 
@@ -1014,7 +1014,7 @@ describe('a background keeps its layer', () => {
     const on = item('on', 0, 0, 3);
     const moved = moveItems([sheet, on], new Set(['s', 'on']), 10, 10);
     expect(moved[0]).toMatchObject({ z: -1, x: sheet.x + 10 });
-    expect(moved[1].z).toBe(4);
+    expect(moved[1].z).toBe(3);
     const items = [sheet, on];
     expect(bringToFront(items, 's')).toBe(items);
   });

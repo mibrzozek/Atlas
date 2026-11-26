@@ -1002,8 +1002,6 @@ export class WorkspaceSurface {
         gesture.elements ??= this.elementsOf(gesture.ids);
         for (const element of gesture.elements) {
           element.style.transform = `translate(${snapped.dx}px, ${snapped.dy}px)`;
-          // Over the others while dragged; it lies on top of them once let go
-          element.style.zIndex = '1';
         }
         this.drawGuides(snapped.guides);
         this.requestFrame();
@@ -1190,17 +1188,12 @@ export class WorkspaceSurface {
         this.dragged = undefined;
         delete this.viewport.dataset.moving;
         this.drawGuides([]);
-        gesture.elements?.forEach((element) => element.style.removeProperty('z-index'));
         if (hasMoved) {
           // The elements keep their offset until they are drawn at their new place (WorkspaceImage)
           this.workspace.moveItems(gesture.ids, gesture.offset.x, gesture.offset.y);
-        } else {
-          if (!(event.shiftKey || event.ctrlKey || event.metaKey)) {
-            // A click on one of several selected images selects just that one
-            this.workspace.select(gesture.pressed, false);
-          }
-          // Also an image of which only a corner showed from under another one
-          this.workspace.bringToFront(gesture.pressed);
+        } else if (!(event.shiftKey || event.ctrlKey || event.metaKey)) {
+          // A click selects the photo without changing its layer order (Layers panel owns z-order)
+          this.workspace.select(gesture.pressed, false);
         }
         this.requestFrame();
         break;

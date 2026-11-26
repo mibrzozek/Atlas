@@ -124,25 +124,44 @@ const LayerList = observer(({ workspace, images, layers, onOpenBorder }: LayerLi
     return () => observer.disconnect();
   }, []);
 
-  // What was selected on the surface comes into sight in the list: its row, or its group's
+  // What was selected on the surface comes into sight in the list: expand its group if needed
+  // and scroll directly to the specific layer row
   // Not a copy of the selection: thousands can be selected, and this runs on every render
   const firstSelected: string | undefined = workspace.selection.values().next().value;
   useEffect(() => {
+    if (firstSelected === undefined) {
+      return;
+    }
+    const selectedItem = layers.find((item) => item.id === firstSelected);
+    if (selectedItem?.groupId !== undefined && !expanded.has(selectedItem.groupId)) {
+      const groupId = selectedItem.groupId;
+      setExpanded((open) => (open.has(groupId) ? open : new Set([...open, groupId])));
+    }
+    // Only when another layer is selected, never when the user folds a group
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [firstSelected]);
+
+  useEffect(() => {
+    if (firstSelected === undefined) {
+      return;
+    }
     const element = list.current;
-    const index = rows.findIndex((row) =>
-      row.kind === 'layer'
-        ? row.item.id === firstSelected
-        : row.members.some((member) => member.id === firstSelected),
-    );
+    const layerIdx = rows.findIndex((row) => row.kind === 'layer' && row.item.id === firstSelected);
+    const index =
+      layerIdx !== -1
+        ? layerIdx
+        : rows.findIndex(
+            (row) => row.kind === 'group' && row.members.some((m) => m.id === firstSelected),
+          );
     if (element !== null && index !== -1) {
       const top = index * ROW_HEIGHT;
       if (top < element.scrollTop || top + ROW_HEIGHT > element.scrollTop + element.clientHeight) {
         element.scrollTop = top - element.clientHeight / 2;
       }
     }
-    // Only when another one is selected, not when the layers change
+    // Re-run when selection changes or right after its group expands so the specific layer scrolls into sight
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [firstSelected]);
+  }, [firstSelected, expanded]);
 
   const first = Math.max(0, Math.floor(scrollTop / ROW_HEIGHT) - SPARE_ROWS);
   const last = Math.min(rows.length, Math.ceil((scrollTop + height) / ROW_HEIGHT) + SPARE_ROWS);

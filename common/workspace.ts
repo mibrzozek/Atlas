@@ -1280,19 +1280,15 @@ export function moveItems(
   dx: number,
   dy: number,
 ): WorkspaceItem[] {
-  let z = frontZ(items);
-  const moved = items
-    .filter((item) => ids.has(item.id))
-    .sort((a, b) => a.z - b.z)
-    // A background keeps its layer, under what lies on it
-    .map((item) => ({
-      ...item,
-      x: item.x + dx,
-      y: item.y + dy,
-      z: item.kind === 'background' ? item.z : z++,
-    }));
-  const byId = new Map(moved.map((item) => [item.id, item]));
-  return items.map((item) => byId.get(item.id) ?? item);
+  return items.map((item) =>
+    ids.has(item.id)
+      ? {
+          ...item,
+          x: item.x + dx,
+          y: item.y + dy,
+        }
+      : item,
+  );
 }
 
 /** The layers from the top down, as the layers panel lists them */
