@@ -87,6 +87,17 @@ thing to zoom into like that, pick a better shot."
 21. **A dramatic push needs a subject that earns it:** a face, eyes, a gesture; ideally looking at us.
     An object or a costume prop (the fish-mouth bike float) is shown, not dived into.
 
+## Notes on workspace composition (2026-11-26)
+
+"Make sure to group photos according to what they are — for example the low riders nested workspace should
+have a group for the actual shots used in the scene arranged so that they are layered correctly onto one
+another, and the other photos from the tag should be grouped together and labelled as such."
+
+22. **Group the workspace by role:** put the photos used in the scene into a labelled locked group (e.g.
+    `Nested Scene`) stacked in exact top-to-bottom order so clicking any layer never buries the others,
+    and group the remaining unused photos from the tag into their own labelled group (e.g.
+    `Unused Tag Photos`).
+
 ## To ask the owner
 
 - The worst moments in the lowrider and Halloween reels (`demo/`), in their words.

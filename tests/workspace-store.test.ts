@@ -1009,4 +1009,27 @@ describe('WorkspaceStore', () => {
     runInAction(() => workspace.redo());
     expect(workspace.video?.sounds).toHaveLength(0);
   });
+
+  it('preserves internal z-order when bringing a locked group member to front', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b', 'c') }]);
+    runInAction(() => {
+      // Stack: c (top), a (middle), b (bottom); group a + b (locked by default)
+      workspace.moveLayers(new Set(['a']), 0);
+      workspace.moveLayers(new Set(['c']), 0);
+      workspace.selectMany(['a', 'b'], false);
+      workspace.groupSelection('Nested Scene');
+    });
+    const order = () =>
+      workspace.layers.filter((item) => item.kind === 'image').map((item) => item.id);
+    // Grouping moves a+b to the top of their span (under c): [c, a, b]
+    expect(order()).toEqual(['c', 'a', 'b']);
+    // Clicking bottom member 'b' brings the whole locked group above 'c' WITHOUT putting 'b' above 'a'
+    runInAction(() => workspace.bringToFront('b'));
+    expect(order()).toEqual(['a', 'b', 'c']);
+    // Clicking 'b' again while the group is already at the front is a no-op (no extra undo entry)
+    runInAction(() => workspace.bringToFront('b'));
+    runInAction(() => workspace.undo());
+    expect(order()).toEqual(['c', 'a', 'b']);
+  });
 });

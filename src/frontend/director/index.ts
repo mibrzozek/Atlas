@@ -385,6 +385,54 @@ export function installDirector(rootStore: RootStore): void {
     },
 
     /**
+     * Groups named photos into a labelled layer group (locked by default so clicking any member
+     * preserves internal layering). Photos are specified by 1-based number.
+     */
+    group: (id: string, name: string, photos: number[], options: { lock?: boolean } = {}) => {
+      const workspace = workspaceOf(id);
+      if (workspace.isLocked) {
+        throw new Error('The workspace is locked');
+      }
+      const trimmed = String(name ?? '').trim();
+      if (trimmed.length === 0) {
+        throw new Error('Give a group name');
+      }
+      const images = imagesOf(workspace);
+      if (images.length === 0) {
+        throw new Error('It has no photos');
+      }
+      if (!Array.isArray(photos) || photos.length < 2) {
+        throw new Error('Grouping takes two photos or more');
+      }
+      const ids: string[] = [];
+      const seen = new Set<string>();
+      for (const raw of photos) {
+        const photo = numberOf(raw, 'photo', 1, images.length);
+        if (!Number.isInteger(photo)) {
+          throw new Error('photo must be a whole number');
+        }
+        const item = images[photo - 1];
+        if (!seen.has(item.id)) {
+          seen.add(item.id);
+          ids.push(item.id);
+        }
+      }
+      if (ids.length < 2) {
+        throw new Error('Grouping takes two distinct photos or more');
+      }
+      workspace.selectMany(ids, false);
+      const created = workspace.groupSelection(trimmed);
+      workspace.clearSelection();
+      if (created === undefined) {
+        throw new Error('Could not create group');
+      }
+      if (options.lock === false) {
+        workspace.toggleGroupLock(created.id);
+      }
+      return { name: created.name, count: ids.length, isLocked: options.lock !== false };
+    },
+
+    /**
      * Its photos along a path to pan over (`photoPath`), right of everything else and out of its way, as
      * high as they are now, each leg over the ones after it: one change to undo. Where the camera starts, and each leg with the frame at
      * its end and the photos to hide before it begins, by number

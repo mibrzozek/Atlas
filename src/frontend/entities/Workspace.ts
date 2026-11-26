@@ -556,6 +556,22 @@ export class ClientWorkspace {
     if (this.isLocked) {
       return;
     }
+    const target = this.items.find((item) => item.id === id);
+    const group =
+      target?.groupId !== undefined
+        ? this.layerGroups.find((g) => g.id === target.groupId)
+        : undefined;
+    if (group?.isLocked) {
+      const members = new Set(
+        this.items.filter((item) => item.groupId === group.id).map((item) => item.id),
+      );
+      const next = moveLayers(this.items, members, 0);
+      const changed = next.some((item, i) => item.z !== this.items[i].z);
+      if (changed) {
+        this.change(next);
+      }
+      return;
+    }
     const items = bringToFront(this.items, id);
     if (items !== this.items) {
       this.change([...items]);
