@@ -1125,4 +1125,35 @@ describe('WorkspaceStore', () => {
     runInAction(() => workspace.undo());
     expect(workspace.groupsInUse.map((g) => g.id)).toEqual([group.id]);
   });
+
+  it('commits applySceneAndCamera (items, groups, and camera) as one atomic undoable change', async () => {
+    const { store } = setup();
+    const workspace = await store.create([{ label: 'Film', images: images('a', 'b') }]);
+    runInAction(() => workspace.startVideo({ x: 0, y: 0, width: 1000, height: 1000 }));
+    const beforeItems = workspace.items.slice();
+    const newGroup = { id: 'g-zoom', name: 'Zoom Cluster 1', isLocked: true };
+    const nextItems = beforeItems.map((it) =>
+      it.kind === 'image' ? { ...it, x: it.x + 5000, groupId: newGroup.id } : it,
+    );
+    const camera = [
+      {
+        id: 's1',
+        frame: { x: 5000, y: 0, width: 90, height: 160 },
+        length: 2,
+        arrival: 'cut' as const,
+        arrivalTime: 1.2,
+        stay: 'still' as const,
+        easing: 'smooth' as const,
+        lockToLayer: 'a',
+      },
+    ];
+    runInAction(() => workspace.applySceneAndCamera(nextItems, [newGroup], camera));
+    expect(workspace.video!.camera).toHaveLength(1);
+    expect(workspace.groupsInUse.map((g) => g.name)).toEqual(['Zoom Cluster 1']);
+    // One single undo reverts items, groups, AND camera together
+    runInAction(() => workspace.undo());
+    expect(workspace.items.slice()).toEqual(beforeItems);
+    expect(workspace.groupsInUse).toHaveLength(0);
+    expect(workspace.video!.camera).toHaveLength(0);
+  });
 });

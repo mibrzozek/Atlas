@@ -31,19 +31,23 @@ import {
   VideoSize,
   videoSwells,
 } from 'common/video';
-import { planZoomChain, ZoomChainNode } from 'common/zoom-chain';
+import { bridgeEndFrame, planZoomChain, ZoomChainNode } from 'common/zoom-chain';
 import { generateId } from '../../api/id';
 import { photoPath } from 'common/photo-path';
 import { crestOf } from 'common/video-motion';
 import {
   boundsOf,
+  frontZ,
+  LayerGroup,
   LayoutKind,
+  moveLayers,
   originalsOf,
   Point,
   Rect,
   rowsAndColumnsOf,
   Size,
   WorkspaceImageItem,
+  WorkspaceItem,
   suggestedCount,
 } from 'common/workspace';
 import {
@@ -192,11 +196,23 @@ export function installDirector(rootStore: RootStore): void {
   /** The number a sound effect has in `timeline`: by when it starts */
   const numberOfSound = (video: VideoProject, id: string) =>
     soundsByTime(video).findIndex((sound) => sound.id === id) + 1;
-  /** A shot changed (`ShotChanges`): its length first, as the moment it shows depends on it */
+  /** A shot changed (`ShotChanges`): validate everything before mutating */
   const changeShot = (workspace: ClientWorkspace, id: string, changes: ShotChanges) => {
     const settings = shotSettings(changes);
-    if (changes.length !== undefined) {
-      workspace.setBlockLength('camera', id, numberOf(changes.length, 'length', 0.1, 3600));
+    const nextLength =
+      changes.length !== undefined ? numberOf(changes.length, 'length', 0.1, 3600) : undefined;
+    // Pre-validate `lock` shape/bounds so invalid lock never leaves half-applied mutations
+    if (changes.lock !== undefined && changes.lock !== true && changes.lock !== false) {
+      if (typeof changes.lock !== 'number') {
+        throw new Error('lock is true, false, or a photo number');
+      }
+      if (!Number.isInteger(changes.lock)) {
+        throw new Error('lock photo must be a whole number');
+      }
+      numbered(imagesOf(workspace), changes.lock, 'photo');
+    }
+    if (nextLength !== undefined) {
+      workspace.setBlockLength('camera', id, nextLength);
     }
     workspace.changeCameraStop(id, settings);
     if (isFraming(changes)) {
@@ -216,7 +232,7 @@ export function installDirector(rootStore: RootStore): void {
       const stop = video.camera[n];
       const places = placesAt(workspace, middleOfShot(video, n));
       const predicted = predictedLayerForShot(stop.frame, workspace.items.slice());
-      const resolved = resolveShotLock(changes.lock, changes.photo, places, predicted);
+      const resolved = resolveShotLock(changes.lock, changes.photo, places, predicted?.id);
       if (resolved.hasChange) {
         workspace.changeCameraStop(id, { lockToLayer: resolved.lockToLayer });
       }
@@ -490,20 +506,13 @@ export function installDirector(rootStore: RootStore): void {
       const created = afterImages
         .map((item, idx) => ({ item, n: idx + 1 }))
         .filter(({ item }) => !beforeIds.has(item.id));
-      // Match copies back to the caller's requested order (duplicateItems appends in z-order)
-      const remaining = [...created];
-      return requested.map((src) => {
-        const matchIdx = remaining.findIndex(
-          ({ item }) =>
-            item.fileId === src.fileId &&
-            item.x === src.x &&
-            item.y === src.y &&
-            item.width === src.width &&
-            item.height === src.height,
-        );
-        const matched = remaining.splice(matchIdx === -1 ? 0 : matchIdx, 1)[0];
-        return matched.n;
+      // duplicateItems appends copies in ascending z-order of the chosen originals: map 1-to-1 back to caller order
+      const byZ = [...requested].sort((a, b) => a.z - b.z);
+      const idToCopyNum = new Map<string, number>();
+      byZ.forEach((src, idx) => {
+        idToCopyNum.set(src.id, created[idx].n);
       });
+      return requested.map((src) => idToCopyNum.get(src.id)!);
     },
 
     /**
@@ -1519,6 +1528,19 @@ export function installDirector(rootStore: RootStore): void {
         };
       });
 
+      // Offset Cluster 0 away from existing non-participating items (unused photos & title text)
+      const sourceIds = new Set(chainNodes.map((n) => n.id));
+      const restBounds = boundsOf(
+        workspace.items.slice().filter((item) => !sourceIds.has(item.id)),
+      );
+      const origin =
+        restBounds !== undefined
+          ? {
+              x: Math.round(restBounds.x + restBounds.width + 5000),
+              y: Math.round(restBounds.y),
+            }
+          : { x: 0, y: 0 };
+
       const plan = planZoomChain(chainNodes, {
         videoAspect: video.width / video.height,
         loop: spec.loop,
@@ -1527,86 +1549,175 @@ export function installDirector(rootStore: RootStore): void {
         zoom: spec.zoom,
         speed: spec.speed,
         maxClusterSide: spec.maxClusterSide,
+        origin,
         clampPortals: spec.clampPortals,
       });
 
-      // Ungroup any existing groups touching our participating photos so re-grouping never pulls old mates
-      const sourceIds = new Set(chainNodes.map((n) => n.id));
+      // Build the entire updated items list, layerGroups, and camera in memory for ONE atomic undo step
+      const originalById = new Map(images.map((item) => [item.id, item]));
       const oldGroups = new Set<string>();
       for (const item of images) {
         if (sourceIds.has(item.id) && item.groupId !== undefined) {
           oldGroups.add(item.groupId);
         }
       }
-      for (const groupId of oldGroups) {
-        workspace.ungroup(groupId);
-      }
+      let nextItems: WorkspaceItem[] = workspace.items
+        .slice()
+        .map((item) =>
+          item.groupId !== undefined && oldGroups.has(item.groupId)
+            ? { ...item, groupId: undefined }
+            : item,
+        );
+      let nextZ = frontZ(nextItems);
 
-      // Materialize bridge/loop copies cleanly via duplicateItems (never expands locked groups)
       let copiesCreated = 0;
+      const newGroups: LayerGroup[] = [];
       const clusterItemIds: string[][] = [];
       const usedItemIds = new Set<string>();
-      const allPoses: Record<string, Rect> = {};
-      const allTopDown: string[] = [];
+      const layerUpdates = new Map<
+        string,
+        { rect: Rect; subject: Point; groupId: string | undefined }
+      >();
+      const topDownIds: string[] = [];
 
       for (const cluster of plan.clusters) {
+        const group: LayerGroup | undefined =
+          cluster.layers.length >= 2
+            ? { id: generateId(), name: `Zoom Cluster ${cluster.index + 1}`, isLocked: true }
+            : undefined;
+        if (group !== undefined) {
+          newGroups.push(group);
+        }
         const ids: string[] = [];
         for (const layer of cluster.layers) {
           let itemId = layer.sourceId;
           if (layer.isCopy) {
-            const before = new Set(workspace.items.map((it) => it.id));
-            workspace.duplicateItems(new Set([layer.sourceId]), { x: 0, y: 0 });
-            workspace.clearSelection();
-            const created = workspace.items.find((it) => !before.has(it.id));
-            if (created === undefined) {
-              throw new Error('Failed to duplicate bridge photo');
-            }
-            itemId = created.id;
+            const src = originalById.get(layer.sourceId)!;
+            const copyItem: WorkspaceImageItem = {
+              ...src,
+              id: generateId(),
+              groupId: group?.id,
+              x: layer.rect.x,
+              y: layer.rect.y,
+              width: layer.rect.width,
+              height: layer.rect.height,
+              subject: layer.subject,
+              z: nextZ++,
+            };
+            nextItems.push(copyItem);
+            itemId = copyItem.id;
             copiesCreated++;
+          } else {
+            layerUpdates.set(itemId, {
+              rect: layer.rect,
+              subject: layer.subject,
+              groupId: group?.id,
+            });
           }
           ids.push(itemId);
           usedItemIds.add(itemId);
-          allPoses[itemId] = layer.rect;
-          allTopDown.push(itemId);
-          workspace.setSubject(itemId, layer.subject);
+          topDownIds.push(itemId);
         }
         clusterItemIds.push(ids);
       }
 
-      workspace.arrange(allPoses, allTopDown);
-
-      // Lock-group each cluster, and group unused photos when requested
-      clusterItemIds.forEach((ids, idx) => {
-        if (ids.length >= 2) {
-          workspace.selectMany(ids, false);
-          workspace.groupSelection(`Zoom Cluster ${idx + 1}`);
-          workspace.clearSelection();
+      nextItems = nextItems.map((item) => {
+        const upd = layerUpdates.get(item.id);
+        if (upd === undefined || item.kind !== 'image') {
+          return item;
         }
+        return {
+          ...item,
+          x: upd.rect.x,
+          y: upd.rect.y,
+          width: upd.rect.width,
+          height: upd.rect.height,
+          subject: upd.subject,
+          groupId: upd.groupId,
+        };
       });
+
+      // Stack cluster layers top-down (first layer of each cluster on top of its parent)
+      nextItems = [...topDownIds]
+        .reverse()
+        .reduce((stack, itemId) => moveLayers(stack, new Set([itemId]), 0), nextItems);
+
       if (spec.groupUnused !== false) {
-        const unusedIds = imagesOf(workspace)
-          .filter((item) => !usedItemIds.has(item.id) && item.groupId === undefined)
-          .map((item) => item.id);
-        if (unusedIds.length >= 2) {
-          workspace.selectMany(unusedIds, false);
-          workspace.groupSelection(`Unused — ${workspace.name}`);
-          workspace.clearSelection();
+        const unusedIds = new Set(
+          nextItems
+            .filter(
+              (item): item is WorkspaceImageItem =>
+                item.kind === 'image' && !usedItemIds.has(item.id) && item.groupId === undefined,
+            )
+            .map((item) => item.id),
+        );
+        if (unusedIds.size >= 2) {
+          const unusedGroup: LayerGroup = {
+            id: generateId(),
+            name: `Unused — ${workspace.name}`,
+            isLocked: true,
+          };
+          newGroups.push(unusedGroup);
+          nextItems = nextItems.map((item) =>
+            unusedIds.has(item.id) ? { ...item, groupId: unusedGroup.id } : item,
+          );
         }
       }
 
-      // Build exact CameraStop[] using shotFrame and apply in one undoable edit
+      // Compute exact CameraStop[] against the new items and commit in ONE atomic undoable action
       const aspect = video.width / video.height;
-      const places = placesAt(workspace, 0);
-      const idToNum = new Map(places.photos.map((pid, idx) => [pid, idx + 1]));
+      const nextImages = nextItems.filter(
+        (item): item is WorkspaceImageItem => item.kind === 'image',
+      );
+      const nextSubjects = new Map<string, Point>();
+      for (const item of nextImages) {
+        if (item.subject !== undefined) {
+          nextSubjects.set(item.id, {
+            x: item.x + item.subject.x * item.width,
+            y: item.y + item.subject.y * item.height,
+          });
+        }
+      }
+      const nextPlaces: Places = {
+        photos: nextImages.map((item) => item.id),
+        texts: nextItems.filter((item) => item.kind === 'text').map((item) => item.id),
+        at: new Map(
+          nextItems.map((item) => [
+            item.id,
+            { x: item.x, y: item.y, width: item.width, height: item.height },
+          ]),
+        ),
+        subjects: nextSubjects,
+      };
+      const idToNum = new Map(nextPlaces.photos.map((pid, idx) => [pid, idx + 1]));
       const lockShots = spec.lockShots !== false;
       const camera: CameraStop[] = plan.shots.map((s) => {
         const itemId = clusterItemIds[s.clusterIndex][s.layerIndex];
         const photoNum = idToNum.get(itemId)!;
-        const framingChanges: ShotChanges =
-          s.framing.mode === 'room'
-            ? { photo: photoNum, room: s.framing.room }
-            : { photo: photoNum, zoom: s.framing.zoom };
-        const frame = shotFrame(video.frame, aspect, framingChanges, places);
+        let frame: Rect;
+        if (s.framing.mode === 'room') {
+          frame = shotFrame(
+            video.frame,
+            aspect,
+            { photo: photoNum, room: s.framing.room },
+            nextPlaces,
+          );
+        } else if (s.framing.mode === 'bridge-end') {
+          const baseZoomFrame = shotFrame(
+            video.frame,
+            aspect,
+            { photo: photoNum, zoom: s.framing.zoom },
+            nextPlaces,
+          );
+          frame = bridgeEndFrame(baseZoomFrame);
+        } else {
+          frame = shotFrame(
+            video.frame,
+            aspect,
+            { photo: photoNum, zoom: s.framing.zoom },
+            nextPlaces,
+          );
+        }
         return {
           id: generateId(),
           frame,
@@ -1618,7 +1729,7 @@ export function installDirector(rootStore: RootStore): void {
           ...(lockShots ? { lockToLayer: itemId } : {}),
         };
       });
-      workspace.applyEdit({ camera, layouts: video.layouts, motions: video.motions });
+      workspace.applySceneAndCamera(nextItems, newGroups, camera);
 
       return {
         clusters: plan.clusters.map((c) => ({

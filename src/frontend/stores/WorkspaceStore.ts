@@ -417,7 +417,7 @@ class WorkspaceStore {
           .slice()
           .sort(
             (a, b) =>
-              a.name.localeCompare(b.name, undefined, { numeric: true }) ||
+              (a.name ?? '').localeCompare(b.name ?? '', undefined, { numeric: true }) ||
               a.id.localeCompare(b.id),
           )
       : files;

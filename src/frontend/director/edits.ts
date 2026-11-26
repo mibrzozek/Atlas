@@ -359,7 +359,7 @@ export function timelineWarnings(shots: readonly ShotFacts[], beat?: number): st
         `Shot ${n}: shorter than one beat (${length.toFixed(2)} s < ${beat.toFixed(2)} s)`,
       );
     }
-    if (shot.shows.length === 1) {
+    if (!isBridge && shot.shows.length === 1) {
       const [photo] = shot.shows;
       const first = aloneIn.get(photo);
       if (first === undefined) {

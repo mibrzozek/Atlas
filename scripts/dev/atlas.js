@@ -143,7 +143,10 @@ const pictureArgs = (list) => {
 const callArgs = method === 'picture' ? pictureArgs(args) : args;
 if (method === 'verifySeams' && out !== undefined) {
   const opts =
-    callArgs.length >= 2 && typeof callArgs[1] === 'object' && callArgs[1] !== null
+    callArgs.length >= 2 &&
+    typeof callArgs[1] === 'object' &&
+    callArgs[1] !== null &&
+    !Array.isArray(callArgs[1])
       ? { ...callArgs[1], sheet: true }
       : { sheet: true };
   callArgs[1] = opts;
@@ -262,11 +265,13 @@ const commands = {
     typeof answer.result.sheet === 'string' &&
     answer.result.sheet.startsWith('data:image/')
   ) {
-    const { sheet, ...restResult } = answer.result;
-    if (out !== undefined) {
-      fs.writeFileSync(out, Buffer.from(sheet.split(',')[1], 'base64'));
-      restResult.sheet = path.basename(out);
+    if (out === undefined) {
+      console.error(`${method} with sheet requires --out <file>`);
+      process.exit(1);
     }
+    const { sheet, ...restResult } = answer.result;
+    fs.writeFileSync(out, Buffer.from(sheet.split(',')[1], 'base64'));
+    restResult.sheet = path.basename(out);
     console.log(JSON.stringify({ ok: true, result: restResult, took }, null, 2));
   } else {
     console.log(JSON.stringify({ ...answer, took }, null, 2));

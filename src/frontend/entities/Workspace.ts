@@ -880,6 +880,33 @@ export class ClientWorkspace {
   }
 
   /**
+   * Replaces workspace items, appends any new layer groups, and updates camera stops as ONE atomic
+   * undoable change (used by multi-cluster builders like Director's `zoomChain`).
+   */
+  @action.bound applySceneAndCamera(
+    nextItems: WorkspaceItem[],
+    newGroups: readonly LayerGroup[],
+    camera: CameraStop[],
+  ): void {
+    const { video } = this;
+    if (this.isLocked || video === undefined) {
+      return;
+    }
+    this.remember(this.items.slice(), 'whole');
+    this.cropping = undefined;
+    this.sessionFrom = undefined;
+    this.sessionVideoFrom = undefined;
+    this.selection.clear();
+    this.clearBlockSelection();
+    if (newGroups.length > 0) {
+      this.layerGroups.push(...newGroups);
+    }
+    this.items.replace(nextItems);
+    this.video = withEnd({ ...video, camera }, video.end);
+    this.store.saveSoon(this);
+  }
+
+  /**
    * A whole edit put in at once (cut to the beat): its camera stops, its layouts and its motions, as one
    * change to undo; nothing is selected after it
    */

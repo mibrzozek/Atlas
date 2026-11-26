@@ -1,12 +1,6 @@
-import {
-  cameraAt,
-  CameraStop,
-  frameAround,
-  frameFilledBy,
-  PUSH,
-  VideoProject,
-} from '../common/video';
-import { planZoomChain, ZoomChainNode } from '../common/zoom-chain';
+import { cameraAt, CameraStop, frameAround, PUSH, VideoProject } from '../common/video';
+import { bridgeEndFrame, planZoomChain, ZoomChainNode } from '../common/zoom-chain';
+import { Places, shotFrame } from '../src/frontend/director/edits';
 
 const TALL = 9 / 16;
 
@@ -16,7 +10,8 @@ function make20Nodes(): ZoomChainNode[] {
   return Array.from({ length: 20 }, (_, i) => ({
     id: `p${i + 1}`,
     aspect: tallSet.has(i) ? 2 / 3 : 3 / 2,
-    sub: [0.5, 0.5] as const,
+    // Deliberately off-center subjects to verify zero-jump bridge/loop seam alignment
+    sub: [i % 2 === 0 ? 0.15 : 0.8, 0.25] as const,
     portal: [0.48, 0.45] as const,
     ratio: i === 0 ? 0.065 : 0.085,
   }));
@@ -77,23 +72,34 @@ describe('planZoomChain', () => {
       expect(relCyNext).toBeCloseTo(relCyPrev, 4);
     }
 
-    // Verify constant exponential zoom velocity across every scroll shot
+    // Verify exact x/y/w/h continuity across every relay bridge AND across the loop seam (even with off-center subjects!)
+    const dummyStart = { x: 0, y: 0, width: 90, height: 160 };
     const camera: CameraStop[] = plan.shots.map((s, idx) => {
       const layer = plan.clusters[s.clusterIndex].layers[s.layerIndex];
-      const frame =
-        s.framing.mode === 'room'
-          ? frameAround(layer.rect, TALL, s.framing.room)
-          : (() => {
-              const base = frameFilledBy(layer.rect, TALL);
-              const w = base.width / s.framing.zoom;
-              const h = base.height / s.framing.zoom;
-              return {
-                x: base.x + (base.width - w) / 2,
-                y: base.y + (base.height - h) / 2,
-                width: w,
-                height: h,
-              };
-            })();
+      const places: Places = {
+        photos: ['target'],
+        texts: [],
+        at: new Map([['target', layer.rect]]),
+        subjects: new Map([
+          [
+            'target',
+            {
+              x: layer.rect.x + layer.subject.x * layer.rect.width,
+              y: layer.rect.y + layer.subject.y * layer.rect.height,
+            },
+          ],
+        ]),
+      };
+      let frame;
+      if (s.framing.mode === 'room') {
+        frame = shotFrame(dummyStart, TALL, { photo: 1, room: s.framing.room }, places);
+      } else if (s.framing.mode === 'bridge-end') {
+        frame = bridgeEndFrame(
+          shotFrame(dummyStart, TALL, { photo: 1, zoom: s.framing.zoom }, places),
+        );
+      } else {
+        frame = shotFrame(dummyStart, TALL, { photo: 1, zoom: s.framing.zoom }, places);
+      }
       return {
         id: `s${idx}`,
         frame,
@@ -115,13 +121,21 @@ describe('planZoomChain', () => {
       layouts: [],
       motions: [],
     };
-    // Loop seam: end frame's relative scale inside last host equals t=0 frame's relative scale inside first host
+    // Loop seam: end frame's relative (x, y, w, h) inside last host equals t=0 frame inside first host
     const startFrame = cameraAt(video, 0);
-    const endFrame = cameraAt(video, plan.totalLength - 1e-4);
+    const endFrame = cameraAt(video, plan.totalLength);
     const firstHost = plan.clusters[0].layers[1].rect;
     const lastHost = plan.clusters[plan.clusters.length - 1].layers.at(-1)!.rect;
-    expect(startFrame.height / firstHost.height).toBeCloseTo(endFrame.height / lastHost.height, 3);
-    expect(startFrame.width / firstHost.width).toBeCloseTo(endFrame.width / lastHost.width, 3);
+    expect((startFrame.x - firstHost.x) / firstHost.width).toBeCloseTo(
+      (endFrame.x - lastHost.x) / lastHost.width,
+      5,
+    );
+    expect((startFrame.y - firstHost.y) / firstHost.height).toBeCloseTo(
+      (endFrame.y - lastHost.y) / lastHost.height,
+      5,
+    );
+    expect(startFrame.height / firstHost.height).toBeCloseTo(endFrame.height / lastHost.height, 5);
+    expect(startFrame.width / firstHost.width).toBeCloseTo(endFrame.width / lastHost.width, 5);
   });
 
   it('builds a single non-looping cluster without unnecessary copies when chain fits in bounds', () => {
@@ -160,7 +174,7 @@ describe('planZoomChain', () => {
     );
   });
 
-  it('validates invalid inputs before computing', () => {
+  it('validates invalid inputs before computing, including NaN portals and non-monotonic zoom ratios', () => {
     expect(() => planZoomChain([{ id: 'only', aspect: 1.5 }], { videoAspect: TALL })).toThrow(
       'at least 2',
     );
@@ -173,5 +187,23 @@ describe('planZoomChain', () => {
         { videoAspect: TALL },
       ),
     ).toThrow('ratio');
+    expect(() =>
+      planZoomChain(
+        [
+          { id: 'a', aspect: 1.5 },
+          { id: 'b', aspect: 1.5, portal: [NaN, 0.5] },
+        ],
+        { videoAspect: TALL },
+      ),
+    ).toThrow('finite');
+    expect(() =>
+      planZoomChain(
+        [
+          { id: 'a', aspect: 1.5, ratio: 0.4 },
+          { id: 'b', aspect: 1.5, ratio: 0.4 },
+        ],
+        { videoAspect: TALL, loop: true, wideFit: 'full', zoom: 1.05 },
+      ),
+    ).toThrow('monotonic');
   });
 });

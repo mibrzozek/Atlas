@@ -45,6 +45,8 @@ export interface ZoomChainOptions {
   maxClusterSide?: number;
   /** Width of each cluster's innermost layer in workspace units (default 40) */
   baseWidth?: number;
+  /** Top-left workspace origin for Cluster 0 so generated clusters stay clear of existing items */
+  origin?: Point;
   /** Clamp portals that would expose canvas background around a full-fit child (default true) */
   clampPortals?: boolean;
 }
@@ -71,8 +73,16 @@ export interface PlannedCluster {
 export interface PlannedShot {
   clusterIndex: number;
   layerIndex: number;
-  /** 'room' shows the full photo with `room` margin; 'zoom' fills on subject at `zoom` */
-  framing: { mode: 'room'; room: number } | { mode: 'zoom'; zoom: number };
+  /**
+   * - `room`: full photo with `room` margin
+   * - `zoom`: height-filled on subject at `zoom`
+   * - `bridge-end`: `zoom` frame scaled by `PUSH` around its own center so `endFrame(prev)` matches
+   *   the next cluster's `pull-out` `startFrame` identically even for off-center subjects
+   */
+  framing:
+    | { mode: 'room'; room: number }
+    | { mode: 'zoom'; zoom: number }
+    | { mode: 'bridge-end'; zoom: number };
   length: number;
   arrival: 'cut' | 'scroll';
   stay: 'still' | 'pull-out';
@@ -155,6 +165,21 @@ function parentSizeFor(
 }
 
 /**
+ * Scales `frame` around its own center by `PUSH` (0.85), matching `cameraAt`'s `pull-out`
+ * `startFrame` identically even when the shot's subject is off-center.
+ */
+export function bridgeEndFrame(frame: Rect): Rect {
+  const width = frame.width * PUSH;
+  const height = frame.height * PUSH;
+  return {
+    x: frame.x + (frame.width - width) / 2,
+    y: frame.y + (frame.height - height) / 2,
+    width,
+    height,
+  };
+}
+
+/**
  * Plans all cluster splits, layer rects, bridge/loop copies, and constant-velocity camera shots
  * for a nested continuous zoom-out chain.
  */
@@ -175,16 +200,23 @@ export function planZoomChain(
   const zoom = options.zoom ?? DEFAULT_ZOOM;
   const maxClusterSide = options.maxClusterSide ?? DEFAULT_MAX_CLUSTER_SIDE;
   const baseWidth = options.baseWidth ?? DEFAULT_BASE_WIDTH;
+  const origin = options.origin ?? { x: 0, y: 0 };
   const clampPortals = options.clampPortals !== false;
 
   if (!Number.isFinite(room) || room < 0 || room > 0.5) {
     throw new Error('room must be between 0 and 0.5');
   }
-  if (!Number.isFinite(zoom) || zoom < 0.5 || zoom > 5) {
-    throw new Error('zoom must be between 0.5 and 5');
+  if (!Number.isFinite(zoom) || zoom < 1 || zoom > 5) {
+    throw new Error('zoom must be between 1 and 5');
   }
   if (!Number.isFinite(maxClusterSide) || maxClusterSide < 1000 || maxClusterSide > 1e7) {
     throw new Error('maxClusterSide must be between 1000 and 10000000');
+  }
+  if (!Number.isFinite(baseWidth) || baseWidth < 1 || baseWidth > 10_000) {
+    throw new Error('baseWidth must be between 1 and 10000');
+  }
+  if (!Number.isFinite(origin.x) || !Number.isFinite(origin.y)) {
+    throw new Error('origin coordinates must be finite');
   }
 
   // Validate nodes and normalize defaults
@@ -202,8 +234,15 @@ export function planZoomChain(
       ['sub', sub],
       ['portal', portal],
     ] as const) {
-      if (pt[0] < 0 || pt[0] > 1 || pt[1] < 0 || pt[1] > 1) {
-        throw new Error(`Node ${i + 1}: ${label} coordinates must be in 0..1`);
+      if (
+        !Number.isFinite(pt[0]) ||
+        !Number.isFinite(pt[1]) ||
+        pt[0] < 0 ||
+        pt[0] > 1 ||
+        pt[1] < 0 ||
+        pt[1] > 1
+      ) {
+        throw new Error(`Node ${i + 1}: ${label} coordinates must be finite numbers in 0..1`);
       }
     }
     return { ...node, ratio, sub, portal };
@@ -219,7 +258,6 @@ export function planZoomChain(
     Math.round((Math.log(1 / PUSH) / targetSpeed) * 100) / 100,
   );
   const speed = Math.log(1 / PUSH) / bridgeTime;
-  const bridgeEndZoom = Math.round((zoom / PUSH) * 10000) / 10000;
 
   // Build ordered node-index sequence: [0..N-1] (or [0..N-1, 0] when looping)
   const sequence: number[] = norm.map((_, i) => i);
@@ -366,8 +404,8 @@ export function planZoomChain(
     const col = c % cols;
     const row = Math.floor(c / cols);
     const last = entries[entries.length - 1];
-    last.x = col * stepX;
-    last.y = row * stepY;
+    last.x = origin.x + col * stepX;
+    last.y = origin.y + row * stepY;
 
     for (let j = entries.length - 2; j >= 0; j--) {
       const child = entries[j];
@@ -434,6 +472,15 @@ export function planZoomChain(
   const shots: PlannedShot[] = [];
   let prevFrameH = 0;
 
+  const scrollLength = (fromH: number, toH: number, label: string): number => {
+    if (toH <= fromH) {
+      throw new Error(
+        `${label}: zoom-out is not monotonic (ratio too large for wide bridge/fill transition — lower ratio or use wideFit: "fill")`,
+      );
+    }
+    return Math.max(MIN_BLOCK_LENGTH, Math.round((Math.log(toH / fromH) / speed) * 100) / 100);
+  };
+
   for (let c = 0; c < clusters.length; c++) {
     const cluster = clusters[c];
     const hasBridgeChild = clusterSpecs[c].bridgeChildNode !== undefined;
@@ -467,10 +514,7 @@ export function planZoomChain(
         videoAspect,
         room,
       ).height;
-      const length = Math.max(
-        MIN_BLOCK_LENGTH,
-        Math.round((Math.log(targetH / prevFrameH) / speed) * 100) / 100,
-      );
+      const length = scrollLength(prevFrameH, targetH, `Cluster ${c + 1} (${hostNode.id})`);
       shots.push({
         clusterIndex: c,
         layerIndex: hostLayerIdx,
@@ -490,20 +534,13 @@ export function planZoomChain(
       const endsAtBridge = isClusterEnd && (!isLastCluster || loop);
 
       if (endsAtBridge) {
-        const targetH = filledFrameSize(
-          layer.rect.width,
-          layer.rect.height,
-          videoAspect,
-          bridgeEndZoom,
-        ).height;
-        const length = Math.max(
-          MIN_BLOCK_LENGTH,
-          Math.round((Math.log(targetH / prevFrameH) / speed) * 100) / 100,
-        );
+        const targetH =
+          filledFrameSize(layer.rect.width, layer.rect.height, videoAspect, zoom).height * PUSH;
+        const length = scrollLength(prevFrameH, targetH, `Cluster ${c + 1} (${node.id})`);
         shots.push({
           clusterIndex: c,
           layerIndex: j,
-          framing: { mode: 'zoom', zoom: bridgeEndZoom },
+          framing: { mode: 'bridge-end', zoom },
           length,
           arrival: 'scroll',
           stay: 'still',
@@ -517,10 +554,7 @@ export function planZoomChain(
           videoAspect,
           room,
         ).height;
-        const length = Math.max(
-          MIN_BLOCK_LENGTH,
-          Math.round((Math.log(targetH / prevFrameH) / speed) * 100) / 100,
-        );
+        const length = scrollLength(prevFrameH, targetH, `Cluster ${c + 1} (${node.id})`);
         shots.push({
           clusterIndex: c,
           layerIndex: j,
@@ -538,10 +572,7 @@ export function planZoomChain(
           videoAspect,
           zoom,
         ).height;
-        const length = Math.max(
-          MIN_BLOCK_LENGTH,
-          Math.round((Math.log(targetH / prevFrameH) / speed) * 100) / 100,
-        );
+        const length = scrollLength(prevFrameH, targetH, `Cluster ${c + 1} (${node.id})`);
         shots.push({
           clusterIndex: c,
           layerIndex: j,
