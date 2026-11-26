@@ -333,6 +333,8 @@ export interface ShotFacts {
   textsCutOff: boolean;
   /** Whether the subject of the one photo a shot shows lies outside its frame, at the middle of the shot */
   subjectOutside: boolean;
+  /** Whether this shot is a short invisible relay bridge (cut + linear pull-out) */
+  isBridge?: boolean;
 }
 
 /** A shot shorter than this many seconds is quick; more than `QUICK_RUN` of them in a row hold nothing */
@@ -349,8 +351,8 @@ export function timelineWarnings(shots: readonly ShotFacts[], beat?: number): st
   // Photo number -> the first shot where it is the only photo
   const aloneIn = new Map<number, number>();
   shots.forEach((shot, i) => {
-    const { n, length } = shot;
-    if (beat !== undefined && length < beat) {
+    const { n, length, isBridge } = shot;
+    if (!isBridge && beat !== undefined && length < beat) {
       warnings.push(
         `Shot ${n}: shorter than one beat (${length.toFixed(2)} s < ${beat.toFixed(2)} s)`,
       );
@@ -373,10 +375,11 @@ export function timelineWarnings(shots: readonly ShotFacts[], beat?: number): st
     if (shot.textsCutOff) {
       warnings.push(`Shot ${n}: a title or text is cut off by its frame`);
     }
-    // A run is counted from its first shot only
-    if (length < QUICK_SHOT && (i === 0 || shots[i - 1].length >= QUICK_SHOT)) {
+    // A run is counted from its first shot only (relay bridges do not count as quick cuts)
+    const isQuick = (s: ShotFacts) => !s.isBridge && s.length < QUICK_SHOT;
+    if (isQuick(shot) && (i === 0 || !isQuick(shots[i - 1]))) {
       let last = i;
-      while (last + 1 < shots.length && shots[last + 1].length < QUICK_SHOT) {
+      while (last + 1 < shots.length && isQuick(shots[last + 1])) {
         last++;
       }
       if (last - i + 1 > QUICK_RUN) {
@@ -385,6 +388,80 @@ export function timelineWarnings(shots: readonly ShotFacts[], beat?: number): st
     }
   });
   return warnings;
+}
+
+/** A pair of timestamps immediately before and at a cut or loop seam, to test pixel continuity */
+export interface SeamPair {
+  label: string;
+  before: number;
+  after: number;
+}
+
+/** Tiny offset before a cut instant so `before` samples `endFrame(prev)` and `after` samples `startFrame(next)` */
+const SEAM_EPSILON = 1e-4;
+/** Channel-level RMSE threshold (0..255) below which two frames are considered visually seamless */
+export const SEAMLESS_RMSE_THRESHOLD = 6;
+
+/** Whether a camera stop is a short invisible relay bridge (cut + linear pull-out) */
+export const isBridgeShot = (stop: CameraStop): boolean =>
+  stop.arrival === 'cut' &&
+  stop.stay === 'pull-out' &&
+  stop.easing === 'linear' &&
+  stop.length <= 0.16;
+
+/**
+ * Every `cut` boundary in the timeline (after shot 1), plus `end|start` when `includeLoop` is true.
+ */
+export function seamPairs(
+  camera: readonly CameraStop[],
+  length: number,
+  includeLoop: boolean,
+): SeamPair[] {
+  const starts = startsOf(camera);
+  const pairs: SeamPair[] = [];
+  for (let i = 1; i < camera.length; i++) {
+    if (camera[i].arrival === 'cut') {
+      const at = starts[i];
+      pairs.push({
+        label: `${i}|${i + 1}`,
+        before: Math.max(0, at - SEAM_EPSILON),
+        after: at,
+      });
+    }
+  }
+  if (includeLoop && camera.length > 0 && length > 0) {
+    pairs.push({
+      label: 'end|start',
+      before: Math.max(0, length - SEAM_EPSILON),
+      after: 0,
+    });
+  }
+  return pairs;
+}
+
+/** RGB channel RMSE (0..255) and max single-channel delta between two equal-sized RGBA buffers */
+export function pixelDiff(
+  a: Uint8ClampedArray,
+  b: Uint8ClampedArray,
+): { rmse: number; maxDelta: number; seamless: boolean } {
+  if (a.length !== b.length || a.length === 0) {
+    throw new Error('Buffers must have equal non-zero length');
+  }
+  let sumSq = 0;
+  let maxDelta = 0;
+  let channels = 0;
+  for (let i = 0; i < a.length; i += 4) {
+    for (let c = 0; c < 3; c++) {
+      const d = Math.abs(a[i + c] - b[i + c]);
+      sumSq += d * d;
+      if (d > maxDelta) {
+        maxDelta = d;
+      }
+      channels++;
+    }
+  }
+  const rmse = Math.round(Math.sqrt(sumSq / channels) * 100) / 100;
+  return { rmse, maxDelta, seamless: rmse <= SEAMLESS_RMSE_THRESHOLD };
 }
 
 /** A single step inside a `batch` call */

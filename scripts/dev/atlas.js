@@ -54,9 +54,11 @@
 //   cuts <workspace id> [{"width": 360, "from": 1}] --out <file.jpg>      the first frame, then per cut the last
 //                                             moment of a shot and the arrival of the next, then the last
 //                                             frame; 32 moments a sheet, from: the shot to start at
-//   contact <workspace id> [{"width": 360, "from": 1}] --out <file.jpg>   each file alone, whole, numbered as
-//                                             timeline numbers its first photo (a wall's copies left out);
-//                                             32 a sheet, from: the photo to start at
+//   contact <workspace id> [{"width": 360, "from": 1, "grid": true}] --out <file.jpg>   each file alone, whole,
+//                                             numbered as timeline numbers its first photo; grid: true draws 0.1-step
+//                                             coordinate lines for reading portal/subject [x, y] directly
+//   verifySeams <workspace id> [{"loop": true, "width": 240}] [--out <seams.jpg>]   pixel RMSE across every cut
+//                                             and (with loop: true) end|start; writes comparison sheet when --out given
 //   soundPicture <workspace id> [from] [to] --out <file.png>   its song, beats, swells, sound effects and motions in time
 //   state <workspace id>
 //
@@ -135,6 +137,13 @@ const pictureArgs = (list) => {
   return hasOptions ? [list[0], list.slice(1, -1), last] : [list[0], list.slice(1)];
 };
 const callArgs = method === 'picture' ? pictureArgs(args) : args;
+if (method === 'verifySeams' && out !== undefined) {
+  const opts =
+    callArgs.length >= 2 && typeof callArgs[1] === 'object' && callArgs[1] !== null
+      ? { ...callArgs[1], sheet: true }
+      : { sheet: true };
+  callArgs[1] = opts;
+}
 
 const connectionFile = path.join(repo, '.director', `${to}.json`);
 const connection = () =>
@@ -242,6 +251,19 @@ const commands = {
     }
     fs.writeFileSync(out, Buffer.from(String(answer.result).split(',')[1], 'base64'));
     console.log(JSON.stringify({ ok: true, result: path.basename(out), took }));
+  } else if (
+    answer.ok &&
+    typeof answer.result === 'object' &&
+    answer.result !== null &&
+    typeof answer.result.sheet === 'string' &&
+    answer.result.sheet.startsWith('data:image/')
+  ) {
+    const { sheet, ...restResult } = answer.result;
+    if (out !== undefined) {
+      fs.writeFileSync(out, Buffer.from(sheet.split(',')[1], 'base64'));
+      restResult.sheet = path.basename(out);
+    }
+    console.log(JSON.stringify({ ok: true, result: restResult, took }, null, 2));
   } else {
     console.log(JSON.stringify({ ...answer, took }, null, 2));
   }

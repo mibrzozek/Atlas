@@ -60,6 +60,7 @@ import RootStore from '../stores/RootStore';
 import { batchOfCollection, batchOfTag } from '../stores/WorkspaceStore';
 import {
   cutMoments,
+  isBridgeShot,
   isFraming,
   isMiddleIn,
   isPointIn,
@@ -71,7 +72,9 @@ import {
   parseBatchSteps,
   photoIds,
   photoNumbers,
+  pixelDiff,
   Places,
+  seamPairs,
   ShotChanges,
   shotFrame,
   shotSettings,
@@ -829,10 +832,13 @@ export function installDirector(rootStore: RootStore): void {
     /**
      * Each photo alone and whole, fitted into a square cell (letterboxed on black), numbered as `timeline`
      * numbers them: to judge focus, subject and light before choosing shots. As a JPEG (as data); 32 to a
-     * sheet, `from` a photo number starts a page. Each file once, under its first photo's number: the copies
-     * of a wall are left out. The video and the workspace are not changed
+     * sheet, `from` a photo number starts a page. With `grid: true`, draws a 0.1-step coordinate grid over
+     * each photo so `[fx, fy]` portal/subject points can be read in one look.
      */
-    contact: async (id: string, options: { width?: number; from?: number } = {}) => {
+    contact: async (
+      id: string,
+      options: { width?: number; from?: number; grid?: boolean } = {},
+    ) => {
       const workspace = workspaceOf(id);
       const photos = imagesOf(workspace);
       if (photos.length === 0) {
@@ -840,6 +846,7 @@ export function installDirector(rootStore: RootStore): void {
       }
       const first = numberOf(options.from ?? 1, 'from', 1, photos.length);
       const cell = widthOf(options.width, SHEET_WIDTH);
+      const showGrid = options.grid === true;
       // Each file once, under the number its first item has: the copies of a wall are left out
       const numbers = new Map(photos.map((item, i): [string, number] => [item.id, i + 1]));
       const page = originalsOf(photos)
@@ -867,13 +874,42 @@ export function installDirector(rootStore: RootStore): void {
               const scale = Math.min(cell / bitmap.width, cell / bitmap.height);
               const width = bitmap.width * scale;
               const height = bitmap.height * scale;
-              context.drawImage(
-                bitmap,
-                x + (cell - width) / 2,
-                y + (cell - height) / 2,
-                width,
-                height,
-              );
+              const imgX = x + (cell - width) / 2;
+              const imgY = y + (cell - height) / 2;
+              context.drawImage(bitmap, imgX, imgY, width, height);
+              if (showGrid) {
+                context.save();
+                context.lineWidth = 1;
+                for (let step = 1; step < 10; step++) {
+                  const frac = step / 10;
+                  const major = step % 2 === 0;
+                  context.strokeStyle = major
+                    ? 'rgba(255, 255, 255, 0.35)'
+                    : 'rgba(255, 255, 255, 0.14)';
+                  const gx = imgX + frac * width;
+                  const gy = imgY + frac * height;
+                  context.beginPath();
+                  context.moveTo(gx, imgY);
+                  context.lineTo(gx, imgY + height);
+                  context.moveTo(imgX, gy);
+                  context.lineTo(imgX + width, gy);
+                  context.stroke();
+                  if (major) {
+                    context.font = '10px sans-serif';
+                    context.fillStyle = 'rgba(0, 0, 0, 0.65)';
+                    context.fillRect(gx - 9, imgY + height - 12, 18, 12);
+                    context.fillRect(imgX + 1, gy - 6, 18, 12);
+                    context.fillStyle = '#ffffff';
+                    context.textAlign = 'center';
+                    context.textBaseline = 'bottom';
+                    context.fillText(`.${step}`, gx, imgY + height);
+                    context.textAlign = 'left';
+                    context.textBaseline = 'middle';
+                    context.fillText(`.${step}`, imgX + 3, gy);
+                  }
+                }
+                context.restore();
+              }
             } finally {
               bitmap.close();
             }
@@ -889,6 +925,83 @@ export function installDirector(rootStore: RootStore): void {
         tag(context, String(n), x + 6, y + 6);
       }
       return sheet.toDataURL('image/jpeg', 0.8);
+    },
+
+    /**
+     * Measures pixel continuity across every `cut` boundary (and `end|start` when `loop: true`),
+     * returning RMSE and max channel delta per seam plus an optional side-by-side comparison sheet.
+     */
+    verifySeams: async (
+      id: string,
+      options: { loop?: boolean; width?: number; sheet?: boolean } = {},
+    ) => {
+      const workspace = workspaceOf(id);
+      const video = videoOf(workspace);
+      if (video.camera.length === 0) {
+        throw new Error('It has no shots');
+      }
+      const pairs = seamPairs(video.camera, videoLength(video), options.loop === true);
+      if (pairs.length === 0) {
+        return { seams: [], allSeamless: true };
+      }
+      const cell = cellOf(video, widthOf(options.width, 240));
+      const { images } = await ready(workspace);
+      const items = drawingOrder(workspace.items.slice());
+      const decoded = await VideoImages.prepare(video, items, images.sources, cell.width, false);
+      try {
+        const { surface } = await ready(workspace);
+        const canvasA = document.createElement('canvas');
+        canvasA.width = cell.width;
+        canvasA.height = cell.height;
+        const ctxA = canvasA.getContext('2d', { willReadFrequently: true })!;
+        const paintA = new WorkspacePainter(ctxA, surface.viewport);
+
+        const canvasB = document.createElement('canvas');
+        canvasB.width = cell.width;
+        canvasB.height = cell.height;
+        const ctxB = canvasB.getContext('2d', { willReadFrequently: true })!;
+        const paintB = new WorkspacePainter(ctxB, surface.viewport);
+
+        const wantSheet = options.sheet === true;
+        const cols = Math.min(4, pairs.length);
+        const rows = Math.ceil(pairs.length / 4);
+        const sheetCanvas = wantSheet ? document.createElement('canvas') : undefined;
+        let sheetCtx: CanvasRenderingContext2D | undefined;
+        if (sheetCanvas !== undefined) {
+          sheetCanvas.width = cell.width * 2 * cols;
+          sheetCanvas.height = cell.height * rows;
+          sheetCtx = sheetCanvas.getContext('2d')!;
+        }
+
+        const seams = pairs.map((pair, idx) => {
+          drawFrame(paintA, cell, video, items, decoded, pair.before);
+          drawFrame(paintB, cell, video, items, decoded, pair.after);
+          const diff = pixelDiff(
+            ctxA.getImageData(0, 0, cell.width, cell.height).data,
+            ctxB.getImageData(0, 0, cell.width, cell.height).data,
+          );
+          if (sheetCtx !== undefined) {
+            const sx = (idx % 4) * cell.width * 2;
+            const sy = Math.floor(idx / 4) * cell.height;
+            sheetCtx.drawImage(canvasA, sx, sy);
+            sheetCtx.drawImage(canvasB, sx + cell.width, sy);
+            sheetCtx.font = 'bold 14px sans-serif';
+            tag(sheetCtx, `${pair.label}  rmse=${diff.rmse}`, sx + 6, sy + 6);
+          }
+          return {
+            seam: pair.label,
+            at: Math.round(pair.after * 100) / 100,
+            ...diff,
+          };
+        });
+        return {
+          seams,
+          allSeamless: seams.every((s) => s.seamless),
+          ...(sheetCanvas !== undefined ? { sheet: sheetCanvas.toDataURL('image/jpeg', 0.8) } : {}),
+        };
+      } finally {
+        decoded.close();
+      }
     },
 
     /**
@@ -998,6 +1111,7 @@ export function installDirector(rootStore: RootStore): void {
               isTextCutOff(text, stop.frame),
             ),
             subjectOutside: subjectOfShown !== undefined && !isPointIn(subjectOfShown, stop.frame),
+            isBridge: isBridgeShot(stop),
           },
         };
       });

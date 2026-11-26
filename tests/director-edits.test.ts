@@ -2,13 +2,16 @@ import { CameraStop } from '../common/video';
 import {
   cutMoments,
   frameOnSubject,
+  isBridgeShot,
   isMiddleIn,
   isTextCutOff,
   motionChanges,
   numbered,
   numberOf,
   parseBatchSteps,
+  pixelDiff,
   Places,
+  seamPairs,
   ShotFacts,
   shotFrame,
   shotSettings,
@@ -223,6 +226,50 @@ describe('the Director edits', () => {
     expect(() => parseBatchSteps([['save', 'ws1', 'phone']])).toThrow('not inside batch');
     expect(() => parseBatchSteps([['music', 'ws1', 'song.mp3']])).toThrow('not inside batch');
     expect(() => parseBatchSteps([123])).toThrow('Step 1');
+  });
+
+  it('identifies relay bridges, suppresses beat noise for them, and pairs cut/loop seams', () => {
+    const bridge: CameraStop = {
+      ...stop('b1', 0.12, 'cut'),
+      stay: 'pull-out',
+      easing: 'linear',
+    };
+    const normalCut = stop('c1', 2, 'cut');
+    const scroll = stop('s1', 2.4, 'scroll');
+    expect(isBridgeShot(bridge)).toBe(true);
+    expect(isBridgeShot(normalCut)).toBe(false);
+    expect(isBridgeShot(scroll)).toBe(false);
+
+    // Bridge shots do not emit "shorter than one beat" or quick-run warnings
+    expect(
+      timelineWarnings(
+        [
+          {
+            n: 1,
+            length: 0.12,
+            shows: [1],
+            showsText: false,
+            textsCutOff: false,
+            subjectOutside: false,
+            isBridge: true,
+          },
+        ],
+        0.52,
+      ),
+    ).toEqual([]);
+
+    const pairs = seamPairs([bridge, scroll, bridge, scroll], 5.04, true);
+    expect(pairs.map((p) => p.label)).toEqual(['2|3', 'end|start']);
+    expect(pairs[0].after).toBeCloseTo(2.52);
+    expect(pairs[0].before).toBeLessThan(pairs[0].after);
+    expect(pairs[1].after).toBe(0);
+    expect(pairs[1].before).toBeCloseTo(5.04, 3);
+
+    const a = new Uint8ClampedArray([10, 20, 30, 255, 100, 110, 120, 255]);
+    const b = new Uint8ClampedArray([10, 21, 30, 255, 100, 110, 121, 255]);
+    const pop = new Uint8ClampedArray([250, 250, 250, 255, 0, 0, 0, 255]);
+    expect(pixelDiff(a, b)).toEqual({ rmse: 0.58, maxDelta: 1, seamless: true });
+    expect(pixelDiff(a, pop).seamless).toBe(false);
   });
 });
 
