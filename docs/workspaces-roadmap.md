@@ -33,12 +33,13 @@ for placing things finely, and a pill at the top says so. **F** fits everything,
 at full resolution; on a text, opens it for editing.
 
 **Objects.** Images, texts and backgrounds, each a layer of its own.
-- A drag on empty space draws a box that selects what it touches (Shift or Ctrl adds). A click brings an
-  image to the front, also one that only shows from under another. Selected objects move together and
-  land on top. A handle in the corner sizes the one selected (a text's letters grow along). With
-  several selected, a dashed frame around them has the same handle and sizes them all together from
-  its top left; **Alt + wheel** sizes what is selected around its middle. Either way they keep how they
-  lie to each other, land on top, and one sizing is one step to undo.
+- A drag on empty space draws a box that selects what it touches (Shift or Ctrl adds). **The Layers panel is
+  the sole source of truth for z-order:** clicking or dragging an object on the canvas outlines and selects it
+  (auto-expanding any collapsed group and scrolling to it in the Layers panel) without bringing it to the
+  front. Selected objects move together keeping their relative stacking. A handle in the corner sizes the one
+  selected (a text's letters grow along). With several selected, a dashed frame around them has the same
+  handle and sizes them all together from its top left; **Alt + wheel** sizes what is selected around its
+  middle. Either way they keep how they lie to each other, and one sizing is one step to undo.
 - While a box is drawn or something is dragged or sized, the wheel and a zoom move the view under it:
   the box keeps its start on the workspace, what is dragged stays under the pointer. Held near an edge
   of the view, the view scrolls that way by itself.
@@ -74,7 +75,12 @@ at full resolution; on a text, opens it for editing.
   and its lock unlocks it (then each layer on its own, still together in the panel). **Ctrl+Shift+G** or
   *Ungroup* undoes it; both are steps to undo.
 - **Layers panel** on the right (folds into the Layers button): everything from the top layer down, only
-  the rows in sight drawn; click selects, drag changes the layer, double click glides to it.
+  the rows in sight drawn; click selects, drag changes the layer, double click glides to it. Aligned eye
+  visibility toggles on every group and layer row support click-hold-drag painting across multiple rows in
+  one undoable session; hidden layers are omitted from the canvas, video preview, saved videos, and saved
+  pictures.
+- **Selection beacon:** when a selected layer is tiny (`< 32 px` on screen) or off-screen, a 60 fps
+  screen-space target reticle or edge arrow highlights where it sits (click to glide to it).
 
 **Save as picture.** The selected sheet, or else the selection, or else everything, composed at the full
 resolution of its photos (capped at 8,192 px on the longest side, some 700 dpi on A4) and saved as a PNG
@@ -92,7 +98,10 @@ Measured in the hidden copy with real input. See the Workspaces section of CLAUD
   per workspace (`WorkspaceImages`, `TileImages`); far out, from one overview picture. A workspace of
   12,000 images was ready in 16 s with the workspace open and frames at 60 per second.
 - Only images in view, in whole half-octave steps of the zoom, are elements; their order in the page is
-  their stacking order (a `z-index` on every image made the browser re-layer them in every frame).
+  their stacking order (a `z-index` on every image made the browser re-layer them in every frame). Oversized
+  zoomed-in layers (`> 8,192 px` on screen) stay on the viewport-clipped tile canvas rather than allocating
+  enormous GPU DOM textures, `will-change: transform` is suppressed during active zoom, `SpatialIndex` keeps
+  huge nested items in a dedicated side set, and overview caching skips small workspaces (`< 200` tiles).
 - Images get the pixels they cover once the camera rests: thumbnail, a version drawn to size by the
   `SharpImages` workers, or the file itself.
 - Arrange works from a snapshot, one step per frame, stored once the slider rests: 60 frames per second

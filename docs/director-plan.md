@@ -31,8 +31,9 @@ Making the first demo video took far longer than the work itself (2026-10-22):
   keeps to the read-only rules (CLAUDE.md, Rule 1).
 - **Music is always the user's choice**, from `audio/` in the repository, which they fill. Claude asks
   which song every time and reminds them to put it there.
-- **Exports are phone-sized** by default (720 × 1280, at most about 26 MB: the phone link of the Claude
-  app takes up to 30 MB), full size on request.
+- **Exports have two phone tiers:** `phone` (720 × 1280, capped under 26 MB into `demo/` for viewing in the
+  Claude phone app), `phone-full` (full 1080 × 1920 reel quality, uncapped bitrate, saved directly to the
+  user's Desktop for self-uploading), and `full` (video's own size into `demo/`).
 
 ## The parts
 
@@ -44,8 +45,9 @@ Started from `src/main.ts` only behind `process.env.NODE_ENV === 'development'` 
 - a random token for every start, written with the port to `.director/user.json` (or `hidden.json` for
   the hidden copy) in the repository, git-ignored, removed on quit. A call without the token, or with a
   `Host` other than `127.0.0.1`, is refused (403); the token is compared in constant time;
-- `whoAmI` and `songs` are answered there (`songs` lists `audio/` and nothing else); `music` is checked
-  against that list, `save` gets `demo/` (made if needed) and answers with the file name only;
+- `whoAmI`, `songs` and `effects` are answered there (`songs` lists `audio/` and nothing else); `music` and
+  `sound` are checked against those lists; `save` routes `phone`/`full` into `demo/` and `phone-full` onto
+  Electron's `desktop` path, returning only the file name (or `Desktop/<file>`), never an OS path;
 - every other command, if it is in the fixed list, goes over IPC (`src/director/channels.ts`) to the page;
 - while commands come, the window is not throttled and the screensaver is held off for two minutes
   (`UiStore.holdScreensaver`).
@@ -58,8 +60,16 @@ never code, and calls the stores and entities the buttons call:
 | Command | What it does |
 |---|---|
 | `tags`, `collections`, `workspaces` | Names, and how many photos each has |
-| `create <name> {"tag": …} \| {"collection": …}` | A new workspace of those photos (searched like the gallery), opened |
+| `create <name> {"tag": …} \| {"collection": …}` | A new workspace of those photos in deterministic name/id order, opened |
 | `arrange <id> columns\|rows\|grid [count] [gap]` | **Never a row or column of a single photo**; answers the count per line |
+| `place <id> [{"photo", "x", "y", "width", "height?"}]` | Exact positions/sizes stacked top-down (up to `±1e7`) for nested scenes |
+| `group <id> <name> [photos…] [{"lock": true}]` | Groups named photos into a labelled layer group (locked by default) |
+| `ungroup <id> <name>` | Ungroups a named layer group without deleting its layers |
+| `copy <id> [photos…]` | Duplicates named photos safely (even inside locked groups), returning new photo numbers in caller order |
+| `photosInfo <id>` | Metadata per photo layer: `n`, `fileId`, basename `name`, `aspect`, bounds, `group`, `isCopy` |
+| `deleteItems <id> [photos…]` / `deleteWorkspace <id>` | Removes workspace layers or a workspace (never touches photo files on disk) |
+| `zoomChain <id> <spec>` | Declaratively builds a continuous zero-pause nested zoom-out (`common/zoom-chain.ts`): auto-clusters, relay bridges, optional infinite loop, full-frame wide photos, locked groups & shots, in one atomic undo step |
+| `batch <steps>` | Runs up to 500 renderer commands sequentially in one IPC round-trip (blocks nested `batch` and main-process-guarded `music`/`sound`/`save`) |
 | `shuffle <id> <seed>` | The same arrangement with the photos in another order (one undo step) |
 | `title <id> <text> [line] [colors]` | A title, a line under it, and a sheet behind everything |
 | `video <id> [9:16\|4:5\|1:1\|16:9]` | Starts the video, in that format |
@@ -69,10 +79,11 @@ never code, and calls the stores and entities the buttons call:
 | `end <id> [seconds]` | Where the video ends; none: at the end of its camera again |
 | `waves <id> [strength]` | A wave rolling through the photos on every swell of its song (`wavesToTheMusic`) |
 | `edit <id> cuts\|flow\|mixed <seed>` | Shots, layouts and motions on the beats; another seed is another edit |
-| `save <id> phone\|full` | The video into `demo/` as a new file |
+| `save <id> phone\|phone-full\|full` | `phone` (≤ 26 MB) & `full` into `demo/`; `phone-full` (uncapped 1080p reel) onto Desktop |
 | `picture <id> <times…> [{"width": 540}]` | Small frames of the video side by side (`width`: 120 to 1080, 180 by default), a JPEG for Claude to look at |
 | `cuts <id> [{"width": 360, "from": 1}]` | Each cut side by side: the last moment of a shot and the arrival of the next, labelled `n\|n+1` with its time; the first and last frames too; 32 a sheet, `from` a shot to page on |
-| `contact <id> [{"width": 360, "from": 1}]` | Each photo alone and whole, numbered as `timeline` numbers it, to judge focus, subject and light; 32 a sheet, `from` a photo to page on |
+| `verifySeams <id> [{"loop": true, "width": 240}]` | Computes pixel RMSE and max channel delta across every cut boundary (and `end\|start` when `loop: true`), with optional `--out` side-by-side JPEG |
+| `contact <id> [{"width": 360, "from": 1, "grid": true}]` | Each photo alone and whole, numbered as `timeline` numbers it; with `grid: true`, draws 0.1-step coordinate lines to read `[x, y]` portals directly |
 | `soundPicture <id> [from] [to]` | The song's loudness, beats and swells, and the motions in time: a PNG to look at |
 | `state <id>` | Photos, frame, end, layouts, shots, motions by kind, wave crests, song, swells |
 | `reload` | The window loaded again (a change to the page is then in it); answers once it is ready |
@@ -87,7 +98,7 @@ them; **each command is one change to undo** (`rememberVideo`, and `isContinuing
 | `timeline <id>` | Every shot (when, how long, arrival, stay, which photos it shows), layout and motion (which photos), and `warnings`: weak spots by shot (`timelineWarnings`: shorter than a beat, a photo repeated from a shot where it was alone, a text cut off, a first shot showing nothing, more than four quick shots in a row, a single photo's subject outside its frame) |
 | `photos <id> [time]` | Everything at that moment, each photo's number on it and the shot outlined; a ring where a photo's subject is: to choose by number |
 | `subject <id> <photo> [x y]` | Where a photo's subject is, as fractions of the whole photo (0 to 1, from the left and the top); without x and y it is taken away. A `setShot` of that photo (no `room`, no `align`) frames it on the subject as near the middle as the photo allows; `zoom` then keeps the subject where it is in the frame |
-| `setShot <id> <n> {…}` | What it shows: `photo` (filled; with `room`, all of it), `photos`, `title`, `all` or `frame`; then `zoom`, `move`; and `length`, `arrival`, `arrivalTime`, `stay`, `easing` |
+| `setShot <id> <n> {…}` | What it shows: `photo` (filled; with `room`, all of it), `photos`, `title`, `all` or `frame` (up to `±1e7`); then `zoom`, `move`; `length`, `arrival`, `arrivalTime`, `stay`, `easing`; and `lock` (`true`, `false`, or photo number) |
 | `addShot <id> <after> {…}` | A new shot after shot `after` (0: the first), the same changes; the end set by hand stays |
 | `addMotion <id> <kind> <photos\|all> <start> {…}` | A motion of those photos; `length`, `strength`, `speed`, `stagger` |
 | `setMotion <id> <n> {…}` | Its `kind`, `photos`, `start`, `length`, `strength`, `speed`, `stagger` |
@@ -137,7 +148,8 @@ images are decoded: right after a reload the surface could be replaced meanwhile
 
 - Arrange menu: **Shuffle** (Alt+R).
 - Video tab: **Cut to the beat** (a style; every press another seed), once there is a song.
-- Export tab: **Size**, Phone (default) or Full.
+- Export tab: **Size** — `Phone (≤ 26 MB)` (default, 720p capped), `Phone (Full Reel)` (uncapped 1080p saved directly to Desktop), or `Full`.
+- `atlas.js` also accepts `--stdin` and `--file <path>` to pass JSON payloads cleanly without shell quoting.
 
 ## Steps
 

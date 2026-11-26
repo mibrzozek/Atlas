@@ -79,8 +79,10 @@ each one:
 - Each CL updates this file itself when it changes something this file describes.
 - **Who does what:** the main conversation (Opus) plans, splits work into CLs and checks results; subagents on
   Haiku (high effort) carry out the plans and report back. Keep the main conversation's token use low.
-- **Videos:** ask **which song** every time and remind them to put it in `audio/`. Videos go to `demo/`, phone size
-  (720 × 1280, under about 26 MB) unless asked. Both folders are git-ignored and never committed.
+- **Videos:** ask **which song** every time and remind them to put it in `audio/`. Two-tier phone export:
+  `save <id> phone` goes to `demo/` (`720 × 1280`, under ~26 MB for viewing in the Claude phone app);
+  `save <id> phone-full` exports uncapped `1080 × 1920` reel quality straight to the user's Desktop for
+  self-uploading. `demo/` and `audio/` are git-ignored and never committed.
 
 ## The Director and the debugging port: development only, never shipped
 
@@ -95,14 +97,18 @@ with the stores and entities, as the buttons do. It never reads the user's folde
   shell command, and give every wait an end: both once hung the session and took the user's Atlas down with it.
 - A new or changed command needs only `reload`: the main process forwards any plain name (`COMMAND_NAME`), the
   page's `commands` (own properties only) are the list.
-- Look before saving: `picture` (frames of the video), `soundPicture` (the song's loudness, beats, swells and every
-  motion), `state`.
+- Look before saving: `picture` (frames of the video), `cuts`, `verifySeams` (pixel RMSE across cuts and
+  loop seams), `soundPicture` (the song's loudness, beats, swells and every motion), `state`. `contact`
+  supports `{"grid": true}` for reading `[x, y]` portal/subject coordinates directly.
 - Making, remaking or judging a video: follow the `atlas-director` skill (`.claude/skills/atlas-director/`):
   cast every photo, write a treatment against the song, place shots by hand, review real frames. The
   auto-edit is only a scaffold. The owner's feedback goes into its `references/taste.md`.
-- Change a video by command, not by changing code: `timeline` and `photos` number everything, `setShot`, `addShot`,
-  `setMotion`, `remove`... change one thing each, one undo step each (list in `scripts/dev/atlas.js`). Ask
-  whether a change is for this video or for every edit (`common/auto-edit.ts`) before changing the rule.
+- Change a video by command, not by changing code: `timeline`, `photosInfo` and `photos` number everything
+  (`create` sorts tag/collection imports deterministically), `setShot`/`addShot` (with `"lock"`), `zoomChain`
+  (declarative continuous nested zoom-out + relay bridges + loops), `batch` (single-IPC multi-step calls),
+  `atlas.js --stdin`/`--file` (no shell-quoting or temp scripts), `setMotion`, `remove`... (full list in
+  `scripts/dev/atlas.js`). Ask whether a change is for this video or for every edit (`common/auto-edit.ts`)
+  before changing the rule.
 - Chromium's **debugging port** runs any code in Atlas: **never** on the user's Atlas. Only the hidden copy
   (`scripts/dev/hidden.js start|stop`, its own profile `.dev-hidden-profile/`) opens one, on a random port; stop it
   when the checks are done.

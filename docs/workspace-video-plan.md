@@ -167,6 +167,11 @@ What works, checked in a hidden copy with real input and a made-up song (clicks 
   begins, how much of its start is skipped.
 - Preview with the music; saving an MP4 with picture and AAC sound (checked: both the same length).
 - Default timeline of a minute, the wheel over the panel zooming it; Space plays, Delete removes.
+- **2026-11-26 additions:**
+  - **Lock shot to layer:** in the Selected tab, each camera stop predicts the majority layer in its frame (`predictedLayerForShot`) and can be locked to that layer (or any other chosen layer). Moving or resizing a locked layer moves and scales its locked shots atomically (`followLockedLayers`), and selecting a locked shot selects its layer in the Layers panel.
+  - **Layer visibility (`isHidden`):** hidden layers and groups are omitted from video preview and exported MP4s.
+  - **Two-tier phone export:** `Phone (≤ 26 MB)` (720p capped for the Claude phone app), `Phone (Full Reel)` (uncapped 1080p saved straight to Desktop for self-uploading), and `Full`.
+  - **Nested continuous zoom-out planner (`common/zoom-chain.ts`):** dev-CLI `zoomChain` command auto-partitions long nested chains into bounded clusters with pixel-identical `(child, host)` relay bridges and seamless infinite loops.
 
 Not yet: effects (light leaks, film burn, grain...: next, as a lane of their own), recording a camera
 move live, beat markers in the motion lane (pulse uses them already), the beat finder on real music (only
